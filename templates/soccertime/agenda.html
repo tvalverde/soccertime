@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% load static %}
+{% load i18n %}
+{% block title %}
+Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Agenda" %}{% endif %}
+{% endblock %}
+{% block javascript %}
+{% if "agenda" in request.path %}
+<script src="{% static 'soccertime/js/datepicker.js' %}" defer></script>
+{% endif %}
+{% endblock %}
+{% block content %}
+{% if competition_teams %}
+<div class="container mb-2 py-2 text-center bg-light">
+  {% for team in competition_teams %}
+  <span class="me-3 d-inline text-nowrap"> <a href="{% url "team-events" team.pk %}" data-bs-toggle="tooltip" data-bs-title="{{ team.name }}">{{ team.crest_image|safe }}</a></span>
+  {% endfor %}
+</div>
+{% endif %}
+{% if "agenda" in request.path %}
+<div class="container mb-2 py-2 bg-light">
+    <div class="d-flex justify-content-center align-items-center position-relative">
+        <input
+                id="datePicker"
+                type="date"
+                name="event-date"
+                class="form-control w-auto"
+                min="{% now "Y-m-d" %}"
+                max="{{ max_date }}" />
+    </div>
+</div>
+{% endif %}
+{% if events_title %}
+<p class="lead">{{ events_title }}</p>
+{% endif %}
+<table class="table table-sm table-hover">
+    <tbody>
+        {% for parent_event in events %}
+            {% if parent_event.match %}
+                {% with event=parent_event.match %}
+                    {% include "soccertime/agenda_header.html" %}
+                    {% include "soccertime/agenda_item.html" %}
+                {% endwith %}
+            {% elif parent_event.race %}
+                {% with event=parent_event.race %}
+                    {% include "soccertime/agenda_header.html" %}
+                    {% include "soccertime/agenda_item.html" %}
+                {% endwith %}
+            {% elif parent_event.simpleevent %}
+                {% with event=parent_event.simpleevent %}
+                    {% include "soccertime/agenda_header.html" %}
+                    {% include "soccertime/agenda_item.html" %}
+                {% endwith %}
+            {% else %}
+                <!-- Tipo de evento no reconocido -->
+            {% endif %}
+        {% endfor %}
+    </tbody>
+</table>
+{% if events.number %}
+<div class="d-flex justify-content-end pe-3">
+    {% bootstrap_pagination events %}
+</div>
+{% endif %}
+{% endblock %}

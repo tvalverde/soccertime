@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% load i18n %}
+{% block title %}
+Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Agenda" %}{% endif %}
+{% endblock %}
+{% block content %}
+<table class="table table-sm table-hover">
+    <tbody>
+        {% for parent_event in events %}
+            {% if parent_event.match %}
+                {% with event=parent_event.match %}
+                    {% include "soccertime/event_header.html" %}
+                    {% include "soccertime/match_item.html" %}
+                {% endwith %}
+            {% elif parent_event.race %}
+                {% with event=parent_event.race %}
+                    {% include "soccertime/event_header.html" %}
+                    {% include "soccertime/simple_event_item.html" %}
+                {% endwith %}
+            {% else %}
+                {% with event=parent_event.simpleevent %}
+                    {% include "soccertime/event_header.html" %}
+                    {% include "soccertime/simple_event_item.html" %}
+                {% endwith %}
+            {% endif%}
+        {% endfor %}
+    </tbody>
+</table>
+{% if events.number %}
+<div class="d-flex justify-content-end pe-3">
+    {% bootstrap_pagination events %}
+</div>
+{% endif %}
+{% endblock %}

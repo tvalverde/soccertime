@@ -1,0 +1,9 @@
+Django
+django-bootstrap5
+django-admin-sortable2
+requests
+requests-cache
+beautifulsoup4
+uvicorn
+Pillow
+whitenoise

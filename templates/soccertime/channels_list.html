@@ -1,0 +1,18 @@
+{% for channel in event.channels.all %}
+  {% if channel.enabled_links|length %}
+    <a href="{% url "channel-events" channel.pk %}">
+      <span class="badge rounded-pill text-bg-secondary">{{ channel.name }}</span>
+    </a>
+    {% for link in channel.enabled_links %}
+      {% include "soccertime/link_button.html" %}
+    {% endfor %}
+    <br>
+  {% endif %}
+{% endfor %}
+{% if 'DJANGO_DEBUG'|env %}
+  {% for channel in event.channels.all %}
+    {% if not channel.enabled_links|length %}
+      <span class="badge rounded-pill text-bg-secondary"><del>{{ channel.name }}</del></span><br>
+    {% endif %}
+  {% endfor %}
+{% endif %}

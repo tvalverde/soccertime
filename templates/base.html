@@ -1,0 +1,159 @@
+{% load django_bootstrap5 %}
+{% load soccertime_tags %}
+{% load i18n %}
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Agenda de eventos deportivos en vivo con enlaces a streams. Fútbol, baloncesto, tenis y más deportes.">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, proxy-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    {% bootstrap_css %}
+    {% bootstrap_javascript %}
+    {% block javascript %}
+    {% endblock %}
+    <title>{% block title %}Soccertime{% endblock %}</title>
+    <style>
+      html, body {
+        height: 100%;
+      }
+      html {
+        font-size:0.875em
+      }
+      .wrapper {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+      }
+      .main-content {
+        flex: 1;
+      }
+      .btn-close-small {
+        font-size: 0.8rem;
+        width: 1rem;
+        height: 1rem;
+      }
+      .zoom-icon {
+        width: 1.75em;
+        height: 1.75em;
+        transition: transform 0.3s ease, border 0.3s ease;
+        display: inline-block;
+        border: 0 solid white;
+        border-radius: 50%;
+      }
+      .zoom-icon:hover {
+        transform: scale(2.1);
+        border: 2px solid white;
+      }
+      .link-styled {
+        color: inherit;
+        text-decoration: none;
+        text-underline-offset: 0.2em;
+      }
+      .link-styled:hover {
+        text-decoration: underline;
+      }
+    </style>
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-calendar-check-fill' viewBox='0 0 16 16'%3E%3Cpath d='M4 .5a.5.5 0 0 0-1 0V1H2a2 2 0 0 0-2 2v1h16V3a2 2 0 0 0-2-2h-1V.5a.5.5 0 0 0-1 0V1H4zM16 14V5H0v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2m-5.146-5.146-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 0 1 .708-.708L7.5 10.793l2.646-2.647a.5.5 0 0 1 .708.708'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="main-content">
+      <header class="bg-light py-3 mb-2 border-bottom container-fluid">
+        <div class="container d-flex flex-wrap justify-content-between align-items-center">
+          <div class="d-flex align-items-center">
+            <a href="{{ 'DJANGO_FORCE_SCRIPT_NAME'|env:'/' }}" class="text-decoration-none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-calendar-check-fill me-2 text-primary" viewBox="0 0 16 16" role="img" aria-label="Soccertime">
+                <path d="M4 .5a.5.5 0 0 0-1 0V1H2a2 2 0 0 0-2 2v1h16V3a2 2 0 0 0-2-2h-1V.5a.5.5 0 0 0-1 0V1H4zM16 14V5H0v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2m-5.146-5.146-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 0 1 .708-.708L7.5 10.793l2.646-2.647a.5.5 0 0 1 .708.708"/>
+              </svg>
+              <span class="fs-4 text-secondary">Soccertime</span>
+            </a>
+          </div>
+          <nav>
+            <ul class="nav nav-pills">
+              <li class="nav-item">
+                <a class="nav-link{% if "favorites" in request.path %} active{% else %} text-secondary{% endif %}" aria-current="page" href="{% url "favorites" %}">
+                  <svg class="d-sm-none" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-star-fill" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M3.612 15.443c-.386.198-.824-.149-.746-.592l.83-4.73L.173 6.765c-.329-.314-.158-.888.283-.95l4.898-.696L7.538.792c.197-.39.73-.39.927 0l2.184 4.327 4.898.696c.441.062.612.636.282.95l-3.522 3.356.83 4.73c.078.443-.36.79-.746.592L8 13.187l-4.389 2.256z"/>
+                  </svg>
+                  <span class="d-none d-sm-inline">{% translate "Favoritos" %}</span>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link{% if "agenda" in request.path %} active{% else %} text-secondary{% endif %}" href="{% url "agenda" %}">
+                  <svg class="d-sm-none" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-table" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm15 2h-4v3h4zm0 4h-4v3h4zm0 4h-4v3h3a1 1 0 0 0 1-1zm-5 3v-3H6v3zm-5 0v-3H1v2a1 1 0 0 0 1 1zm-4-4h4V8H1zm0-4h4V4H1zm5-3v3h4V4zm4 4H6v3h4z"/>
+                  </svg>
+                  <span class="d-none d-sm-inline">{% translate "Agenda" %}</span>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link{% if "competitions" in request.path %} active{% else %} text-secondary{% endif %}" href="{% url "competitions" %}">
+                  <svg class="d-sm-none" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trophy-fill" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M2.5.5A.5.5 0 0 1 3 0h10a.5.5 0 0 1 .5.5q0 .807-.034 1.536a3 3 0 1 1-1.133 5.89c-.79 1.865-1.878 2.777-2.833 3.011v2.173l1.425.356c.194.048.377.135.537.255L13.3 15.1a.5.5 0 0 1-.3.9H3a.5.5 0 0 1-.3-.9l1.838-1.379c.16-.12.343-.207.537-.255L6.5 13.11v-2.173c-.955-.234-2.043-1.146-2.833-3.012a3 3 0 1 1-1.132-5.89A33 33 0 0 1 2.5.5m.099 2.54a2 2 0 0 0 .72 3.935c-.333-1.05-.588-2.346-.72-3.935m10.083 3.935a2 2 0 0 0 .72-3.935c-.133 1.59-.388 2.885-.72 3.935"/>
+                  </svg>
+                  <span class="d-none d-sm-inline">{% translate "Competiciones" %}</span>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link{% if "channels" in request.path %} active{% else %} text-secondary{% endif %}" href="{% url "channels" %}">
+                  <svg class="d-sm-none" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-tv" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M2.5 13.5A.5.5 0 0 1 3 13h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5M13.991 3l.024.001a1.5 1.5 0 0 1 .538.143.76.76 0 0 1 .302.254c.067.1.145.277.145.602v5.991l-.001.024a1.5 1.5 0 0 1-.143.538.76.76 0 0 1-.254.302c-.1.067-.277.145-.602.145H2.009l-.024-.001a1.5 1.5 0 0 1-.538-.143.76.76 0 0 1-.302-.254C1.078 10.502 1 10.325 1 10V4.009l.001-.024a1.5 1.5 0 0 1 .143-.538.76.76 0 0 1 .254-.302C1.498 3.078 1.675 3 2 3zM14 2H2C0 2 0 4 0 4v6c0 2 2 2 2 2h12c2 0 2-2 2-2V4c0-2-2-2-2-2"/>
+                  </svg>
+                  <span class="d-none d-sm-inline">{% translate "Canales" %}</span>
+                </a>
+              </li>
+            </ul>
+          </nav>
+          <form class="d-none d-lg-flex" role="search" action="{% url 'agenda' %}">
+            <div class="input-group">
+              <span class="input-group-text" id="basic-addon1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+                </svg>
+              </span>
+              <input class="form-control me-2" name="search" type="search" placeholder="{% translate "Buscar" %}" aria-label="{% translate "Buscar" %}" value="{{ request.GET.search }}">
+            </div>
+            <button class="btn btn-outline-primary" type="submit">{% translate "Buscar" %}</button>
+          </form>
+        </div>
+      </header>
+      {% if competitions %}
+      <div class="container mb-2 py-2 text-center text-light bg-primary">
+        {% for competition in competitions %}
+        <span class="me-3 d-inline text-nowrap"><a href="{% url "competition-events" competition.pk %}" class="link-light link-styled">{{ competition.name }}</a></span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if teams %}
+      <div class="container mb-2 py-2 text-center bg-light">
+        {% for team in teams %}
+        <span class="me-3 d-inline text-nowrap">{{ team.crest_image|safe }} <a href="{% url "team-events" team.pk %}" class="link-styled">{{ team.name }}</a></span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="container mt-2">
+        {% bootstrap_messages %}
+</div>
+      <div class="container bg-light py-0 px-0">
+        {% block content %}
+        {% endblock %}
+      </div>
+      </div>
+      <footer class="container-fluid bg-dark text-light py-3 mt-4">
+        <div class="container text-center">
+          <small>&copy; {% now "Y" %} Soccertime. {% translate "Todos los derechos reservados." %}</small>
+        </div>
+      </footer>
+    </div>
+    <script>
+      var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+      var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+{% load humanize %}
+{% ifchanged %}
+<tr class="table-dark">
+    <th scope="row" colspan="7">
+        {{ event.date.date|naturalday }}
+    </th>
+</tr>
+{% endifchanged %}

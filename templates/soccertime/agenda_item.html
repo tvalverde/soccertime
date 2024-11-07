@@ -1,0 +1,39 @@
+{% load l10n %}
+<tr>
+  <th scope="row">
+    {{ event.date.time|date:'H:i' }}
+  </th>
+  <td class="text-start">
+    <a href="{% url "competition-events" event.competition.pk %}" class="link-styled">{{ event.competition.flag.flag_image|safe }} {{ event.competition }}</a><br>
+    <a href="{% url "sport-events" event.competition.sport.pk %}" class="link-styled">{{ event.competition.sport|upper }}</a>
+    {% if parent_event.match %}
+    <br><span class="text-secondary">{{ event.details|default_if_none:"" }}</span>
+    {% endif %}
+  </td>
+  {% if parent_event.match %}
+  <td class="text-end">
+    <a href="{% url "team-events" event.local.pk %}" class="link-styled text-nowrap">{{ event.local.name }}</a><br>
+  </td>
+  <td class="text-center">
+    {{ event.local.crest_image|safe }}
+  </td>
+  <td class="text-center">
+    {{ event.visitor.crest_image|safe }}
+  </td>
+  <td class="text-start">
+    <a href="{% url "team-events" event.visitor.pk %}" class="link-styled text-nowrap">{{ event.visitor.name }}</a>
+  </td>
+  {% elif parent_event.race or parent_event.simpleevent %}
+  <td class="text-center" colspan="4">
+    {{ event.name }}<br>
+    <span class="text-secondary">{{ event.details|default_if_none:"" }}</span>
+  </td>
+  {% else %}
+  <td class="bg-danger-subtle text-center" colspan="4">
+    {{ event }}
+  </td>
+  {% endif %}
+  <td class="lh-lg">
+    {% include "soccertime/channels_list.html" %}
+  </td>
+</tr>

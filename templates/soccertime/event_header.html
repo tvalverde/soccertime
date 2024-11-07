@@ -1,0 +1,22 @@
+{% load humanize %}
+{% ifchanged %}
+<tr class="table-dark">
+    <th scope="row" colspan="7">
+        {{ event.date.date|naturalday }}
+    </th>
+</tr>
+{% endifchanged %}
+{% ifchanged %}
+<tr class="table-primary">
+    <th scope="row" colspan="7">
+        <a href="{% url "sport-events" event.competition.sport.pk %}" class="link-styled">{{ event.competition.sport|upper }}</a>
+    </th>
+</tr>
+{% endifchanged %}
+{% ifchanged %}
+<tr class="table-secondary">
+    <th scope="row" colspan="7">
+        <a href="{% url "competition-events" event.competition.pk %}" class="link-styled">{{ event.competition }}</a>
+    </th>
+</tr>
+{% endifchanged %}

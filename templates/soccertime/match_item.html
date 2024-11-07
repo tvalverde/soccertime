@@ -1,0 +1,20 @@
+                <tr>
+                    <th scope="row">
+                        {{ event.date.time|date:'H:i' }}
+                    </th>
+                    <td class="text-start">
+                        {{ event.details|default_if_none:"" }}
+                    </td>
+                    <td class="text-end">
+                        <a href="{% url "team-events" event.local.pk %}" class="link-styled">{{ event.local.name }}</a>
+                    </td>
+                    <td class="text-center" colspan="2">
+                        {{ event.local.crest_image|safe }} {{ event.visitor.crest_image|safe }}
+                    </td>
+                    <td class="text-start">
+                        <a href="{% url "team-events" event.visitor.pk %}" class="link-styled">{{ event.visitor.name }}</a>
+                    </td>
+                    <td class="lh-lg">
+                        {% include "soccertime/channels_list.html" %}
+                    </td>
+                </tr>

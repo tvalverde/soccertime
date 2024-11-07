@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load soccertime_tags %}
+{% load i18n %}
+{% block title %}
+Soccertime :: {% translate "Competiciones" %}
+{% endblock %}
+{% block content %}
+    {% for sport in sports %}
+        <h3 class="pt-3">{{ sport.name }}</h3>
+        {% for competition in sport.competitions_with_events %}
+            <div class="d-inline-block me-3 mb-2">
+            <a href="{% url "competition-events" competition.pk %}" class="link-styled{% if competition.is_favorite %} text-bg-warning px-1 rounded{% endif %}">{{ competition.flag.flag_image|safe }} {{ competition.name }}</a> <span class="badge rounded-pill text-bg-primary">{{ competition.events_count }}</span>
+            </div>
+        {% empty %}
+            <p class="text-secondary"><em>{% translate "No hay competiciones con eventos próximos" %}</em></p>
+        {% endfor %}
+        {% if sport.competitions_without_events %}
+        <div class="mt-2">
+            <a class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" href="#collapse-{{ sport.pk }}" role="button" aria-expanded="false" aria-controls="collapse-{{ sport.pk }}">
+                {% translate "Mostrar competiciones sin eventos" %} ({{ sport.competitions_without_events|length }})
+            </a>
+            <div class="collapse mt-2" id="collapse-{{ sport.pk }}">
+                {% for competition in sport.competitions_without_events %}
+                    <div class="d-inline-block me-3 mb-2">
+                    <span class="text-secondary">{{ competition.flag.flag_image|safe }} {{ competition.name }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    {% endfor %}
+{% endblock %}
