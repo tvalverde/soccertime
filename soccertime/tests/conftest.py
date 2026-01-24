@@ -15,6 +15,7 @@ from django.utils import timezone
 from soccertime.models import (
     Channel,
     ChannelLink,
+    ChannelLinkSource,
     Competition,
     Favorite,
     Flag,
@@ -24,6 +25,7 @@ from soccertime.models import (
     Sport,
     Team,
 )
+
 
 # =============================================================================
 # Base fixtures
@@ -154,31 +156,39 @@ def channels(channel, channel_dazn):
 
 
 @pytest.fixture
-def channel_link(db):
+def channel_link_source(db):
+    return ChannelLinkSource.objects.create(name="test")
+
+
+@pytest.fixture
+def channel_link(db, channel_link_source):
     """Create a basic channel link."""
-    return ChannelLink.objects.create(
+    link = ChannelLink.objects.create(
         name="Movistar LaLiga HD",
         category="Deportes",
         subcategory="Fútbol",
         quality=ChannelLink.Quality.HD,
         link="https://example.com/stream1",
-        source="test",
         enabled=True,
     )
+    link.sources.add(channel_link_source)
+    return link
 
 
 @pytest.fixture
-def channel_link_disabled(db):
+def channel_link_disabled(db, channel_link_source):
     """Create a disabled channel link."""
-    return ChannelLink.objects.create(
+    link = ChannelLink.objects.create(
         name="Movistar LaLiga SD",
         category="Deportes",
         subcategory="Fútbol",
         quality=ChannelLink.Quality.SD,
         link="https://example.com/stream2",
-        source="test",
         enabled=False,
     )
+    link.sources.add(channel_link_source)
+    return link
+
 
 
 @pytest.fixture

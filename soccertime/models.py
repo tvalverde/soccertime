@@ -5,9 +5,12 @@ from urllib.parse import urlparse
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import Q
+from django.db.models import Count, Q
+from django.db.models.signals import m2m_changed, post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext as _
+
 
 
 class SportManager(models.Manager):
@@ -202,6 +205,28 @@ class Favorite(models.Model):
             raise ValidationError(_("At least one of competition or team must be set."))
 
 
+class ChannelLinkSource(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    display_name = models.CharField(max_length=255, null=True, blank=True)
+    enabled = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.display_name or self.name
+
+    def save(self, *args, **kwargs):
+        if not self.display_name:
+            self.display_name = self.name
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_or_create_by_name(cls, name):
+        return cls.objects.get_or_create(name=name, defaults={"display_name": name})
+
+
+
 class Channel(models.Model):
     name = models.CharField(max_length=255, unique=True)
     links = models.ManyToManyField("ChannelLink", related_name="channels", blank=True)
@@ -230,7 +255,7 @@ class ChannelLink(models.Model):
     name = models.CharField(max_length=255)
     quality = models.CharField(max_length=255, choices=Quality, default=Quality.ANY)
     link = models.CharField(max_length=1000, null=True)
-    source = models.CharField(max_length=255, null=True)
+    sources = models.ManyToManyField("ChannelLinkSource", related_name="links", blank=True)
     date_added = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     enabled = models.BooleanField(default=True)
@@ -238,13 +263,9 @@ class ChannelLink(models.Model):
 
     class Meta:
         verbose_name_plural = "channels links"
-        unique_together = (
-            (
-                "link",
-                "source",
-            ),
-        )
         ordering = ["-date_updated__date", "date_updated__time", "-verified", "-id"]
+
+
 
     def __str__(self):
         return f"{self.name} [{self.quality}]"
@@ -253,6 +274,7 @@ class ChannelLink(models.Model):
     def scheme(self):
         parsed_url = urlparse(self.link)
         return parsed_url.scheme
+
 
 
 class EventQuerySet(models.QuerySet):
@@ -368,7 +390,22 @@ class EventQuerySet(models.QuerySet):
         return qs
 
 
+@receiver(post_delete, sender=ChannelLinkSource)
+def delete_orphan_channel_links_on_source_delete(sender, instance, **kwargs):
+    orphan_links = ChannelLink.objects.annotate(source_count=Count("sources")).filter(source_count=0)
+    if orphan_links.exists():
+        orphan_links.delete()
+
+
+@receiver(m2m_changed, sender=ChannelLink.sources.through)
+def delete_orphan_channel_links_on_m2m(sender, instance, action, **kwargs):
+    if action in {"post_remove", "post_clear"}:
+        if instance.sources.count() == 0:
+            instance.delete()
+
+
 class EventManager(models.Manager):
+
     """Custom manager for Event model."""
 
     def get_queryset(self):

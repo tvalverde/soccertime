@@ -10,6 +10,7 @@ from .filters import LinkSchemeFilter
 from .models import (
     Channel,
     ChannelLink,
+    ChannelLinkSource,
     Competition,
     Favorite,
     Flag,
@@ -19,6 +20,7 @@ from .models import (
     Sport,
     Team,
 )
+
 
 
 def escape_braces(s):
@@ -198,15 +200,60 @@ class HasChannelsFilter(admin.SimpleListFilter):
         return queryset
 
 
+@admin.register(ChannelLinkSource)
+class ChannelLinkSourceAdmin(AutoModelAdmin):
+    search_fields = ["name", "display_name"]
+    list_filter = ["enabled"]
+
+
+class ChannelHasLinksFilter(admin.SimpleListFilter):
+    title = "Has links"
+    parameter_name = "has_links"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("no", "No"),
+            ("yes", "Yes"),
+        ]
+
+    def queryset(self, request, queryset):
+        queryset = queryset.annotate(link_count=Count("links", distinct=True))
+        if self.value() == "no":
+            return queryset.filter(link_count=0)
+        elif self.value() == "yes":
+            return queryset.filter(link_count__gte=1)
+        return queryset
+
+
 @admin.register(Channel)
 class ChannelAdmin(AutoModelAdmin):
     search_fields = ["name"]
     filter_horizontal = ["links"]
+    list_filter = [ChannelHasLinksFilter]
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.annotate(link_count=Count("links", distinct=True))
+
+    @admin.display(ordering="link_count", description="links")
+    def links_count(self, obj):
+        return obj.link_count
+
+    def get_list_display(self, request):
+        list_display = super().get_list_display(request)
+        if "links_count" not in list_display:
+            list_display.append("links_count")
+        return list_display
+
+
 
 
 @admin.register(ChannelLink)
 class ChannelLinkAdmin(AutoModelAdmin):
-    list_filter = [HasChannelsFilter, LinkSchemeFilter, "verified"]
+    list_filter = [HasChannelsFilter, LinkSchemeFilter, "verified", "sources__name"]
+    filter_horizontal = ["sources"]
+    search_fields = ["name", "link", "sources__name"]
+
 
 
 @admin.register(Favorite)

@@ -15,12 +15,14 @@ from django.db import IntegrityError
 
 from soccertime.models import (
     ChannelLink,
+    ChannelLinkSource,
     Competition,
     Event,
     Favorite,
     Sport,
     Team,
 )
+
 
 
 class TestSport:
@@ -131,14 +133,16 @@ class TestChannelLink:
 
     def test_quality_choices(self, db):
         """All quality choices should be valid."""
+        source, _ = ChannelLinkSource.objects.get_or_create(name="test")
         for quality in ChannelLink.Quality:
             link = ChannelLink.objects.create(
                 name=f"Test {quality}",
                 quality=quality,
                 link=f"https://example.com/{quality}",
-                source="test",
             )
+            link.sources.add(source)
             assert link.quality == quality
+
 
 
 class TestFavorite:

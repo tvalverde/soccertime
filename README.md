@@ -28,6 +28,8 @@ soccertime/
 │   ├── admin.py              # Django admin configuration
 │   ├── tests/                # Test suite (pytest)
 │   └── management/commands/  # Custom management commands
+│   └── ChannelLinkSource     # Source model for channel links (M2M)
+
 ├── templates/                # HTML templates
 ├── media/                    # Media files (crests, flags)
 └── db/                       # SQLite database
@@ -147,6 +149,26 @@ docker compose exec web ruff format soccertime/ --check
 ## Production deployment
 
 Deployment is done through the `Makefile` which automates the entire process.
+
+## Domain notes
+
+### Channel links and sources
+
+- `ChannelLink` usa ManyToMany con `ChannelLinkSource` para que un mismo enlace pertenezca a varias fuentes.
+- `ChannelLinkSource`: campos `name` (único), `display_name` (por defecto al nombre), `enabled` (bool). Señales eliminan `ChannelLink` huérfanos al borrar la última source.
+- Comando unificado: `docker compose exec web python -m manage addlinksource --source <newera|elcano> --file <path> [--dry]`
+  - **Soporte de fuentes:**
+    - `newera`: Formato de texto con bloques de 2 líneas (Nombre --> Subcat / Link).
+    - `elcano`: Formato de texto estructurado por secciones (`=== CATEGORIA ===`).
+  - **Estrategias de Matching:**
+    - Normalización de nombres (`fix_name`) para mapear variantes (ej: "Movistar" -> "M+").
+    - Extracción inteligente de calidad (SD, HD, FHD, UHD, 1080p, 720p).
+    - Lógica de seguridad para nombres cortos (evita falsos positivos como "La" -> "LaLiga").
+    - Filtro Anti-Horeca: Evita asociar enlaces residenciales a canales de bares/restaurantes salvo que el enlace lo especifique.
+- Admin: `ChannelLinkSource` registrado; en `ChannelLink` puedes filtrar/buscar/seleccionar sources.
+
+
+
 
 ### Prerequisites
 
