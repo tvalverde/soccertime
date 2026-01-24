@@ -1,4 +1,4 @@
-.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart download-db upload-db download-requests-cache upload-requests-cache download-media upload-media
+.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -8,6 +8,13 @@ help:
 	@echo "Soccertime - Deployment and management commands"
 	@echo ""
 	@echo "USAGE: make <target>"
+	@echo ""
+	@echo "DEVELOPMENT:"
+	@echo "  test                 Run tests"
+	@echo "  test-cov             Run tests with coverage report"
+	@echo "  lint                 Check code for linting errors"
+	@echo "  lint-fix             Fix auto-fixable linting errors"
+	@echo "  format               Format code with ruff"
 	@echo ""
 	@echo "DEPLOY:"
 	@echo "  deploy-production    Full deploy (upload code + run on remote)"
@@ -35,6 +42,30 @@ help:
 export
 
 APP_NAME = soccertime
+
+# === Development Commands ===
+
+# Run tests
+test:
+	@docker compose exec web pytest
+
+# Run tests with coverage report
+test-cov:
+	@docker compose exec web pytest --cov --cov-report=term-missing
+
+# Check code for linting errors
+lint:
+	@docker compose exec web ruff check soccertime/
+
+# Fix auto-fixable linting errors
+lint-fix:
+	@docker compose exec web ruff check soccertime/ --fix
+
+# Format code with ruff
+format:
+	@docker compose exec web ruff format soccertime/
+
+# === Deployment Commands ===
 
 # Application archive to upload
 ARCHIVE_NAME = $(APP_NAME).tgz
