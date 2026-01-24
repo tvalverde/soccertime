@@ -1,9 +1,11 @@
 import re
-from django.db import transaction
+
 from django.core.cache import cache
-from django.db.models import Q
 from django.core.management.base import BaseCommand
-from soccertime.models import ChannelLink, Channel
+from django.db import transaction
+from django.db.models import Q
+
+from soccertime.models import Channel, ChannelLink
 
 DEFAULT_SOURCE = "newera"
 
@@ -13,12 +15,8 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--source-file", "-f", required=True)
-        parser.add_argument(
-            "--source", "-s", default=DEFAULT_SOURCE, help="Source name for the links"
-        )
-        parser.add_argument(
-            "--dry", required=False, action="store_true", help="Dry run without saving"
-        )
+        parser.add_argument("--source", "-s", default=DEFAULT_SOURCE, help="Source name for the links")
+        parser.add_argument("--dry", required=False, action="store_true", help="Dry run without saving")
 
     def fix_name(self, name):
         name = name.lower()
@@ -62,7 +60,7 @@ class Command(BaseCommand):
         Returns:
             dict: {(nombre_canal, subcategoria): [links]}
         """
-        with open(options["source_file"], "r", encoding="utf-8") as f:
+        with open(options["source_file"], encoding="utf-8") as f:
             contents = f.read()
 
         # Filtrar líneas vacías
@@ -77,7 +75,7 @@ class Command(BaseCommand):
 
             # Verificar que existe la línea del link
             if i + 1 >= len(lines):
-                errors.append(f"Línea {i+1}: '{name_line}' sin enlace asociado")
+                errors.append(f"Línea {i + 1}: '{name_line}' sin enlace asociado")
                 continue
 
             link_line = lines[i + 1]
@@ -85,14 +83,12 @@ class Command(BaseCommand):
             # Parsear nombre y subcategoría
             channel_name, subcategory = self.parse_name_line(name_line)
             if not channel_name:
-                errors.append(
-                    f"Línea {i+1}: Formato inválido '{name_line}' (esperado: 'NOMBRE --> SUBCATEGORIA')"
-                )
+                errors.append(f"Línea {i + 1}: Formato inválido '{name_line}' (esperado: 'NOMBRE --> SUBCATEGORIA')")
                 continue
 
             # Validar hash de acestream
             if not self.validate_acestream_hash(link_line):
-                errors.append(f"Línea {i+2}: Hash inválido '{link_line}'")
+                errors.append(f"Línea {i + 2}: Hash inválido '{link_line}'")
                 continue
 
             # Añadir prefijo acestream:// si no lo tiene
@@ -160,8 +156,7 @@ class Command(BaseCommand):
 
                     # Buscar canales existentes
                     channels = Channel.objects.filter(
-                        Q(name__iexact=channel_name)
-                        | Q(name__icontains=f"{channel_name} (")
+                        Q(name__iexact=channel_name) | Q(name__icontains=f"{channel_name} (")
                     )
 
                     # Si no encuentra, buscar por partes del nombre
@@ -171,15 +166,11 @@ class Command(BaseCommand):
                             channels = channels.filter(name__icontains=cpart)
 
                     if not channels.exists():
-                        self.stderr.write(
-                            self.style.ERROR(f"Canal no encontrado: {channel_name}")
-                        )
+                        self.stderr.write(self.style.ERROR(f"Canal no encontrado: {channel_name}"))
                         stats["errores_canal_no_encontrado"] += 1
                         continue
 
-                    self.stdout.write(
-                        f"Procesando: {channel_name} ({channels.count()} coincidencias)"
-                    )
+                    self.stdout.write(f"Procesando: {channel_name} ({channels.count()} coincidencias)")
 
                     channel_links = []
                     category = re.sub(r" \d+", "", channel_name).title()
@@ -187,9 +178,7 @@ class Command(BaseCommand):
                     for link in links:
                         try:
                             # Intentar obtener enlace existente
-                            channel_link = ChannelLink.objects.get(
-                                link=link, source=source
-                            )
+                            channel_link = ChannelLink.objects.get(link=link, source=source)
 
                             # Actualizar datos
                             channel_link.name = channel_name.title()
@@ -225,9 +214,7 @@ class Command(BaseCommand):
                                 )
 
                             stats["enlaces_nuevos"] += 1
-                            self.stdout.write(
-                                self.style.SUCCESS(f"  Nuevo: {link[:50]}...")
-                            )
+                            self.stdout.write(self.style.SUCCESS(f"  Nuevo: {link[:50]}..."))
 
                         channel_links.append(channel_link)
 
@@ -236,9 +223,7 @@ class Command(BaseCommand):
                         for channel in channels:
                             if channel.links.filter(link=channel_link.link).exists():
                                 self.stdout.write(
-                                    self.style.WARNING(
-                                        f"  Ya existe en {channel.name}: {channel_link.link[:40]}..."
-                                    )
+                                    self.style.WARNING(f"  Ya existe en {channel.name}: {channel_link.link[:40]}...")
                                 )
                                 continue
 
@@ -254,9 +239,7 @@ class Command(BaseCommand):
 
         except transaction.TransactionManagementError:
             if dry_run:
-                self.stdout.write(
-                    self.style.WARNING("\nDry run completado - no se guardaron cambios")
-                )
+                self.stdout.write(self.style.WARNING("\nDry run completado - no se guardaron cambios"))
             else:
                 raise
 
@@ -274,11 +257,5 @@ class Command(BaseCommand):
         self.stdout.write(f"Enlaces asociados:       {stats['enlaces_asociados']}")
 
         if stats["errores_parsing"] or stats["errores_canal_no_encontrado"]:
-            self.stdout.write(
-                self.style.ERROR(f"Errores de parsing:      {stats['errores_parsing']}")
-            )
-            self.stdout.write(
-                self.style.ERROR(
-                    f"Canales no encontrados:  {stats['errores_canal_no_encontrado']}"
-                )
-            )
+            self.stdout.write(self.style.ERROR(f"Errores de parsing:      {stats['errores_parsing']}"))
+            self.stdout.write(self.style.ERROR(f"Canales no encontrados:  {stats['errores_canal_no_encontrado']}"))

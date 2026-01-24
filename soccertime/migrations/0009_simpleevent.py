@@ -5,21 +5,30 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0008_remove_channel_logo'),
+        ("soccertime", "0008_remove_channel_logo"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='SimpleEvent',
+            name="SimpleEvent",
             fields=[
-                ('event_ptr', models.OneToOneField(auto_created=True, on_delete=django.db.models.deletion.CASCADE, parent_link=True, primary_key=True, serialize=False, to='soccertime.event')),
-                ('name', models.CharField(max_length=255)),
+                (
+                    "event_ptr",
+                    models.OneToOneField(
+                        auto_created=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        parent_link=True,
+                        primary_key=True,
+                        serialize=False,
+                        to="soccertime.event",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
             ],
             options={
-                'unique_together': {('name', 'event_ptr')},
+                "unique_together": {("name", "event_ptr")},
             },
-            bases=('soccertime.event',),
+            bases=("soccertime.event",),
         ),
     ]

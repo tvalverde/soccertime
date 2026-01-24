@@ -5,15 +5,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0012_flag_alter_team_crest'),
+        ("soccertime", "0012_flag_alter_team_crest"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='competition',
-            name='flag',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='competitions', to='soccertime.flag'),
+            model_name="competition",
+            name="flag",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="competitions",
+                to="soccertime.flag",
+            ),
         ),
     ]

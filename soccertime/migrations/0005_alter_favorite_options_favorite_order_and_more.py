@@ -4,24 +4,23 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0004_alter_channellink_link_and_more'),
+        ("soccertime", "0004_alter_channellink_link_and_more"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='favorite',
-            options={'ordering': ['order']},
+            name="favorite",
+            options={"ordering": ["order"]},
         ),
         migrations.AddField(
-            model_name='favorite',
-            name='order',
+            model_name="favorite",
+            name="order",
             field=models.PositiveIntegerField(db_index=True, default=0),
         ),
         migrations.AlterField(
-            model_name='event',
-            name='channels',
-            field=models.ManyToManyField(related_name='events', to='soccertime.channel'),
+            model_name="event",
+            name="channels",
+            field=models.ManyToManyField(related_name="events", to="soccertime.channel"),
         ),
     ]

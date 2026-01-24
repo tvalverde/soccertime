@@ -1,0 +1,71 @@
+[project]
+name = "soccertime"
+version = "0.1.0"
+description = "Sports events aggregator"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "soccertime.settings"
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+testpaths = ["soccertime/tests"]
+addopts = [
+    "--strict-markers",
+    "--tb=short",
+    "-ra",
+]
+markers = [
+    "integration: marks tests as integration tests (may make real HTTP requests)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore:DateTimeField ChannelLink.date_added received a naive datetime:RuntimeWarning",
+]
+
+[tool.coverage.run]
+source = ["soccertime"]
+omit = [
+    "soccertime/tests/*",
+    "soccertime/migrations/*",
+    "soccertime/management/commands/scraping/example.py",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+show_missing = true
+skip_covered = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["soccertime"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+

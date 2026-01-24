@@ -1,13 +1,14 @@
-from datetime import datetime, timedelta
+import logging
 import os
-from typing import Iterator
-from bs4 import BeautifulSoup, Tag
+from collections.abc import Iterator
+from datetime import datetime, timedelta
 from urllib.parse import urljoin
+
 import requests
+import requests_cache
+from bs4 import BeautifulSoup, Tag
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import requests_cache
-import logging
 
 from .base import (
     Event,
@@ -19,7 +20,7 @@ from .base import (
 )
 
 # Logging configuration
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -37,7 +38,7 @@ HEADERS = {
 
 # Configure requests cache
 requests_cache.install_cache(
-    os.environ.get('REQUESTS_CACHE', 'soccertime_data_cache'),
+    os.environ.get("REQUESTS_CACHE", "soccertime_data_cache"),
     expire_after=timedelta(hours=6),
 )
 
@@ -52,11 +53,12 @@ retry_strategy = Retry(
 
 class ScrapingStats:
     """Track scraping statistics."""
+
     def __init__(self):
         self.processed = 0
         self.skipped = 0
         self.errors = 0
-    
+
     def __str__(self):
         return f"processed={self.processed}, skipped={self.skipped}, errors={self.errors}"
 
@@ -111,10 +113,10 @@ def parse_competition_row(row, base_url):
             competition = clean_text(" ".join(row.stripped_strings))
     except AttributeError:
         competition = clean_text(" ".join(row.stripped_strings))
-    
+
     crest_img = row.find("img")
     competition_crest = extract_image_url(crest_img, base_url)
-    
+
     return competition, competition_crest
 
 
@@ -132,7 +134,7 @@ def parse_competition_from_col(col, base_url, current_competition, current_crest
     competition = current_competition
     competition_crest = current_crest
     details = ""
-    
+
     if col.find("img"):
         label = col.find("label")
         if label:
@@ -150,7 +152,7 @@ def parse_competition_from_col(col, base_url, current_competition, current_crest
                 competition = clean_text(" ".join(span_in_col.stripped_strings))
     elif col.find("span"):
         details = clean_text(" ".join(col.find("span").stripped_strings)) or ""
-    
+
     return competition, competition_crest, details
 
 
@@ -158,7 +160,7 @@ def parse_simple_event(cols, sport, details):
     """Parse a simple event (4 columns - no teams)."""
     event_name = ""
     event_details = details
-    
+
     try:
         strings = list(cols[2].stripped_strings)
         if len(strings) >= 2:
@@ -167,12 +169,12 @@ def parse_simple_event(cols, sport, details):
             event_name = strings[0]
     except (ValueError, IndexError):
         event_name = clean_text(" ".join(cols[2].stripped_strings))
-    
+
     event_name = clean_text(event_name)
     event_details = clean_text(event_details) if event_details else details
-    
+
     channels = [clean_text(li.get_text(strip=True)) for li in cols[3].find_all("li")]
-    
+
     return event_name, event_details, channels
 
 
@@ -182,17 +184,17 @@ def parse_match_event(cols, base_url, details):
     home_team_span = cols[2].find("span")
     home_team = clean_text(" ".join(home_team_span.stripped_strings)) if home_team_span else None
     home_crest = extract_image_url(cols[2], base_url)
-    
+
     # Away team
     away_team_span = cols[3].find("span")
     away_team = clean_text(" ".join(away_team_span.stripped_strings)) if away_team_span else None
     away_crest = extract_image_url(cols[3], base_url)
-    
+
     # Channels (safely access cols[4])
     channels = []
     if len(cols) > 4:
         channels = [clean_text(li.get_text(strip=True)) for li in cols[4].find_all("li")]
-    
+
     return home_team, home_crest, away_team, away_crest, channels
 
 
@@ -200,11 +202,8 @@ def parse_iter(soup, sport, base_url, stats=None):
     """Parse events from soup for a given sport."""
     if stats is None:
         stats = ScrapingStats()
-    
-    tables = soup.find_all(
-        lambda tag: tag.name == "table"
-        and tag.find_all("tr", attrs={"class": "cabeceraTabla"})
-    )
+
+    tables = soup.find_all(lambda tag: tag.name == "table" and tag.find_all("tr", attrs={"class": "cabeceraTabla"}))
 
     for table in tables:
         date = None
@@ -242,7 +241,9 @@ def parse_iter(soup, sport, base_url, stats=None):
                 continue
 
             if date is None:
-                logger.warning(f"[{sport}] Skipping event row as date was not parsed in {base_url}. Row: {row.get_text(strip=True)[:100]}...")
+                logger.warning(
+                    f"[{sport}] Skipping event row as date was not parsed in {base_url}. Row: {row.get_text(strip=True)[:100]}..."
+                )
                 stats.skipped += 1
                 continue
 
@@ -257,7 +258,9 @@ def parse_iter(soup, sport, base_url, stats=None):
             )
 
             if competition is None:
-                logger.error(f"[{sport}] Skipping event row as competition was not parsed in {base_url}. Row: {row.get_text(strip=True)[:100]}...")
+                logger.error(
+                    f"[{sport}] Skipping event row as competition was not parsed in {base_url}. Row: {row.get_text(strip=True)[:100]}..."
+                )
                 stats.errors += 1
                 continue
 
@@ -265,12 +268,12 @@ def parse_iter(soup, sport, base_url, stats=None):
             if len(cols) == 4:
                 # Simple event or race
                 event_name, event_details, channels = parse_simple_event(cols, sport, details)
-                
+
                 if not event_name:
                     logger.warning(f"[{sport}] Skipping event with empty name in {base_url}")
                     stats.skipped += 1
                     continue
-                
+
                 if sport in RACE_SPORTS:
                     event_details_obj = RaceDetails(name=event_name, details=event_details)
                 else:
@@ -286,12 +289,12 @@ def parse_iter(soup, sport, base_url, stats=None):
                 )
             else:
                 # Match event
-                home_team, home_crest, away_team, away_crest, channels = parse_match_event(
-                    cols, base_url, details
-                )
-                
+                home_team, home_crest, away_team, away_crest, channels = parse_match_event(cols, base_url, details)
+
                 if not home_team or not away_team:
-                    logger.warning(f"[{sport}] Skipping match with missing team names. Home: '{home_team}', Away: '{away_team}' in {base_url}")
+                    logger.warning(
+                        f"[{sport}] Skipping match with missing team names. Home: '{home_team}', Away: '{away_team}' in {base_url}"
+                    )
                     stats.skipped += 1
                     continue
 
@@ -338,28 +341,27 @@ def get_events() -> Iterator[Event]:
     """Fetch and parse events from all configured pages."""
     session = create_session()
     total_stats = ScrapingStats()
-    
+
     for info in EVENTS_PAGES:
         url = info["url"]
         sport = info["sport"]
         page_stats = ScrapingStats()
-        
+
         try:
             response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
-            
+
             soup = BeautifulSoup(response.content, "html.parser")
-            
-            for event in parse_iter(soup, sport, url, page_stats):
-                yield event
-            
+
+            yield from parse_iter(soup, sport, url, page_stats)
+
             # Update total stats
             total_stats.processed += page_stats.processed
             total_stats.skipped += page_stats.skipped
             total_stats.errors += page_stats.errors
-            
+
             logger.info(f"[{sport}] Completed: {page_stats}")
-            
+
         except requests.exceptions.Timeout:
             logger.error(f"[{sport}] Timeout fetching URL {url} after {REQUEST_TIMEOUT}s")
             total_stats.errors += 1
@@ -372,7 +374,7 @@ def get_events() -> Iterator[Event]:
             logger.critical(f"[{sport}] Unexpected error for {url}: {type(e).__name__}: {e}")
             total_stats.errors += 1
             continue
-    
+
     logger.info(f"Scraping complete. Total: {total_stats}")
 
 
@@ -380,19 +382,19 @@ def get_events() -> Iterator[Event]:
 class FutbolEnLaTVSource(EventSource):
     """
     Event source for futbolenlatv.es website.
-    
+
     Scrapes sporting events from multiple sport categories
     including football, basketball, tennis, motorsports, etc.
     """
-    
+
     @property
     def name(self) -> str:
         return "futbolenlatv"
-    
+
     @property
     def description(self) -> str:
         return "Eventos deportivos de futbolenlatv.es"
-    
+
     def get_events(self) -> Iterator[Event]:
         """Fetch and parse events from futbolenlatv.es."""
         return get_events()

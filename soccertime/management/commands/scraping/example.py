@@ -6,9 +6,9 @@ that the multi-source system works correctly without making
 real HTTP requests.
 """
 
-from datetime import datetime, timedelta
-from typing import Iterator
 import logging
+from collections.abc import Iterator
+from datetime import datetime, timedelta
 
 from .base import (
     Event,
@@ -81,37 +81,37 @@ SAMPLE_CHANNELS = ["Canal Test 1", "Canal Test 2", "Deportes HD"]
 class ExampleSource(EventSource):
     """
     Example event source that generates fictional test events.
-    
+
     Useful for testing the scraping architecture without
     making real network requests.
-    
+
     This source is disabled by default to prevent accidental
     insertion of test data into production databases.
     """
-    
+
     @property
     def name(self) -> str:
         return "example"
-    
+
     @property
     def description(self) -> str:
         return "Fuente de ejemplo con eventos ficticios para pruebas"
-    
+
     @property
     def enabled(self) -> bool:
         return False
-    
+
     def get_events(self) -> Iterator[Event]:
         """Generate sample events for testing."""
         logger.info("[Example] Generating test events...")
-        
+
         base_date = datetime.now().replace(hour=20, minute=0, second=0, microsecond=0)
         event_count = 0
-        
+
         # Generate match events
         for i, match_data in enumerate(SAMPLE_MATCHES):
             event_datetime = base_date + timedelta(days=i, hours=i % 3)
-            
+
             event = Event(
                 datetime=event_datetime,
                 sport=match_data["sport"],
@@ -128,11 +128,11 @@ class ExampleSource(EventSource):
             )
             event_count += 1
             yield event
-        
+
         # Generate race events
         for i, race_data in enumerate(SAMPLE_RACES):
             event_datetime = base_date + timedelta(days=i + 3, hours=14)
-            
+
             event = Event(
                 datetime=event_datetime,
                 sport=race_data["sport"],
@@ -146,11 +146,11 @@ class ExampleSource(EventSource):
             )
             event_count += 1
             yield event
-        
+
         # Generate simple events
         for i, event_data in enumerate(SAMPLE_EVENTS):
             event_datetime = base_date + timedelta(days=i + 5, hours=16)
-            
+
             event = Event(
                 datetime=event_datetime,
                 sport=event_data["sport"],
@@ -164,5 +164,5 @@ class ExampleSource(EventSource):
             )
             event_count += 1
             yield event
-        
+
         logger.info(f"[Example] Generated {event_count} test events")

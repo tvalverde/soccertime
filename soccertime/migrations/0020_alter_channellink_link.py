@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0019_alter_channellink_link_alter_channellink_source'),
+        ("soccertime", "0019_alter_channellink_link_alter_channellink_source"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='channellink',
-            name='link',
+            model_name="channellink",
+            name="link",
             field=models.CharField(max_length=255, null=True),
         ),
     ]

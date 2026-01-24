@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0023_event_last_updated_at'),
+        ("soccertime", "0023_event_last_updated_at"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='competition',
-            name='name',
+            model_name="competition",
+            name="name",
             field=models.CharField(db_index=True, max_length=255),
         ),
         migrations.AlterField(
-            model_name='event',
-            name='date',
+            model_name="event",
+            name="date",
             field=models.DateTimeField(db_index=True),
         ),
     ]

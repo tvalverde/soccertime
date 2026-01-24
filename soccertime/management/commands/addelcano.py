@@ -4,7 +4,7 @@ import re
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
 
-from soccertime.models import ChannelLink, Channel
+from soccertime.models import Channel, ChannelLink
 
 logging.basicConfig(level=logging.INFO)
 
@@ -558,39 +558,39 @@ LINKS = {
     ],
 }
 CHANNEL_MAPPER = {
-    'M+ Liga de Campeones': 'M.L. Campeones',
-    'M+ Liga de Campeones 2': 'M.L. Campeones 2',
-    'M+ Liga de Campeones 3': 'M.L. Campeones 3',
-    'M+ Liga de Campeones 4': 'M.L. Campeones 4',
-    'M+ Liga de Campeones 5': 'M.L. Campeones 5',
-    'M+ Liga de Campeones 6': 'M.L. Campeones 6',
-    'M+ Liga de Campeones 7': 'M.L. Campeones 7',
-    'M+ Liga de Campeones 8': 'M.L. Campeones 8',
-    'M+ Liga de Campeones 9': 'M.L. Campeones 9',
-    'M+ Liga de Campeones 10': 'M.L. Campeones 10',
-    'M+ Liga de Campeones 11': 'M.L. Campeones 11',
-    'M+ Liga de Campeones 12': 'M.L. Campeones 12',
-    'M+ Liga de Campeones 13': 'M.L. Campeones 13',
-    'La 1 TVE': 'La1',
-    'M+ Ellas Vamos': '#Ellas',
-    'M+ Vamos': '#Vamos',
-    'M+ Copa del Rey': 'Copa',
-    'LaLiga TV Bar': 'La Liga BAR',
-    'LALIGA TV Hypermotion': 'LaLiga Smartbank',
-    'LALIGA TV Hypermotion 2': 'LaLiga Smartbank 2',
-    'M+ Deportes': 'M. Deportes',
-    'M+ Deportes 2': 'M. Deportes 2',
-    'M+ Deportes 3': 'M. Deportes 3',
-    'M+ Deportes 4': 'M. Deportes 4',
-    'M+ Deportes 5': 'M. Deportes 5',
-    'M+ Deportes 6': 'M. Deportes 6',
-    'M+ Deportes 7': 'M. Deportes 7',
-    'M+ Deportes 8': 'M. Deportes 8',
-    'M+ LaLiga TV': 'M. LaLiga',
-    'M+ LaLiga TV 2': 'M. LaLiga 2',
-    'M+ LaLiga TV 3': 'M. LaLiga 3',
-    'Movistar Plus+': 'M.Plus',
-    'Teledeporte': 'tdp',
+    "M+ Liga de Campeones": "M.L. Campeones",
+    "M+ Liga de Campeones 2": "M.L. Campeones 2",
+    "M+ Liga de Campeones 3": "M.L. Campeones 3",
+    "M+ Liga de Campeones 4": "M.L. Campeones 4",
+    "M+ Liga de Campeones 5": "M.L. Campeones 5",
+    "M+ Liga de Campeones 6": "M.L. Campeones 6",
+    "M+ Liga de Campeones 7": "M.L. Campeones 7",
+    "M+ Liga de Campeones 8": "M.L. Campeones 8",
+    "M+ Liga de Campeones 9": "M.L. Campeones 9",
+    "M+ Liga de Campeones 10": "M.L. Campeones 10",
+    "M+ Liga de Campeones 11": "M.L. Campeones 11",
+    "M+ Liga de Campeones 12": "M.L. Campeones 12",
+    "M+ Liga de Campeones 13": "M.L. Campeones 13",
+    "La 1 TVE": "La1",
+    "M+ Ellas Vamos": "#Ellas",
+    "M+ Vamos": "#Vamos",
+    "M+ Copa del Rey": "Copa",
+    "LaLiga TV Bar": "La Liga BAR",
+    "LALIGA TV Hypermotion": "LaLiga Smartbank",
+    "LALIGA TV Hypermotion 2": "LaLiga Smartbank 2",
+    "M+ Deportes": "M. Deportes",
+    "M+ Deportes 2": "M. Deportes 2",
+    "M+ Deportes 3": "M. Deportes 3",
+    "M+ Deportes 4": "M. Deportes 4",
+    "M+ Deportes 5": "M. Deportes 5",
+    "M+ Deportes 6": "M. Deportes 6",
+    "M+ Deportes 7": "M. Deportes 7",
+    "M+ Deportes 8": "M. Deportes 8",
+    "M+ LaLiga TV": "M. LaLiga",
+    "M+ LaLiga TV 2": "M. LaLiga 2",
+    "M+ LaLiga TV 3": "M. LaLiga 3",
+    "Movistar Plus+": "M.Plus",
+    "Teledeporte": "tdp",
 }
 
 
@@ -603,21 +603,21 @@ class Command(BaseCommand):
             for link in links:
                 try:
                     channel_link = ChannelLink.objects.get(
-                        link=link['url'],
+                        link=link["url"],
                         source=SOURCE,
                     )
-                    channel_link.name=link['name']
-                    channel_link.category=re.sub(r' \d+', '', name)
-                    channel_link.subcategory=None
-                    channel_link.quality=link["quality"]
+                    channel_link.name = link["name"]
+                    channel_link.category = re.sub(r" \d+", "", name)
+                    channel_link.subcategory = None
+                    channel_link.quality = link["quality"]
                     channel_link.save()
                 except ChannelLink.DoesNotExist:
                     channel_link, _ = ChannelLink.objects.update_or_create(
-                        name=link['name'],
-                        category=re.sub(r' \d+', '', name),
+                        name=link["name"],
+                        category=re.sub(r" \d+", "", name),
                         subcategory=None,
                         quality=link["quality"],
-                        link=link['url'],
+                        link=link["url"],
                         source=SOURCE,
                     )
                 if name not in channels_links:

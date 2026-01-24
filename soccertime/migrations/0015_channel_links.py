@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0014_channellink_enabled'),
+        ("soccertime", "0014_channellink_enabled"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='channel',
-            name='links',
-            field=models.ManyToManyField(blank=True, related_name='channels', to='soccertime.channellink'),
+            model_name="channel",
+            name="links",
+            field=models.ManyToManyField(blank=True, related_name="channels", to="soccertime.channellink"),
         ),
     ]

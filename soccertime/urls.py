@@ -14,40 +14,42 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
 import os
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path
 from django.views.generic.base import RedirectView
+
 from soccertime.views import (
-    favorites,
     agenda,
-    channels,
-    team_events,
     channel_events,
-    sport_events,
+    channels,
     competition_events,
     competitions,
+    favorites,
+    sport_events,
+    team_events,
 )
-
 
 urlpatterns = []
 
-if os.environ.get('DJANGO_ADMIN_ENABLED', '').lower() == 'true':
-    urlpatterns.append(path('admin/', admin.site.urls))
+if os.environ.get("DJANGO_ADMIN_ENABLED", "").lower() == "true":
+    urlpatterns.append(path("admin/", admin.site.urls))
 
 urlpatterns += [
-    path('', RedirectView.as_view(url='favorites/')),
-    path('favorites/', favorites, name='favorites'),
-    path('events/', RedirectView.as_view(url='../favorites/')),
-    path('agenda/', agenda, name='agenda'),
-    path('events/team/<str:team>/', team_events, name='team-events'),
-    path('events/channel/<str:channel>/', channel_events, name='channel-events'),
-    path('events/sport/<str:sport>/', sport_events, name='sport-events'),
-    path('events/competition/<str:competition>/', competition_events, name='competition-events'),
-    path('channels/', channels, name='channels'),
-    path('competitions/', competitions, name='competitions'),
+    path("", RedirectView.as_view(url="favorites/")),
+    path("favorites/", favorites, name="favorites"),
+    path("events/", RedirectView.as_view(url="../favorites/")),
+    path("agenda/", agenda, name="agenda"),
+    path("events/team/<str:team>/", team_events, name="team-events"),
+    path("events/channel/<str:channel>/", channel_events, name="channel-events"),
+    path("events/sport/<str:sport>/", sport_events, name="sport-events"),
+    path("events/competition/<str:competition>/", competition_events, name="competition-events"),
+    path("channels/", channels, name="channels"),
+    path("competitions/", competitions, name="competitions"),
 ]
 
 if settings.DEBUG:

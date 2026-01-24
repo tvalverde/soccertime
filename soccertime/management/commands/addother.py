@@ -3,8 +3,7 @@ import logging
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
 
-from soccertime.models import ChannelLink, Channel
-
+from soccertime.models import Channel, ChannelLink
 
 logging.basicConfig(level=logging.INFO)
 
@@ -44,12 +43,12 @@ class Command(BaseCommand):
                     link=link,
                     source=SOURCE,
                 )
-                channel_link.name=link_name
-                channel_link.category="category"
-                channel_link.subcategory=None
-                channel_link.quality=ChannelLink.Quality.ANY
-                channel_link.source=SOURCE
-                channel_link.channel=channel
+                channel_link.name = link_name
+                channel_link.category = "category"
+                channel_link.subcategory = None
+                channel_link.quality = ChannelLink.Quality.ANY
+                channel_link.source = SOURCE
+                channel_link.channel = channel
                 channel_link.save()
             except ChannelLink.DoesNotExist:
                 ChannelLink.objects.update_or_create(

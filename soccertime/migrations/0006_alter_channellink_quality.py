@@ -4,15 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0005_alter_favorite_options_favorite_order_and_more'),
+        ("soccertime", "0005_alter_favorite_options_favorite_order_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='channellink',
-            name='quality',
-            field=models.CharField(choices=[('ANY', 'ANY'), ('UHD', 'UHD'), ('FHD', 'FHD'), ('HD', 'HD'), ('SD', 'SD')], default='ANY', max_length=255),
+            model_name="channellink",
+            name="quality",
+            field=models.CharField(
+                choices=[("ANY", "ANY"), ("UHD", "UHD"), ("FHD", "FHD"), ("HD", "HD"), ("SD", "SD")],
+                default="ANY",
+                max_length=255,
+            ),
         ),
     ]

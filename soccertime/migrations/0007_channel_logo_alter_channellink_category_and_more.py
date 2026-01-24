@@ -4,25 +4,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0006_alter_channellink_quality'),
+        ("soccertime", "0006_alter_channellink_quality"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='channel',
-            name='logo',
-            field=models.ImageField(null=True, upload_to='channel_logos/%Y/%m/%d/'),
+            model_name="channel",
+            name="logo",
+            field=models.ImageField(null=True, upload_to="channel_logos/%Y/%m/%d/"),
         ),
         migrations.AlterField(
-            model_name='channellink',
-            name='category',
+            model_name="channellink",
+            name="category",
             field=models.CharField(blank=True, max_length=255, null=True),
         ),
         migrations.AlterField(
-            model_name='channellink',
-            name='subcategory',
+            model_name="channellink",
+            name="subcategory",
             field=models.CharField(blank=True, max_length=255, null=True),
         ),
     ]

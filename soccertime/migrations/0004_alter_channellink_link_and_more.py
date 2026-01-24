@@ -4,19 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0003_channellink_source'),
+        ("soccertime", "0003_channellink_source"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='channellink',
-            name='link',
+            model_name="channellink",
+            name="link",
             field=models.URLField(max_length=255, null=True),
         ),
         migrations.AlterUniqueTogether(
-            name='channellink',
-            unique_together={('link', 'source')},
+            name="channellink",
+            unique_together={("link", "source")},
         ),
     ]

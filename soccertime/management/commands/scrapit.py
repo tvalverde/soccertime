@@ -1,18 +1,26 @@
 import datetime
 import io
+
+import requests
 from django.core.cache import cache
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
-import requests
+
 from soccertime.models import (
-    Sport,
-    Competition,
-    Team,
-    Match,
     Channel,
+    Competition,
+    Flag,
+    Match,
     Race,
     SimpleEvent,
-    Flag,
+    Sport,
+    Team,
+)
+
+# Import sources to register them
+from .scraping import (
+    example,  # noqa: F401
+    futbolenlatv,  # noqa: F401
 )
 from .scraping.base import (
     Event,
@@ -20,13 +28,10 @@ from .scraping.base import (
     EventSource,
     MatchDetails,
     RaceDetails,
-    get_source,
     get_available_sources,
+    get_source,
     list_source_names,
 )
-# Import sources to register them
-from .scraping import futbolenlatv  # noqa: F401
-from .scraping import example  # noqa: F401
 
 
 class Command(BaseCommand):
@@ -34,33 +39,33 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--source',
+            "--source",
             type=str,
-            default='all',
+            default="all",
             help=f'Event source to use. Available: {list_source_names()} or "all" (default: all)',
         )
         parser.add_argument(
-            '--list-sources',
-            action='store_true',
-            help='List all available event sources and exit',
+            "--list-sources",
+            action="store_true",
+            help="List all available event sources and exit",
         )
         parser.add_argument(
-            '--dry-run',
-            action='store_true',
-            help='Show events without saving to database',
+            "--dry-run",
+            action="store_true",
+            help="Show events without saving to database",
         )
         parser.add_argument(
-            '--include-disabled',
-            action='store_true',
-            help='Include disabled sources when using --source=all or --list-sources',
+            "--include-disabled",
+            action="store_true",
+            help="Include disabled sources when using --source=all or --list-sources",
         )
 
     def handle(self, *args, **options):
-        self.dry_run = options['dry_run']
-        include_disabled = options['include_disabled']
+        self.dry_run = options["dry_run"]
+        include_disabled = options["include_disabled"]
 
         # Handle --list-sources
-        if options['list_sources']:
+        if options["list_sources"]:
             self.stdout.write("Available event sources:")
             for name, source_class in get_available_sources(include_disabled=True).items():
                 source = source_class()
@@ -71,27 +76,20 @@ class Command(BaseCommand):
             return
 
         # Get sources to process
-        source_name = options['source']
-        if source_name == 'all':
+        source_name = options["source"]
+        if source_name == "all":
             sources = [
-                source_class()
-                for source_class in get_available_sources(include_disabled=include_disabled).values()
+                source_class() for source_class in get_available_sources(include_disabled=include_disabled).values()
             ]
         else:
             source_class = get_source(source_name)
             if source_class is None:
-                raise CommandError(
-                    f"Unknown source '{source_name}'. "
-                    f"Available sources: {list_source_names()}"
-                )
+                raise CommandError(f"Unknown source '{source_name}'. Available sources: {list_source_names()}")
             source = source_class()
             # Allow running disabled sources explicitly by name
             if not source.enabled and not include_disabled:
                 self.stdout.write(
-                    self.style.WARNING(
-                        f"Source '{source_name}' is disabled. "
-                        f"Use --include-disabled to run it anyway."
-                    )
+                    self.style.WARNING(f"Source '{source_name}' is disabled. Use --include-disabled to run it anyway.")
                 )
                 return
             sources = [source]
@@ -126,16 +124,16 @@ class Command(BaseCommand):
     def display_event(self, event: Event):
         """Display an event without saving it (for dry-run mode)."""
         details = event.details
-        
+
         if isinstance(details, MatchDetails):
             event_desc = f"{details.local} vs {details.visitor}"
-        elif isinstance(details, (RaceDetails, EventDetails)):
+        elif isinstance(details, RaceDetails | EventDetails):
             event_desc = details.name
         else:
             event_desc = str(details)
-        
+
         channels = ", ".join(event.channels) if event.channels else "N/A"
-        
+
         self.stdout.write(
             f"  [{event.sport}] {event.competition} | "
             f"{event.datetime.strftime('%Y-%m-%d %H:%M')} | "
@@ -154,18 +152,14 @@ class Command(BaseCommand):
         flag = self.get_or_create_flag(agenda_event.competition_crest)
 
         competition, _ = Competition.objects.get_or_create(
-            name=agenda_event.competition,
-            sport=sport,
-            defaults={"flag": flag}
+            name=agenda_event.competition, sport=sport, defaults={"flag": flag}
         )
 
         if not competition.flag and flag:
             competition.flag = flag
             competition.save()
 
-        event_datetime = timezone.make_aware(
-            agenda_event.datetime, timezone=timezone.get_current_timezone()
-        )
+        event_datetime = timezone.make_aware(agenda_event.datetime, timezone=timezone.get_current_timezone())
 
         if isinstance(agenda_event.details, MatchDetails):
             event = self.save_match_event(competition, event_datetime, agenda_event)
@@ -174,7 +168,7 @@ class Command(BaseCommand):
         elif isinstance(agenda_event.details, EventDetails):
             event = self.save_simple_event(competition, event_datetime, agenda_event)
         else:
-            self.stderr.write(f'Unhandled event type: {agenda_event}')
+            self.stderr.write(f"Unhandled event type: {agenda_event}")
             return
 
         if not event:
@@ -187,13 +181,10 @@ class Command(BaseCommand):
         if not flag_url:
             return None
 
-        flag, _ = Flag.objects.get_or_create(
-            name=flag_url,
-            defaults={"display_name": flag_url}
-        )
+        flag, _ = Flag.objects.get_or_create(name=flag_url, defaults={"display_name": flag_url})
 
         if not flag.image or not flag.image.storage.exists(flag.image.name):
-            response = requests.get(flag_url, stream=True)
+            response = requests.get(flag_url, stream=True, timeout=10)
             if response.status_code == 200:
                 flag.save_flag(io.BytesIO(response.content), flag_url)
 
@@ -221,7 +212,7 @@ class Command(BaseCommand):
                 competition=competition,
                 name=event.details.name,
                 date=event_datetime,
-                defaults={"details" : event.details.details},
+                defaults={"details": event.details.details},
             )
             if not created:
                 simple_event.details = event.details.details
@@ -233,7 +224,7 @@ class Command(BaseCommand):
                 date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
                 details=event.details.details,
             )
-            simple_event = simple_events.order_by('-last_updated_at').first()
+            simple_event = simple_events.order_by("-last_updated_at").first()
             simple_events.exclude(id=simple_event.id).delete()
 
         return simple_event
@@ -254,7 +245,7 @@ class Command(BaseCommand):
                 competition=competition,
                 name=event.details.name,
                 date=event_datetime,
-                defaults={"details" : event.details.details},
+                defaults={"details": event.details.details},
             )
             if not created:
                 race.details = event.details.details
@@ -266,7 +257,7 @@ class Command(BaseCommand):
                 date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
                 details=event.details.details,
             )
-            race = races.order_by('-last_updated_at').first()
+            race = races.order_by("-last_updated_at").first()
             races.exclude(id=race.id).delete()
 
         return race
@@ -274,13 +265,13 @@ class Command(BaseCommand):
     def save_match_event(self, competition, event_datetime, event):
         local, _ = Team.objects.get_or_create(name=event.details.local)
         if not local.crest or not local.crest.storage.exists(local.crest.name):
-            response = requests.get(event.details.local_crest, stream=True)
+            response = requests.get(event.details.local_crest, stream=True, timeout=10)
             if response.status_code == 200:
                 local.save_crest(io.BytesIO(response.content), event.details.local_crest)
         visitor, _ = Team.objects.get_or_create(name=event.details.visitor)
 
         if not visitor.crest or not visitor.crest.storage.exists(visitor.crest.name):
-            response = requests.get(event.details.visitor_crest, stream=True)
+            response = requests.get(event.details.visitor_crest, stream=True, timeout=10)
             if response.status_code == 200:
                 visitor.save_crest(io.BytesIO(response.content), event.details.visitor_crest)
 
@@ -300,7 +291,7 @@ class Command(BaseCommand):
                 local=local,
                 visitor=visitor,
                 date=event_datetime,
-                defaults={"details" : event.details.details},
+                defaults={"details": event.details.details},
             )
             if not created:
                 match.details = event.details.details
@@ -312,7 +303,7 @@ class Command(BaseCommand):
                 visitor=visitor,
                 date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
             )
-            match = matches.order_by('-last_updated_at').first()
+            match = matches.order_by("-last_updated_at").first()
             matches.exclude(id=match.id).delete()
 
         return match

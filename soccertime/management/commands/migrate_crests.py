@@ -1,16 +1,17 @@
+import hashlib
 import os
 import shutil
-import hashlib
 
-from django.core.management.base import BaseCommand
 from django.conf import settings
+from django.core.management.base import BaseCommand
+
 from soccertime.models import Team, gen_upload_to
 
 
 def sha1_from_field(fieldfile):
     """Generate a SHA1 hash of the file content and preserve the extension."""
     hash_sha1 = hashlib.sha1()
-    fieldfile.open('rb')
+    fieldfile.open("rb")
     for chunk in fieldfile.chunks():
         hash_sha1.update(chunk)
     fieldfile.close()
@@ -27,12 +28,12 @@ def remove_empty_dirs(path, stop_at):
 
 
 class Command(BaseCommand):
-    help = 'Migrate crest images to new hashed filename and nested directory structure'
+    help = "Migrate crest images to new hashed filename and nested directory structure"
 
     def handle(self, *args, **options):
         media_root = os.path.abspath(settings.MEDIA_ROOT)
 
-        for team in Team.objects.exclude(crest__isnull=True).exclude(crest=''):
+        for team in Team.objects.exclude(crest__isnull=True).exclude(crest=""):
             old_path = team.crest.path
 
             if not os.path.exists(old_path) or os.path.getsize(old_path) == 0:

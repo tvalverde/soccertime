@@ -1,21 +1,22 @@
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Count, Max, Min, Q
-from django.shortcuts import render, get_object_or_404
+from django.db.models import Count, Max, Q
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from soccertime.models import Event, ChannelLink, Team, Channel, Sport, Competition
 
+from soccertime.models import Channel, ChannelLink, Competition, Event, Sport, Team
 
 # --- Helper functions ---
 
+
 def get_favorite_competitions():
     """Get competitions marked as favorites, ordered by preference."""
-    return Competition.objects.filter(favorite__isnull=False).order_by('favorite__order')
+    return Competition.objects.filter(favorite__isnull=False).order_by("favorite__order")
 
 
 def get_favorite_teams():
     """Get teams marked as favorites, ordered by preference."""
-    return Team.objects.filter(favorite__isnull=False).order_by('favorite__order')
+    return Team.objects.filter(favorite__isnull=False).order_by("favorite__order")
 
 
 def get_base_context():
@@ -40,6 +41,7 @@ def add_empty_message(request, queryset, message="No hay eventos a la vista :)",
 
 # --- Views ---
 
+
 def favorites(request):
     queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3)
     add_empty_message(request, queryset, "No hay eventos a la vista :(", messages.WARNING)
@@ -54,22 +56,24 @@ def favorites(request):
 
 
 def agenda(request):
-    max_date_result = Event.objects.aggregate(Max('date'))['date__max']
-    max_date = max_date_result.strftime('%Y-%m-%d') if max_date_result else None
+    max_date_result = Event.objects.aggregate(Max("date"))["date__max"]
+    max_date = max_date_result.strftime("%Y-%m-%d") if max_date_result else None
 
-    if request.GET.get('events-date'):
-        queryset = Event.objects.for_date(request.GET.get('events-date'))
+    if request.GET.get("events-date"):
+        queryset = Event.objects.for_date(request.GET.get("events-date"))
     else:
         queryset = Event.objects.today_onwards()
 
-    queryset = queryset.search(request.GET.get('search')).order_by('date')
+    queryset = queryset.search(request.GET.get("search")).order_by("date")
     add_empty_message(request, queryset)
 
     context = get_base_context()
-    context.update({
-        "events": paginate_queryset(queryset, request),
-        "max_date": max_date,
-    })
+    context.update(
+        {
+            "events": paginate_queryset(queryset, request),
+            "max_date": max_date,
+        }
+    )
     return render(request, "soccertime/agenda.html", context)
 
 
@@ -83,16 +87,14 @@ def team_events(request, team):
 
     # Obtener IDs de partidos futuros del equipo
     from soccertime.models import Match
-    future_matches = Match.objects.filter(
-        Q(local=team_obj) | Q(visitor=team_obj),
-        date__gte=now
-    )
+
+    future_matches = Match.objects.filter(Q(local=team_obj) | Q(visitor=team_obj), date__gte=now)
 
     # Obtener equipos rivales con la fecha del próximo enfrentamiento
     opponent_ids = set()
     opponent_dates = {}
 
-    for match in future_matches.order_by('date'):
+    for match in future_matches.order_by("date"):
         if match.local == team_obj:
             opponent = match.visitor
         else:
@@ -103,10 +105,7 @@ def team_events(request, team):
             opponent_dates[opponent.id] = match.date
 
     # Ordenar equipos por fecha de enfrentamiento
-    competition_teams = sorted(
-        Team.objects.filter(id__in=opponent_ids),
-        key=lambda t: opponent_dates.get(t.id)
-    )
+    competition_teams = sorted(Team.objects.filter(id__in=opponent_ids), key=lambda t: opponent_dates.get(t.id))
 
     return render(
         request,
@@ -161,9 +160,10 @@ def competition_events(request, competition):
             "events_title": competition_obj.name,
             "competitions": get_favorite_competitions(),
             "competition_teams": Team.objects.filter(
-                Q(home_matches__competition=competition_obj) |
-                Q(away_matches__competition=competition_obj)
-            ).order_by('name').distinct(),
+                Q(home_matches__competition=competition_obj) | Q(away_matches__competition=competition_obj)
+            )
+            .order_by("name")
+            .distinct(),
         },
     )
 
@@ -179,9 +179,7 @@ def channels(request):
 
 
 def competitions(request):
-    queryset = Sport.objects.with_events().annotate(
-        count=Count('competitions')
-    ).order_by('-count', 'name').distinct()
+    queryset = Sport.objects.with_events().annotate(count=Count("competitions")).order_by("-count", "name").distinct()
 
     return render(
         request,

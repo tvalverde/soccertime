@@ -4,23 +4,22 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0017_remove_channellink_channel'),
+        ("soccertime", "0017_remove_channellink_channel"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='channel',
-            options={'ordering': ['name']},
+            name="channel",
+            options={"ordering": ["name"]},
         ),
         migrations.AlterModelOptions(
-            name='channellink',
-            options={'ordering': ['-id'], 'verbose_name_plural': 'channels links'},
+            name="channellink",
+            options={"ordering": ["-id"], "verbose_name_plural": "channels links"},
         ),
         migrations.AddField(
-            model_name='channellink',
-            name='verified',
+            model_name="channellink",
+            name="verified",
             field=models.BooleanField(default=False),
         ),
     ]

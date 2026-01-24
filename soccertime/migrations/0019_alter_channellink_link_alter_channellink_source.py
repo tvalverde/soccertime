@@ -5,20 +5,23 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0018_alter_channel_options_alter_channellink_options_and_more'),
+        ("soccertime", "0018_alter_channel_options_alter_channellink_options_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='channellink',
-            name='link',
-            field=models.URLField(max_length=255, null=True, validators=[django.core.validators.URLValidator(schemes=['http', 'https', 'acestream'])]),
+            model_name="channellink",
+            name="link",
+            field=models.URLField(
+                max_length=255,
+                null=True,
+                validators=[django.core.validators.URLValidator(schemes=["http", "https", "acestream"])],
+            ),
         ),
         migrations.AlterField(
-            model_name='channellink',
-            name='source',
+            model_name="channellink",
+            name="source",
             field=models.CharField(max_length=255, null=True),
         ),
     ]

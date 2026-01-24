@@ -4,14 +4,13 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0016_migrate_channel_links'),
+        ("soccertime", "0016_migrate_channel_links"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='channellink',
-            name='channel',
+            model_name="channellink",
+            name="channel",
         ),
     ]

@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0002_alter_competition_name_alter_race_name_and_more'),
+        ("soccertime", "0002_alter_competition_name_alter_race_name_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='channellink',
-            name='source',
+            model_name="channellink",
+            name="source",
             field=models.URLField(max_length=255, null=True),
         ),
     ]

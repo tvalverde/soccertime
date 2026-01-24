@@ -1,10 +1,7 @@
-from collections import namedtuple
 import re
+from collections import namedtuple
 
-from django.core.cache import cache
-from django.core.management.base import BaseCommand
-
-from soccertime.models import ChannelLink, Channel
+from soccertime.models import Channel, ChannelLink
 
 ChannelMatch = namedtuple(
     "ChannelMatch",
@@ -25,7 +22,7 @@ def get_quality(name):
 
 def get_category(name):
     match = re.match(r"^(.*?)(?=\d|FHD|\(|HD)", name)
-    return match.group(1) if match else 'category'
+    return match.group(1) if match else "category"
 
 
 def simple_match(match, name, channel):
@@ -69,11 +66,7 @@ def match_movistar_deportes(name):
     number = match.group(1)
     try:
         return ChannelMatch(
-            Channel.objects.get(
-                name__startswith=(
-                    f"M+ Deportes {number} (" if number else f"M+ Deportes ("
-                )
-            ),
+            Channel.objects.get(name__startswith=(f"M+ Deportes {number} (" if number else "M+ Deportes (")),
             get_quality(name),
             get_category(name),
         )
@@ -82,9 +75,7 @@ def match_movistar_deportes(name):
 
 
 def match_dazn(name):
-    match = re.search(
-        r"DAZN\s*(\d+)\*?(?: FHD)?(?: \(SAT\))?(?: \(\*\))?$", name, re.IGNORECASE
-    )
+    match = re.search(r"DAZN\s*(\d+)\*?(?: FHD)?(?: \(SAT\))?(?: \(\*\))?$", name, re.IGNORECASE)
     if not match:
         match = re.search(r"Dazn (\d) (720|1080|FHD|HD)$", name, re.IGNORECASE)
         if not match:
@@ -92,9 +83,7 @@ def match_dazn(name):
     number = match.group(1)
     try:
         return ChannelMatch(
-            Channel.objects.get(
-                name__startswith=(f"DAZN {number} (" if number else f"DAZN (")
-            ),
+            Channel.objects.get(name__startswith=(f"DAZN {number} (" if number else "DAZN (")),
             get_quality(name),
             get_category(name),
         )
@@ -118,13 +107,9 @@ def match_dazn_bar(name):
 
 
 def match_vamos(name):
-    if (
-        "vamos" in name.lower()
-        and "bar" not in name.lower()
-        and "ellas" not in name.lower()
-    ):
+    if "vamos" in name.lower() and "bar" not in name.lower() and "ellas" not in name.lower():
         return ChannelMatch(
-            Channel.objects.get(name__startswith=f"M+ Vamos ("),
+            Channel.objects.get(name__startswith="M+ Vamos ("),
             get_quality(name),
             get_category(name),
         )
@@ -132,13 +117,9 @@ def match_vamos(name):
 
 
 def match_vamos_ellas(name):
-    if (
-        "vamos" in name.lower()
-        and "bar" not in name.lower()
-        and "ellas" in name.lower()
-    ):
+    if "vamos" in name.lower() and "bar" not in name.lower() and "ellas" in name.lower():
         return ChannelMatch(
-            Channel.objects.get(name__startswith=f"M+ Ellas Vamos ("),
+            Channel.objects.get(name__startswith="M+ Ellas Vamos ("),
             get_quality(name),
             get_category(name),
         )
@@ -203,11 +184,7 @@ def match_m_laliga(name):
         number = number.strip()
     try:
         return ChannelMatch(
-            Channel.objects.get(
-                name__startswith=(
-                    f"M+ LaLiga TV {number} (" if number else "M+ LaLiga TV ("
-                )
-            ),
+            Channel.objects.get(name__startswith=(f"M+ LaLiga TV {number} (" if number else "M+ LaLiga TV (")),
             get_quality(name),
             get_category(name),
         )
@@ -216,9 +193,7 @@ def match_m_laliga(name):
 
 
 def match_dazn_laliga(name):
-    match = re.search(
-        r"DAZN LaLiga(?: (\d) )?(?: (1080 MultiAudio|720))?", name, re.IGNORECASE
-    )
+    match = re.search(r"DAZN LaLiga(?: (\d) )?(?: (1080 MultiAudio|720))?", name, re.IGNORECASE)
     if not match:
         return ChannelMatch()
     number = match.group(1)
@@ -226,11 +201,7 @@ def match_dazn_laliga(name):
         number = number.strip()
     try:
         return ChannelMatch(
-            Channel.objects.get(
-                name__startswith=(
-                    f"DAZN LaLiga {number} (" if number else "DAZN LaLiga ("
-                )
-            ),
+            Channel.objects.get(name__startswith=(f"DAZN LaLiga {number} (" if number else "DAZN LaLiga (")),
             get_quality(name),
             get_category(name),
         )
@@ -239,9 +210,7 @@ def match_dazn_laliga(name):
 
 
 def match_hypermotion(name):
-    match = re.search(
-        r"LaLiga HYPERMOTION(?: (\d) )?(?:(1080|720))?", name, re.IGNORECASE
-    )
+    match = re.search(r"LaLiga HYPERMOTION(?: (\d) )?(?:(1080|720))?", name, re.IGNORECASE)
     if not match:
         match = re.search(r"LaLiga TV Hypermotion(?: (\d))?", name, re.IGNORECASE)
         if not match:
@@ -252,11 +221,7 @@ def match_hypermotion(name):
     try:
         return ChannelMatch(
             Channel.objects.get(
-                name__startswith=(
-                    f"LALIGA TV Hypermotion {number} ("
-                    if number
-                    else "LALIGA TV Hypermotion ("
-                )
+                name__startswith=(f"LALIGA TV Hypermotion {number} (" if number else "LALIGA TV Hypermotion (")
             ),
             get_quality(name),
             get_category(name),
@@ -277,11 +242,7 @@ def match_liga_campeones(name):
     try:
         return ChannelMatch(
             Channel.objects.get(
-                name__startswith=(
-                    f"M+ Liga de Campeones {number} ("
-                    if number
-                    else "M+ Liga de Campeones ("
-                )
+                name__startswith=(f"M+ Liga de Campeones {number} (" if number else "M+ Liga de Campeones (")
             ),
             get_quality(name),
             get_category(name),
@@ -302,19 +263,13 @@ def match_laliga_tv_bar(name):
 
 
 def match_movistar_plus(name):
-    match = re.search(
-        r"M(?:OVISTAR|\+) PLUS(?: (\d+))?(?: (FHD))?", name, re.IGNORECASE
-    )
+    match = re.search(r"M(?:OVISTAR|\+) PLUS(?: (\d+))?(?: (FHD))?", name, re.IGNORECASE)
     if not match:
         return ChannelMatch()
     number = match.group(1)
     try:
         return ChannelMatch(
-            Channel.objects.get(
-                name__startswith=(
-                    f"Movistar Plus+ {number} (" if number else "Movistar Plus+ ("
-                )
-            ),
+            Channel.objects.get(name__startswith=(f"Movistar Plus+ {number} (" if number else "Movistar Plus+ (")),
             get_quality(name),
             get_category(name),
         )
@@ -328,16 +283,16 @@ def match_motogp(name):
 
 def match_catchall(name):
     for channel_match in [
-            direct_match(name, "TELECINCO FHD", "Telecinco"),
-            direct_match(name, 'LA 1 FHD', 'La 1 TVE'),
-            direct_match(name, 'LA 2 FHD', 'La 2 TVE'),
-            direct_match(name, 'NBA TV', 'NBA League Pass'),
-            direct_match(name, 'NBA NETWORK', 'NBA League Pass'),
-            direct_match(name, 'GOL PLAY', 'GOL PLAY (Síguelo en directo)'),
-            direct_match(name, 'Gol Play FHD', 'GOL PLAY (Síguelo en directo)'),
-            direct_match(name, 'GOL PLAY', 'GolTV Play'),
-            direct_match(name, 'Gol Play FHD', 'GolTV Play'),
-            direct_match(name, 'Teledeporte FHD', 'Teledeporte')
+        direct_match(name, "TELECINCO FHD", "Telecinco"),
+        direct_match(name, "LA 1 FHD", "La 1 TVE"),
+        direct_match(name, "LA 2 FHD", "La 2 TVE"),
+        direct_match(name, "NBA TV", "NBA League Pass"),
+        direct_match(name, "NBA NETWORK", "NBA League Pass"),
+        direct_match(name, "GOL PLAY", "GOL PLAY (Síguelo en directo)"),
+        direct_match(name, "Gol Play FHD", "GOL PLAY (Síguelo en directo)"),
+        direct_match(name, "GOL PLAY", "GolTV Play"),
+        direct_match(name, "Gol Play FHD", "GolTV Play"),
+        direct_match(name, "Teledeporte FHD", "Teledeporte"),
     ]:
         if channel_match.channel:
             return channel_match

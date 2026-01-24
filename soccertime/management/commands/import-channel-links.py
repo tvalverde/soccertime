@@ -5,12 +5,8 @@ from bs4 import BeautifulSoup
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
 
-from soccertime.models import ChannelLink, Channel
-from soccertime.management.commands.channel_matchers import (
-    CHANNEL_MATCHERS,
-    get_quality,
-    get_category
-)
+from soccertime.management.commands.channel_matchers import CHANNEL_MATCHERS, get_category, get_quality
+from soccertime.models import ChannelLink
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -27,9 +23,7 @@ def save_channel_link(
     try:
         channel_link = ChannelLink.objects.get(link=link)
         if channel_link and channel_link.source != source:
-            logging.debug(
-                f"Link {channel_link.link} already found with source {channel_link.source}"
-            )
+            logging.debug(f"Link {channel_link.link} already found with source {channel_link.source}")
             return
         channel_link.name = name
         channel_link.category = category
@@ -53,7 +47,7 @@ def save_channel_link(
 
 def get_zeronet():
     links = {}
-    with open("./zeronet.txt", "r", encoding="utf-8") as fp:
+    with open("./zeronet.txt", encoding="utf-8") as fp:
         contents = fp.read()
     name = None
     for line in contents.split("\n"):
@@ -68,7 +62,7 @@ def get_zeronet():
 
 def get_liart():
     links = {}
-    with open("./eventos-liart.html", "r", encoding="utf-8") as fp:
+    with open("./eventos-liart.html", encoding="utf-8") as fp:
         html = fp.read()
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table")
@@ -85,7 +79,7 @@ def get_liart():
 
 def get_elcano():
     playlist = []
-    with open("./lista-ace.m3u", 'r', encoding='utf-8') as file:
+    with open("./lista-ace.m3u", encoding="utf-8") as file:
         lines = [line.strip() for line in file if line.strip()]
 
     if not lines or not lines[0].startswith("#EXTM3U"):
@@ -94,12 +88,12 @@ def get_elcano():
     track_info = None
     for line in lines[1:]:
         if line.startswith("#EXTINF:"):
-            match = re.search(r'#EXTINF:(?P<duration>-?\d+)(?:\s+(?P<attrs>[^,]+))?,(?P<title>.+)$', line)
+            match = re.search(r"#EXTINF:(?P<duration>-?\d+)(?:\s+(?P<attrs>[^,]+))?,(?P<title>.+)$", line)
             if match:
                 attrs = match.group("attrs") or ""
                 track_info = {
                     "duration": match.group("duration"),
-                    "title": match.group("title").strip().split(' -->')[0],
+                    "title": match.group("title").strip().split(" -->")[0],
                     "file": None,
                     "tvg-id": None,
                     "tvg-logo": None,
@@ -117,10 +111,10 @@ def get_elcano():
 
     links = {}
     for p in playlist:
-        name = p['title']
+        name = p["title"]
         if name not in links:
             links[name] = []
-        links[name].append(p['file'])
+        links[name].append(p["file"])
     return links
 
 
@@ -128,9 +122,7 @@ class Command(BaseCommand):
     help = "Add channels' links"
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--source", type=str, required=True, choices=["ZERONET", "LIART", "ELCANO"]
-        )
+        parser.add_argument("--source", type=str, required=True, choices=["ZERONET", "LIART", "ELCANO"])
 
     def handle(self, *args, **options):
         if options["source"] == "ELCANO":
@@ -158,12 +150,5 @@ class Command(BaseCommand):
                 break
             else:
                 for link in links:
-                    save_channel_link(
-                        name,
-                        link,
-                        None,
-                        options["source"],
-                        get_quality(name),
-                        get_category(name)
-                    )
+                    save_channel_link(name, link, None, options["source"], get_quality(name), get_category(name))
         cache.clear()

@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0013_competition_flag'),
+        ("soccertime", "0013_competition_flag"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='channellink',
-            name='enabled',
+            model_name="channellink",
+            name="enabled",
             field=models.BooleanField(default=True),
         ),
     ]

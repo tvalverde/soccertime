@@ -1,6 +1,6 @@
 # Soccertime
 
-Django application for tracking football results and statistics.
+Django application for aggregating and displaying sports events (football, cycling, tennis, motorsports, and more) with TV channel information.
 
 ## Requirements
 
@@ -16,15 +16,21 @@ soccertime/
 ├── compose.production.yaml   # Docker Compose for production
 ├── Dockerfile                # Application Docker image
 ├── Makefile                  # Deployment and management commands
+├── pyproject.toml            # Python project config (pytest, ruff, coverage)
+├── requirements.txt          # Python dependencies (pinned versions)
 ├── nginx.conf                # Nginx configuration for production
 ├── .env.example              # Environment variables template
 ├── .env                      # Environment variables (development)
 ├── .env.production           # Environment variables (production)
-├── soccertime/               # Django source code
+├── soccertime/               # Django application
+│   ├── models.py             # Data models (Event, Match, Race, etc.)
+│   ├── views.py              # View functions
+│   ├── admin.py              # Django admin configuration
+│   ├── tests/                # Test suite (pytest)
+│   └── management/commands/  # Custom management commands
 ├── templates/                # HTML templates
-├── media/                    # Media files (badges, flags)
-├── db/                       # SQLite database
-└── soccertime_data_cache.sqlite  # HTTP requests cache
+├── media/                    # Media files (crests, flags)
+└── db/                       # SQLite database
 ```
 
 ## Local development
@@ -82,8 +88,60 @@ docker compose exec web python -m manage collectstatic --noinput
 # Run data scraper
 docker compose exec web python -m manage scrapit
 
+# Run scraper (dry run - show events without saving)
+docker compose exec web python -m manage scrapit --dry-run
+
+# List available scraping sources
+docker compose exec web python -m manage scrapit --list-sources
+
 # Stop services
 docker compose down
+```
+
+### Testing
+
+The project uses pytest with pytest-django for testing.
+
+```bash
+# Run all tests
+docker compose exec web pytest
+
+# Run tests with verbose output
+docker compose exec web pytest -v
+
+# Run tests with coverage report
+docker compose exec web pytest --cov --cov-report=term-missing
+
+# Run tests with HTML coverage report
+docker compose exec web pytest --cov --cov-report=html
+# Then open htmlcov/index.html in your browser
+
+# Run specific test file
+docker compose exec web pytest soccertime/tests/test_models.py
+
+# Run specific test class
+docker compose exec web pytest soccertime/tests/test_models.py::TestMatch
+
+# Run tests excluding integration tests (faster)
+docker compose exec web pytest -m "not integration"
+```
+
+### Linting & Formatting
+
+The project uses [Ruff](https://docs.astral.sh/ruff/) for linting and code formatting.
+
+```bash
+# Check for linting errors
+docker compose exec web ruff check soccertime/
+
+# Fix auto-fixable linting errors
+docker compose exec web ruff check soccertime/ --fix
+
+# Format code
+docker compose exec web ruff format soccertime/
+
+# Check formatting without applying changes
+docker compose exec web ruff format soccertime/ --check
 ```
 
 ## Production deployment
@@ -239,11 +297,18 @@ See `.env.example` for the complete list of available variables.
 
 | Variable | Development | Production | Description |
 |----------|-------------|------------|-------------|
+| `DJANGO_SECRET_KEY` | (auto-generated) | **required** | Secret key for cryptographic signing |
 | `DJANGO_DEBUG` | `true` | `false` | Debug mode |
 | `DJANGO_CACHE` | `false` | `true` | Enable template caching |
 | `DJANGO_ALLOWED_HOSTS` | `localhost` | `*` | Allowed hosts |
 | `DJANGO_STATIC_URL` | `/static/` | `/soccertime/static/` | Static files URL |
 | `DJANGO_FORCE_SCRIPT_NAME` | - | `/soccertime` | URL prefix |
+
+### Generating a secret key
+
+```bash
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
 
 ## License
 

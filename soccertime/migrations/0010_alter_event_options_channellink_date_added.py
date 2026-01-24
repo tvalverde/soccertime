@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0009_simpleevent'),
+        ("soccertime", "0009_simpleevent"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='event',
-            options={'ordering': ['date__date', 'date', 'competition__sport', 'competition']},
+            name="event",
+            options={"ordering": ["date__date", "date", "competition__sport", "competition"]},
         ),
         migrations.AddField(
-            model_name='channellink',
-            name='date_added',
-            field=models.DateTimeField(default='1970-01-01 00:00:00'),
+            model_name="channellink",
+            name="date_added",
+            field=models.DateTimeField(default="1970-01-01 00:00:00"),
             preserve_default=False,
         ),
     ]

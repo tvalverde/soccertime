@@ -4,19 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0020_alter_channellink_link'),
+        ("soccertime", "0020_alter_channellink_link"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='channellink',
-            options={'ordering': ['-verified', '-id'], 'verbose_name_plural': 'channels links'},
+            name="channellink",
+            options={"ordering": ["-verified", "-id"], "verbose_name_plural": "channels links"},
         ),
         migrations.AddField(
-            model_name='channellink',
-            name='date_updated',
+            model_name="channellink",
+            name="date_updated",
             field=models.DateTimeField(auto_now=True),
         ),
     ]

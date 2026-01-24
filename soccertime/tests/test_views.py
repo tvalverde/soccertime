@@ -1,0 +1,310 @@
+"""
+Tests for soccertime views.
+
+Tests cover:
+- HTTP response codes
+- Template rendering
+- Context data
+- Filtering and pagination
+- Empty states
+"""
+
+import datetime
+
+import pytest
+from django.test import Client
+from django.urls import reverse
+from django.utils import timezone
+
+from soccertime.models import Match, Team
+
+
+@pytest.fixture
+def client():
+    """Django test client."""
+    return Client()
+
+
+def get_event_pks(context_events):
+    """Extract pks from context events (handles both querysets and Page objects)."""
+    if hasattr(context_events, "object_list"):
+        # It's a Page object
+        return [e.pk for e in context_events.object_list]
+    else:
+        # It's a queryset
+        return list(context_events.values_list("pk", flat=True))
+
+
+class TestFavoritesView:
+    """Tests for favorites view."""
+
+    def test_renders_successfully(self, client, db):
+        """Should return 200 status code."""
+        response = client.get(reverse("favorites"))
+        assert response.status_code == 200
+
+    def test_uses_correct_template(self, client, db):
+        """Should use agenda.html template."""
+        response = client.get(reverse("favorites"))
+        assert "soccertime/agenda.html" in [t.name for t in response.templates]
+
+    def test_shows_favorite_events(self, client, match, favorite_team):
+        """Should display events with favorite teams."""
+        response = client.get(reverse("favorites"))
+        assert match.pk in get_event_pks(response.context["events"])
+
+    def test_empty_state_message(self, client, db):
+        """Should show message when no favorite events."""
+        response = client.get(reverse("favorites"))
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert "No hay eventos" in str(messages[0])
+
+    def test_context_has_competitions(self, client, favorite_competition):
+        """Should have favorite competitions in context."""
+        response = client.get(reverse("favorites"))
+        assert "competitions" in response.context
+
+
+class TestAgendaView:
+    """Tests for agenda view."""
+
+    def test_renders_successfully(self, client, db):
+        """Should return 200 status code."""
+        response = client.get(reverse("agenda"))
+        assert response.status_code == 200
+
+    def test_uses_correct_template(self, client, db):
+        """Should use agenda.html template."""
+        response = client.get(reverse("agenda"))
+        assert "soccertime/agenda.html" in [t.name for t in response.templates]
+
+    def test_shows_upcoming_events(self, client, match):
+        """Should display upcoming events."""
+        response = client.get(reverse("agenda"))
+        assert match.pk in get_event_pks(response.context["events"])
+
+    def test_excludes_past_events(self, client, match_past):
+        """Should not display past events by default."""
+        response = client.get(reverse("agenda"))
+        # match_past is from yesterday, should be excluded from today_onwards
+        assert match_past.pk not in get_event_pks(response.context["events"])
+
+    def test_filter_by_date(self, client, db, competition, team_home, team_away):
+        """Should filter events by date parameter."""
+        future_date = timezone.now().date() + datetime.timedelta(days=10)
+        match = Match.objects.create(
+            competition=competition,
+            local=team_home,
+            visitor=team_away,
+            date=timezone.make_aware(datetime.datetime.combine(future_date, datetime.time(20, 0))),
+        )
+
+        response = client.get(reverse("agenda"), {"events-date": str(future_date)})
+        assert match.pk in get_event_pks(response.context["events"])
+
+    def test_search_filter(self, client, match):
+        """Should filter events by search query."""
+        response = client.get(reverse("agenda"), {"search": "Real Madrid"})
+        assert match.pk in get_event_pks(response.context["events"])
+
+    def test_search_no_results(self, client, match):
+        """Should return empty when search has no matches."""
+        response = client.get(reverse("agenda"), {"search": "Nonexistent XYZ"})
+        assert match.pk not in get_event_pks(response.context["events"])
+
+    def test_pagination(self, client, db, competition, team_home, team_away):
+        """Should paginate results."""
+        # Create 30 matches to exceed default page size (25)
+        teams = []
+        for i in range(30):
+            team = Team.objects.create(name=f"Team {i}")
+            teams.append(team)
+
+        for i in range(30):
+            Match.objects.create(
+                competition=competition,
+                local=team_home,
+                visitor=teams[i],
+                date=timezone.now() + datetime.timedelta(hours=i + 1),
+            )
+
+        response = client.get(reverse("agenda"))
+        assert response.context["events"].paginator.num_pages > 1
+
+    def test_context_has_max_date(self, client, match):
+        """Should have max_date in context."""
+        response = client.get(reverse("agenda"))
+        assert "max_date" in response.context
+
+    def test_context_has_teams(self, client, db):
+        """Should have teams in context."""
+        response = client.get(reverse("agenda"))
+        assert "teams" in response.context
+
+
+class TestTeamEventsView:
+    """Tests for team_events view."""
+
+    def test_renders_successfully(self, client, team_home):
+        """Should return 200 status code."""
+        response = client.get(reverse("team-events", args=[team_home.pk]))
+        assert response.status_code == 200
+
+    def test_404_for_nonexistent_team(self, client, db):
+        """Should return 404 for nonexistent team."""
+        response = client.get(reverse("team-events", args=[99999]))
+        assert response.status_code == 404
+
+    def test_shows_team_events(self, client, match, team_home):
+        """Should display events for the team."""
+        response = client.get(reverse("team-events", args=[team_home.pk]))
+        assert match.pk in get_event_pks(response.context["events"])
+
+    def test_context_has_events_title(self, client, match, team_home):
+        """Should have team name as events_title."""
+        response = client.get(reverse("team-events", args=[team_home.pk]))
+        assert response.context["events_title"] == team_home.name
+
+    def test_context_has_competition_teams(self, client, match, team_home):
+        """Should have opponent teams in context."""
+        response = client.get(reverse("team-events", args=[team_home.pk]))
+        assert "competition_teams" in response.context
+
+
+class TestChannelEventsView:
+    """Tests for channel_events view."""
+
+    def test_renders_successfully(self, client, channel):
+        """Should return 200 status code."""
+        response = client.get(reverse("channel-events", args=[channel.pk]))
+        assert response.status_code == 200
+
+    def test_404_for_nonexistent_channel(self, client, db):
+        """Should return 404 for nonexistent channel."""
+        response = client.get(reverse("channel-events", args=[99999]))
+        assert response.status_code == 404
+
+    def test_shows_channel_events(self, client, match_with_channels, channel):
+        """Should display events for the channel."""
+        response = client.get(reverse("channel-events", args=[channel.pk]))
+        assert match_with_channels.pk in get_event_pks(response.context["events"])
+
+    def test_context_has_events_title(self, client, channel):
+        """Should have channel name as events_title."""
+        response = client.get(reverse("channel-events", args=[channel.pk]))
+        assert response.context["events_title"] == channel.name
+
+
+class TestSportEventsView:
+    """Tests for sport_events view."""
+
+    def test_renders_successfully(self, client, sport):
+        """Should return 200 status code."""
+        response = client.get(reverse("sport-events", args=[sport.pk]))
+        assert response.status_code == 200
+
+    def test_404_for_nonexistent_sport(self, client, db):
+        """Should return 404 for nonexistent sport."""
+        response = client.get(reverse("sport-events", args=[99999]))
+        assert response.status_code == 404
+
+    def test_shows_sport_events(self, client, match, sport):
+        """Should display events for the sport."""
+        response = client.get(reverse("sport-events", args=[sport.pk]))
+        assert match.pk in get_event_pks(response.context["events"])
+
+    def test_excludes_other_sports(self, client, race, sport):
+        """Should not display events from other sports."""
+        response = client.get(reverse("sport-events", args=[sport.pk]))
+        assert race.pk not in get_event_pks(response.context["events"])
+
+
+class TestCompetitionEventsView:
+    """Tests for competition_events view."""
+
+    def test_renders_successfully(self, client, competition):
+        """Should return 200 status code."""
+        response = client.get(reverse("competition-events", args=[competition.pk]))
+        assert response.status_code == 200
+
+    def test_404_for_nonexistent_competition(self, client, db):
+        """Should return 404 for nonexistent competition."""
+        response = client.get(reverse("competition-events", args=[99999]))
+        assert response.status_code == 404
+
+    def test_shows_competition_events(self, client, match, competition):
+        """Should display events for the competition."""
+        response = client.get(reverse("competition-events", args=[competition.pk]))
+        assert match.pk in get_event_pks(response.context["events"])
+
+    def test_context_has_competition_teams(self, client, match, competition):
+        """Should have teams in the competition."""
+        response = client.get(reverse("competition-events", args=[competition.pk]))
+        assert "competition_teams" in response.context
+
+
+class TestChannelsView:
+    """Tests for channels view."""
+
+    def test_renders_successfully(self, client, db):
+        """Should return 200 status code."""
+        response = client.get(reverse("channels"))
+        assert response.status_code == 200
+
+    def test_uses_correct_template(self, client, db):
+        """Should use channels.html template."""
+        response = client.get(reverse("channels"))
+        assert "soccertime/channels.html" in [t.name for t in response.templates]
+
+    def test_shows_channel_links(self, client, channel_link):
+        """Should display channel links."""
+        response = client.get(reverse("channels"))
+        assert channel_link in response.context["channels_links"]
+
+    def test_empty_state_message(self, client, db):
+        """Should show message when no channels."""
+        response = client.get(reverse("channels"))
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert "No hay canales" in str(messages[0])
+
+
+class TestCompetitionsView:
+    """Tests for competitions view."""
+
+    def test_renders_successfully(self, client, db):
+        """Should return 200 status code."""
+        response = client.get(reverse("competitions"))
+        assert response.status_code == 200
+
+    def test_uses_correct_template(self, client, db):
+        """Should use competitions.html template."""
+        response = client.get(reverse("competitions"))
+        assert "soccertime/competitions.html" in [t.name for t in response.templates]
+
+    def test_shows_sports_with_events(self, client, match, sport):
+        """Should display sports that have events."""
+        response = client.get(reverse("competitions"))
+        assert sport in response.context["sports"]
+
+    def test_excludes_sports_without_events(self, client, sport_tennis):
+        """Should not display sports without events."""
+        response = client.get(reverse("competitions"))
+        assert sport_tennis not in response.context["sports"]
+
+
+class TestRedirects:
+    """Tests for redirect URLs."""
+
+    def test_root_redirects_to_favorites(self, client, db):
+        """Root URL should redirect to favorites."""
+        response = client.get("/")
+        assert response.status_code == 302
+        assert response.url == "favorites/"
+
+    def test_events_redirects_to_favorites(self, client, db):
+        """Events URL should redirect to favorites."""
+        response = client.get("/events/")
+        assert response.status_code == 302
+        assert "favorites" in response.url

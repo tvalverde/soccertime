@@ -1,11 +1,12 @@
 from django.db import migrations
 
+
 def forwards(apps, schema_editor):
-    Channel = apps.get_model("soccertime", "Channel")
     ChannelLink = apps.get_model("soccertime", "ChannelLink")
 
     for link in ChannelLink.objects.exclude(channel__isnull=True):
         link.channel.links.add(link)
+
 
 def backwards(apps, schema_editor):
     ChannelLink = apps.get_model("soccertime", "ChannelLink")
@@ -16,8 +17,8 @@ def backwards(apps, schema_editor):
             link.channel = channels.first()
             link.save()
 
-class Migration(migrations.Migration):
 
+class Migration(migrations.Migration):
     dependencies = [
         ("soccertime", "0015_channel_links"),
     ]

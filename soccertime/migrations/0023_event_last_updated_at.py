@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0022_alter_channellink_options_alter_channellink_link'),
+        ("soccertime", "0022_alter_channellink_options_alter_channellink_link"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='event',
-            name='last_updated_at',
+            model_name="event",
+            name="last_updated_at",
             field=models.DateTimeField(auto_now=True),
         ),
     ]

@@ -4,30 +4,29 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0001_initial'),
+        ("soccertime", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='competition',
-            name='name',
+            model_name="competition",
+            name="name",
             field=models.CharField(max_length=255),
         ),
         migrations.AlterField(
-            model_name='race',
-            name='name',
+            model_name="race",
+            name="name",
             field=models.CharField(max_length=255),
         ),
         migrations.AlterField(
-            model_name='sport',
-            name='name',
+            model_name="sport",
+            name="name",
             field=models.CharField(max_length=255, unique=True),
         ),
         migrations.AlterField(
-            model_name='team',
-            name='name',
+            model_name="team",
+            name="name",
             field=models.CharField(max_length=255, unique=True),
         ),
     ]

@@ -5,17 +5,19 @@ from django.db import models
 from django.db.models import Count
 from django.shortcuts import resolve_url
 from django.utils.html import format_html
+
+from .filters import LinkSchemeFilter
 from .models import (
     Channel,
-    Sport,
+    ChannelLink,
     Competition,
-    Team,
+    Favorite,
+    Flag,
     Match,
     Race,
     SimpleEvent,
-    ChannelLink,
-    Favorite,
-    Flag,
+    Sport,
+    Team,
 )
 
 
@@ -27,15 +29,15 @@ def make_related_field(field):
     def display_method(obj):
         item = getattr(obj, field.name, None)
         if item is None:
-            return ''
+            return ""
         related_model = (
             field.model
-            if isinstance(field, models.OneToOneField)
-            and field.remote_field.parent_link
+            if isinstance(field, models.OneToOneField) and field.remote_field.parent_link
             else field.related_model
         )
         url = resolve_url(admin_urlname(related_model._meta, "change"), item.id)
         return format_html(f'<a href="{url}">{escape_braces(str(item))}</a>')
+
     display_method.short_description = f"{field.name}"
     display_method.admin_order_field = f"{field.name}"
     return display_method
@@ -52,10 +54,7 @@ class AutoModelAdmin(admin.ModelAdmin):
         for field in self.model._meta.concrete_fields:
             if field.name == "password":
                 continue
-            if (
-                isinstance(field, models.OneToOneField)
-                and field.remote_field.parent_link
-            ):
+            if isinstance(field, models.OneToOneField) and field.remote_field.parent_link:
                 continue
             field_name = field.name
             if field.is_relation:
@@ -68,19 +67,11 @@ class AutoModelAdmin(admin.ModelAdmin):
         return list_display
 
     def get_list_filter(self, request):
-        list_filter = [
-            field.name for field in self.model._meta.concrete_fields if field._choices
-        ]
+        list_filter = [field.name for field in self.model._meta.concrete_fields if field._choices]
         list_filter += [
             field.name
             for field in self.model._meta.concrete_fields
-            if isinstance(
-                field,
-                (
-                    models.DateField,
-                    models.DateTimeField,
-                ),
-            )
+            if isinstance(field, models.DateField | models.DateTimeField)
         ]
         for field in self.list_filter or []:
             if field not in list_filter:
@@ -91,18 +82,10 @@ class AutoModelAdmin(admin.ModelAdmin):
         search_fields = [
             field.name
             for field in self.model._meta.concrete_fields
-            if isinstance(
-                field,
-                (
-                    models.CharField,
-                    models.TextField,
-                ),
-            )
+            if isinstance(field, models.CharField | models.TextField)
         ]
         search_fields += [
-            f"{field.name}__name"
-            if hasattr(field.related_model, "name")
-            else f"={field.name}__pk"
+            f"{field.name}__name" if hasattr(field.related_model, "name") else f"={field.name}__pk"
             for field in self.model._meta.concrete_fields
             if field.is_relation
         ]
@@ -169,18 +152,15 @@ class EventModelAdmin(AutoModelAdmin):
 
     def competition_sport(self, obj):
         return obj.competition.sport
-    competition_sport.short_description = 'sport'
-    competition_sport.admin_order_field = 'competition__sport'
+
+    competition_sport.short_description = "sport"
+    competition_sport.admin_order_field = "competition__sport"
 
     def channels_names(self, obj):
         channels = []
         for channel in obj.channels.all():
-            url = resolve_url(
-                admin_urlname(channel._meta, "change"), channel.pk
-            )
-            channels.append(
-                f'<a href="{url}">{escape_braces(str(channel.name))}</a>'
-            )
+            url = resolve_url(admin_urlname(channel._meta, "change"), channel.pk)
+            channels.append(f'<a href="{url}">{escape_braces(str(channel.name))}</a>')
         return format_html("</br>".join(channels))
 
 
@@ -200,20 +180,20 @@ class SimpleEventAdmin(EventModelAdmin):
 
 
 class HasChannelsFilter(admin.SimpleListFilter):
-    title = 'Has channels'
-    parameter_name = 'has_channels'
+    title = "Has channels"
+    parameter_name = "has_channels"
 
     def lookups(self, request, model_admin):
         return [
-            ('no', 'No'),
-            ('yes', 'Yes'),
+            ("no", "No"),
+            ("yes", "Yes"),
         ]
 
     def queryset(self, request, queryset):
-        queryset = queryset.annotate(link_count=Count('channels__links'))
-        if self.value() == 'no':
+        queryset = queryset.annotate(link_count=Count("channels__links"))
+        if self.value() == "no":
             return queryset.filter(link_count=0)
-        elif self.value() == 'yes':
+        elif self.value() == "yes":
             return queryset.filter(link_count__gte=1)
         return queryset
 
@@ -226,7 +206,7 @@ class ChannelAdmin(AutoModelAdmin):
 
 @admin.register(ChannelLink)
 class ChannelLinkAdmin(AutoModelAdmin):
-    list_filter = [HasChannelsFilter, "verified"]
+    list_filter = [HasChannelsFilter, LinkSchemeFilter, "verified"]
 
 
 @admin.register(Favorite)
