@@ -4,7 +4,8 @@ from django.contrib.admin.templatetags.admin_urls import admin_urlname
 from django.db import models
 from django.db.models import Count
 from django.shortcuts import resolve_url
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 
 from .filters import LinkSchemeFilter
 from .models import (
@@ -38,7 +39,7 @@ def make_related_field(field):
             else field.related_model
         )
         url = resolve_url(admin_urlname(related_model._meta, "change"), item.id)
-        return format_html(f'<a href="{url}">{escape_braces(str(item))}</a>')
+        return format_html('<a href="{}">{}</a>', url, item)
 
     display_method.short_description = f"{field.name}"
     display_method.admin_order_field = f"{field.name}"
@@ -121,7 +122,7 @@ class CompetitionAdmin(AutoModelAdmin):
     @admin.display(description="flag")
     def flag_image(self, obj):
         if obj.flag:
-            return format_html(obj.flag.flag_image())
+            return mark_safe(obj.flag.flag_image())
 
 
 @admin.register(Team)
@@ -135,7 +136,7 @@ class TeamAdmin(AutoModelAdmin):
 
     @admin.display(description="crest")
     def crest_image(self, obj):
-        return format_html(obj.crest_image())
+        return mark_safe(obj.crest_image())
 
 
 class EventModelAdmin(AutoModelAdmin):
@@ -159,11 +160,11 @@ class EventModelAdmin(AutoModelAdmin):
     competition_sport.admin_order_field = "competition__sport"
 
     def channels_names(self, obj):
-        channels = []
-        for channel in obj.channels.all():
-            url = resolve_url(admin_urlname(channel._meta, "change"), channel.pk)
-            channels.append(f'<a href="{url}">{escape_braces(str(channel.name))}</a>')
-        return format_html("</br>".join(channels))
+        return format_html_join(
+            mark_safe("<br>"),
+            '<a href="{}">{}</a>',
+            ((resolve_url(admin_urlname(c._meta, "change"), c.pk), c.name) for c in obj.channels.all())
+        )
 
 
 @admin.register(Match)
@@ -268,7 +269,7 @@ class FavoriteAdmin(SortableAdminMixin, AutoModelAdmin):
     @admin.display(description="crest")
     def crest_image(self, obj):
         if obj.team:
-            return format_html(obj.team.crest_image())
+            return mark_safe(obj.team.crest_image())
 
 
 @admin.register(Flag)
@@ -280,4 +281,4 @@ class FlagAdmin(AutoModelAdmin):
 
     @admin.display(description="image")
     def flag_image(self, obj):
-        return format_html(obj.flag_image())
+        return mark_safe(obj.flag_image())
