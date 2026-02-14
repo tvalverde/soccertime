@@ -1,10 +1,14 @@
 services:
   web:
-    build: .
+    build:
+      context: .
+      args:
+        DOCKER_UID: ${DOCKER_UID:-1000}
+        DOCKER_GID: ${DOCKER_GID:-1000}
     image: soccertime:latest
-    command: python -m manage runserver 0.0.0.0:8000
+    command: python manage.py runserver 0.0.0.0:8000
     restart: unless-stopped
-    user: 1000:1000
+    user: ${DOCKER_UID:-1000}:${DOCKER_GID:-1000}
     security_opt:
       - no-new-privileges:true
     cap_drop:

@@ -61,8 +61,10 @@ docker compose up -d --build
 4. Apply migrations:
 
 ```bash
-docker compose exec web python -m manage migrate
+docker compose exec web python manage.py migrate
 ```
+
+> **Note:** Initial fixtures (sports, competitions, teams, and favorites) are automatically loaded when migrations run on a fresh database.
 
 5. Access the application at http://localhost:8000
 
@@ -76,29 +78,72 @@ docker compose up -d
 docker compose logs -f web
 
 # Apply migrations
-docker compose exec web python -m manage migrate
+docker compose exec web python manage.py migrate
 
 # Create migrations
-docker compose exec web python -m manage makemigrations soccertime
+docker compose exec web python manage.py makemigrations soccertime
 
 # Create superuser
-docker compose exec web python -m manage createsuperuser
+docker compose exec web python manage.py createsuperuser
 
 # Collect static files
-docker compose exec web python -m manage collectstatic --noinput
+docker compose exec web python manage.py collectstatic --noinput
 
 # Run data scraper
-docker compose exec web python -m manage scrapit
+docker compose exec web python manage.py scrapit
 
 # Run scraper (dry run - show events without saving)
-docker compose exec web python -m manage scrapit --dry-run
+docker compose exec web python manage.py scrapit --dry-run
 
 # List available scraping sources
-docker compose exec web python -m manage scrapit --list-sources
+docker compose exec web python manage.py scrapit --list-sources
+
+# Reset database (delete and recreate with fresh migrations + fixtures)
+docker compose exec web python manage.py resetdb
 
 # Stop services
 docker compose down
 ```
+
+### Initial fixtures
+
+The application includes initial fixtures that are automatically loaded when migrations run on a fresh database:
+
+- **Sports**: Fútbol, Automovilismo, Motociclismo, Baloncesto
+- **Competitions**: La Liga EA Sports, Champions League, Fórmula 1, MotoGP
+- **Teams**: FC Barcelona, CD Castellón, Barça Basket, FC Barcelona Femenino, Barcelona Atlétic
+- **Favorites**: All teams and competitions above are automatically added as favorites
+
+Fixture files are located in `soccertime/fixtures/`:
+- `initial_data.json`: Sports, competitions, and teams
+- `favorites.json`: Favorite teams and competitions
+
+To manually load fixtures:
+
+```bash
+# Load all fixtures
+docker compose exec web python manage.py loaddata initial_data favorites
+
+# Load specific fixture
+docker compose exec web python manage.py loaddata initial_data
+```
+
+### Database reset
+
+For development purposes, you can reset the entire database:
+
+```bash
+# Interactive reset (asks for confirmation)
+docker compose exec web python manage.py resetdb
+
+# Non-interactive reset (no confirmation)
+docker compose exec web python manage.py resetdb --noinput
+```
+
+This command will:
+1. Delete the SQLite database file
+2. Run all migrations to recreate the schema
+3. Automatically load initial fixtures (via post_migrate signal)
 
 ### Testing
 
@@ -323,8 +368,8 @@ See `.env.example` for the complete list of available variables.
 | `DJANGO_DEBUG` | `true` | `false` | Debug mode |
 | `DJANGO_CACHE` | `false` | `true` | Enable template caching |
 | `DJANGO_ALLOWED_HOSTS` | `localhost` | `*` | Allowed hosts |
-| `DJANGO_STATIC_URL` | `/static/` | `/soccertime/static/` | Static files URL |
-| `DJANGO_FORCE_SCRIPT_NAME` | - | `/soccertime` | URL prefix |
+| `DJANGO_STATIC_URL` | `/static/` | `/static/` | Static files URL |
+| `DJANGO_FORCE_SCRIPT_NAME` | - | (optional) | URL prefix (only when intentionally serving under a subpath) |
 
 ### Generating a secret key
 

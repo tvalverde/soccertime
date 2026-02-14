@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1
 FROM python:3-alpine
+ARG DOCKER_UID=1000
+ARG DOCKER_GID=1000
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 RUN python -m venv /venv
 ENV VIRTUAL_ENV=/venv
 ENV PATH="/venv/bin:$PATH"
-RUN adduser -D -H -u 1000 appuser
+RUN adduser -D -H -u ${DOCKER_UID} appuser
 WORKDIR /code
 COPY  --chown=appuser:appuser  requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

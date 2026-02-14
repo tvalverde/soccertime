@@ -1,0 +1,83 @@
+[
+  {
+    "model": "soccertime.favorite",
+    "pk": 1,
+    "fields": {
+      "competition": null,
+      "team": 1,
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.favorite",
+    "pk": 2,
+    "fields": {
+      "competition": null,
+      "team": 2,
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.favorite",
+    "pk": 3,
+    "fields": {
+      "competition": null,
+      "team": 3,
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.favorite",
+    "pk": 4,
+    "fields": {
+      "competition": null,
+      "team": 4,
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.favorite",
+    "pk": 5,
+    "fields": {
+      "competition": null,
+      "team": 5,
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.favorite",
+    "pk": 6,
+    "fields": {
+      "competition": 1,
+      "team": null,
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.favorite",
+    "pk": 7,
+    "fields": {
+      "competition": 2,
+      "team": null,
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.favorite",
+    "pk": 8,
+    "fields": {
+      "competition": 3,
+      "team": null,
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.favorite",
+    "pk": 9,
+    "fields": {
+      "competition": 4,
+      "team": null,
+      "order": 0
+    }
+  }
+]

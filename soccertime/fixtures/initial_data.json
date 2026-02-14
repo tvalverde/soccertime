@@ -1,0 +1,110 @@
+[
+  {
+    "model": "soccertime.sport",
+    "pk": 1,
+    "fields": {
+      "name": "Fútbol",
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.sport",
+    "pk": 2,
+    "fields": {
+      "name": "Automovilismo",
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.sport",
+    "pk": 3,
+    "fields": {
+      "name": "Motociclismo",
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.sport",
+    "pk": 4,
+    "fields": {
+      "name": "Baloncesto",
+      "order": 0
+    }
+  },
+  {
+    "model": "soccertime.competition",
+    "pk": 1,
+    "fields": {
+      "name": "La Liga EA Sports",
+      "sport": 1,
+      "flag": null
+    }
+  },
+  {
+    "model": "soccertime.competition",
+    "pk": 2,
+    "fields": {
+      "name": "Champions League",
+      "sport": 1,
+      "flag": null
+    }
+  },
+  {
+    "model": "soccertime.competition",
+    "pk": 3,
+    "fields": {
+      "name": "Fórmula 1",
+      "sport": 2,
+      "flag": null
+    }
+  },
+  {
+    "model": "soccertime.competition",
+    "pk": 4,
+    "fields": {
+      "name": "MotoGP",
+      "sport": 3,
+      "flag": null
+    }
+  },
+  {
+    "model": "soccertime.team",
+    "pk": 1,
+    "fields": {
+      "name": "FC Barcelona",
+      "crest": null
+    }
+  },
+  {
+    "model": "soccertime.team",
+    "pk": 2,
+    "fields": {
+      "name": "CD Castellón",
+      "crest": null
+    }
+  },
+  {
+    "model": "soccertime.team",
+    "pk": 3,
+    "fields": {
+      "name": "Barça Basket",
+      "crest": null
+    }
+  },
+  {
+    "model": "soccertime.team",
+    "pk": 4,
+    "fields": {
+      "name": "FC Barcelona Femenino",
+      "crest": null
+    }
+  },
+  {
+    "model": "soccertime.team",
+    "pk": 5,
+    "fields": {
+      "name": "Barcelona Atlétic",
+      "crest": null
+    }
+  }
+]
