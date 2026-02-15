@@ -2,7 +2,7 @@
 {% load soccertime_tags %}
 {% load i18n %}
 <!doctype html>
-<html lang="es">
+<html lang="es" data-bs-theme="dark">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -35,6 +35,7 @@
         width: 1rem;
         height: 1rem;
       }
+
       .zoom-icon {
         width: 1.75em;
         height: 1.75em;
@@ -52,8 +53,16 @@
         text-decoration: none;
         text-underline-offset: 0.2em;
       }
+
+      a {
+        text-decoration: none !important;
+      }
       .link-styled:hover {
         text-decoration: underline;
+      }
+      .nav-link:hover {
+        color: #007bff;
+        background-color: rgba(0, 123, 255, 0.1);
       }
     </style>
     <link rel="icon" type="image/svg+xml"
@@ -62,11 +71,11 @@
   <body>
     <div class="wrapper">
       <div class="main-content">
-      <header class="bg-light py-3 mb-2 border-bottom container-fluid">
+<header class="bg-dark-blue text-light py-3 mb-2 border-bottom container-fluid">
         <div class="container d-flex flex-wrap justify-content-between align-items-center">
           <div class="d-flex align-items-center">
             <a href="{% url 'favorites' %}" class="text-decoration-none">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-calendar-check-fill me-2 text-primary" viewBox="0 0 16 16" role="img" aria-label="Soccertime">
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" class="bi bi-calendar-check-fill me-2 text-primary" viewBox="0 0 16 16" role="img" aria-label="Soccertime">
                 <path d="M4 .5a.5.5 0 0 0-1 0V1H2a2 2 0 0 0-2 2v1h16V3a2 2 0 0 0-2-2h-1V.5a.5.5 0 0 0-1 0V1H4zM16 14V5H0v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2m-5.146-5.146-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 0 1 .708-.708L7.5 10.793l2.646-2.647a.5.5 0 0 1 .708.708"/>
               </svg>
               <span class="fs-4 text-secondary">Soccertime</span>
@@ -129,7 +138,7 @@
       </div>
       {% endif %}
       {% if teams %}
-      <div class="container mb-2 py-2 text-center bg-light">
+<div class="container mb-2 py-2 text-center bg-dark text-light">
         {% for team in teams %}
         <span class="me-3 d-inline text-nowrap">{{ team.crest_image|safe }} <a href="{% url "team-events" team.pk %}" class="link-styled">{{ team.name }}</a></span>
         {% endfor %}
@@ -138,12 +147,12 @@
       <div class="container mt-2">
         {% bootstrap_messages %}
 </div>
-      <div class="container bg-light py-0 px-0">
+<div class="container bg-dark text-light py-0 px-0">
         {% block content %}
         {% endblock %}
       </div>
       </div>
-      <footer class="container-fluid bg-dark text-light py-3 mt-4">
+<footer class="container-fluid bg-dark-blue text-light py-3 mt-4">
         <div class="container text-center">
           <small>&copy; {% now "Y" %} Soccertime. {% translate "Todos los derechos reservados." %}</small>
         </div>

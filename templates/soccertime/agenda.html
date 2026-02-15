@@ -12,14 +12,14 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 {% endblock %}
 {% block content %}
 {% if competition_teams %}
-<div class="container mb-2 py-2 text-center bg-light">
+<div class="container mb-2 py-2 text-center bg-dark text-light">
   {% for team in competition_teams %}
   <span class="me-3 d-inline text-nowrap"> <a href="{% url "team-events" team.pk %}" data-bs-toggle="tooltip" data-bs-title="{{ team.name }}">{{ team.crest_image|safe }}</a></span>
   {% endfor %}
 </div>
 {% endif %}
 {% if "agenda" in request.path %}
-<div class="container mb-2 py-2 bg-light">
+<div class="container mb-2 py-2 bg-dark text-light">
     <div class="d-flex justify-content-center align-items-center position-relative">
         <input
                 id="datePicker"

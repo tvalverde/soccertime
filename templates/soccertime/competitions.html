@@ -16,7 +16,7 @@ Soccertime :: {% translate "Competiciones" %}
         {% endfor %}
         {% if sport.competitions_without_events %}
         <div class="mt-2">
-            <a class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" href="#collapse-{{ sport.pk }}" role="button" aria-expanded="false" aria-controls="collapse-{{ sport.pk }}">
+<a class="btn btn-sm btn-danger text-light" data-bs-toggle="collapse" href="#collapse-{{ sport.pk }}" role="button" aria-expanded="false" aria-controls="collapse-{{ sport.pk }}">
                 {% translate "Mostrar competiciones sin eventos" %} ({{ sport.competitions_without_events|length }})
             </a>
             <div class="collapse mt-2" id="collapse-{{ sport.pk }}">
