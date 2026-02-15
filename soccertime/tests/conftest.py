@@ -26,7 +26,6 @@ from soccertime.models import (
     Team,
 )
 
-
 # =============================================================================
 # Base fixtures
 # =============================================================================
@@ -188,7 +187,6 @@ def channel_link_disabled(db, channel_link_source):
     )
     link.sources.add(channel_link_source)
     return link
-
 
 
 @pytest.fixture

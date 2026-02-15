@@ -23,7 +23,6 @@ from .models import (
 )
 
 
-
 def escape_braces(s):
     return s.replace("{", "{{").replace("}", "}}")
 
@@ -163,7 +162,7 @@ class EventModelAdmin(AutoModelAdmin):
         return format_html_join(
             mark_safe("<br>"),
             '<a href="{}">{}</a>',
-            ((resolve_url(admin_urlname(c._meta, "change"), c.pk), c.name) for c in obj.channels.all())
+            ((resolve_url(admin_urlname(c._meta, "change"), c.pk), c.name) for c in obj.channels.all()),
         )
 
 
@@ -247,14 +246,11 @@ class ChannelAdmin(AutoModelAdmin):
         return list_display
 
 
-
-
 @admin.register(ChannelLink)
 class ChannelLinkAdmin(AutoModelAdmin):
     list_filter = [HasChannelsFilter, LinkSchemeFilter, "verified", "sources__name"]
     filter_horizontal = ["sources"]
     search_fields = ["name", "link", "sources__name"]
-
 
 
 @admin.register(Favorite)

@@ -1,0 +1,4 @@
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/mojon.local.crt
+      keyFile: /etc/traefik/certs/mojon.local.key

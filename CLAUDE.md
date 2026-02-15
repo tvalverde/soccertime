@@ -40,8 +40,9 @@ This document provides the necessary context for understanding and working on th
 
 ## 4. Guardrails & Knowledge
 
--   **Configuration:** The application is configured exclusively through environment variables. The `.env.example` file serves as a template. **Never commit secrets or environment files to the repository.**
+-   **Configuration:** The application is configured exclusively through environment variables. The `.env.example` file serves as a template, and `.env.production.local.example` is the template for local production simulation. **Never commit secrets or environment files to the repository.**
 -   **Data Source:** The application is highly dependent on the external websites targeted by the `scrapit` command. Changes to these websites can break the data flow.
 -   **Database:** As the project uses SQLite, be mindful that complex schema changes and data migrations should be handled with care.
 -   **External Data Files:** Files used as input for `addlinksource` (like `elcano.txt` or `newera.txt`) are considered external data sources and are **not** part of the git repository. Do not commit them.
+-   **Local TLS Key Material:** For local production simulation with Traefik, generate `.docker/traefik/certs/mojon.local.key` locally. This private key file must never be committed; only non-sensitive templates/configuration should be tracked.
 -   **Initial Fixtures:** The application includes initial fixtures (`soccertime/fixtures/`) that are automatically loaded via a `post_migrate` signal when the database is empty. These include basic sports, competitions (La Liga, Champions League, Fórmula 1, MotoGP), teams (FC Barcelona, CD Castellón, Barça Basket, etc.), and their corresponding favorites. Fixtures use sequential PKs starting from 1.

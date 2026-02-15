@@ -12,7 +12,6 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 
 
-
 class SportManager(models.Manager):
     def with_events(self):
         return self.filter(competitions__events__date__date__gte=timezone.now().date()).distinct()
@@ -226,7 +225,6 @@ class ChannelLinkSource(models.Model):
         return cls.objects.get_or_create(name=name, defaults={"display_name": name})
 
 
-
 class Channel(models.Model):
     name = models.CharField(max_length=255, unique=True)
     links = models.ManyToManyField("ChannelLink", related_name="channels", blank=True)
@@ -265,8 +263,6 @@ class ChannelLink(models.Model):
         verbose_name_plural = "channels links"
         ordering = ["-date_updated__date", "date_updated__time", "-verified", "-id"]
 
-
-
     def __str__(self):
         return f"{self.name} [{self.quality}]"
 
@@ -274,7 +270,6 @@ class ChannelLink(models.Model):
     def scheme(self):
         parsed_url = urlparse(self.link)
         return parsed_url.scheme
-
 
 
 class EventQuerySet(models.QuerySet):
@@ -405,7 +400,6 @@ def delete_orphan_channel_links_on_m2m(sender, instance, action, **kwargs):
 
 
 class EventManager(models.Manager):
-
     """Custom manager for Event model."""
 
     def get_queryset(self):

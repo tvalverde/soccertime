@@ -79,3 +79,7 @@ dmypy.json
 soccertime_data_cache.sqlite
 media
 db
+static/
+.env.production.local
+.docker/traefik/certs/mojon.local.key
+.docker/traefik/certs/mojon.local.crt

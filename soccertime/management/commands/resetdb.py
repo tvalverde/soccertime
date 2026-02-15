@@ -3,10 +3,11 @@ Management command to reset the database.
 This is useful for development and testing.
 """
 
-from django.core.management.base import BaseCommand
-from django.core.management import call_command
-from django.conf import settings
 import os
+
+from django.conf import settings
+from django.core.management import call_command
+from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):

@@ -2,6 +2,8 @@ services:
   soccertime-nginx:
     container_name: soccertime-nginx
     image: nginxinc/nginx-unprivileged:alpine
+    env_file:
+      - .env.production
     depends_on:
       soccertime-web:
         condition: service_healthy
@@ -39,7 +41,8 @@ services:
 
   soccertime-web:
     container_name: soccertime-web
-    build: /home/toni/www/soccertime
+    build:
+      context: .
     image: soccertime:latest
     restart: unless-stopped
     stop_grace_period: 30s
@@ -53,7 +56,7 @@ services:
       - /var/tmp/soccertime_cache:size=50M,mode=1777
     command: python -m uvicorn soccertime.asgi:application --host 0.0.0.0 --port 8000
     volumes:
-      - ./db.sqlite3:/code/db/db.sqlite3:rw
+      - soccertime-db:/code/db:rw
       - soccertime-media:/code/media:rw
       - soccertime-static:/code/static:rw
     env_file:
@@ -92,3 +95,4 @@ services:
 volumes:
   soccertime-media:
   soccertime-static:
+  soccertime-db:

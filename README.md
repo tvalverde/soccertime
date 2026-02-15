@@ -6,7 +6,6 @@ Django application for aggregating and displaying sports events (football, cycli
 
 - [Docker](https://docs.docker.com/get-docker/)
 - [Docker Compose](https://docs.docker.com/compose/install/)
-- Make (optional, for using Makefile commands)
 
 ## Project structure
 
@@ -15,21 +14,19 @@ soccertime/
 ├── compose.yaml              # Docker Compose for development
 ├── compose.production.yaml   # Docker Compose for production
 ├── Dockerfile                # Application Docker image
-├── Makefile                  # Deployment and management commands
+├── Makefile                  # Deployment and management commands (deprecated)
 ├── pyproject.toml            # Python project config (pytest, ruff, coverage)
 ├── requirements.txt          # Python dependencies (pinned versions)
-├── nginx.conf                # Nginx configuration for production
 ├── .env.example              # Environment variables template
-├── .env                      # Environment variables (development)
-├── .env.production           # Environment variables (production)
+├── .env.production.local.example # Local production simulation env template
 ├── soccertime/               # Django application
 │   ├── models.py             # Data models (Event, Match, Race, etc.)
 │   ├── views.py              # View functions
 │   ├── admin.py              # Django admin configuration
+│   ├── static/               # Static assets (CSS, JS)
 │   ├── tests/                # Test suite (pytest)
+│   ├── fixtures/             # Initial data fixtures (auto-loaded on fresh DB)
 │   └── management/commands/  # Custom management commands
-│   └── ChannelLinkSource     # Source model for channel links (M2M)
-
 ├── templates/                # HTML templates
 ├── media/                    # Media files (crests, flags)
 └── db/                       # SQLite database
@@ -191,9 +188,51 @@ docker compose exec web ruff format soccertime/
 docker compose exec web ruff format soccertime/ --check
 ```
 
+## Local production simulation (Traefik + HTTPS)
+
+This repository includes a local production-like stack in `compose.production.local.yaml`.
+
+### Setup
+
+1. Create the local production env file from template:
+
+```bash
+cp .env.production.local.example .env.production.local
+```
+
+2. Generate a local TLS certificate and private key for `mojon.local`:
+
+```bash
+mkdir -p .docker/traefik/certs
+openssl req -x509 -nodes -newkey rsa:2048 \
+  -keyout .docker/traefik/certs/mojon.local.key \
+  -out .docker/traefik/certs/mojon.local.crt \
+  -days 365 \
+  -subj "/CN=mojon.local"
+```
+
+3. Start the local production stack:
+
+```bash
+docker compose -f compose.yaml -f compose.production.yaml -f compose.production.local.yaml up -d --build
+```
+
+4. Optionally map local hostnames in `/etc/hosts`:
+
+```text
+127.0.0.1 mojon.local traefik.mojon.local
+```
+
+> **Security note:** `.docker/traefik/certs/mojon.local.key` is intentionally ignored and must never be committed.
+
 ## Production deployment
 
-Deployment is done through the `Makefile` which automates the entire process.
+
+> **Note:** The previous deployment method using the `Makefile` is considered **deprecated**. The new workflow will be based on building and deploying a production-ready Docker image. The specific steps (CI/CD pipeline, registry pushes) are to be defined.
+>
+> The Makefile commands documented below remain functional but should not be relied upon for new deployments.
+
+Deployment was previously done through the `Makefile` which automates the entire process.
 
 ## Domain notes
 

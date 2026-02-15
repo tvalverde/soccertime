@@ -17,24 +17,24 @@ help:
 	@echo "  format               Format code with ruff"
 	@echo ""
 	@echo "DEPLOY:"
-	@echo "  deploy-production    Full deploy (upload code + run on remote)"
-	@echo "  upload-only          Upload code and configs without running deploy"
-	@echo "  upload-config        Upload only configuration files"
-	@echo "  remote-restart       Restart remote services without uploading"
+	@echo "  deploy-production    Full deploy (upload code + run on remote orchestrator)"
+	@echo "  upload-only          Upload code and .env.production without running deploy"
+	@echo "  upload-config        Upload only .env.production"
+	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
 	@echo ""
-	@echo "DATABASE:"
-	@echo "  download-db          Download database from server"
-	@echo "  upload-db            Upload database to server"
+	@echo "DATABASE (SQLite in Docker volume):"
+	@echo "  download-db          Download database from remote volume"
+	@echo "  upload-db            Upload database to remote volume"
 	@echo ""
-	@echo "REQUESTS CACHE:"
-	@echo "  download-requests-cache  Download requests cache from server"
-	@echo "  upload-requests-cache    Upload requests cache to server"
+	@echo "REQUESTS CACHE (in DB volume):"
+	@echo "  download-requests-cache  Download requests cache from remote volume"
+	@echo "  upload-requests-cache    Upload requests cache to remote volume"
 	@echo ""
-	@echo "MEDIA (badges, flags):"
-	@echo "  download-media       Download media directory from server"
-	@echo "  upload-media         Upload media directory to server"
+	@echo "MEDIA (Docker volume):"
+	@echo "  download-media       Download media from remote volume"
+	@echo "  upload-media         Upload media to remote volume"
 	@echo ""
-	@echo "NOTE: All uploads/downloads create automatic backups before overwriting."
+	@echo "NOTE: Uploads/downloads create timestamped backups where applicable."
 
 # Deployment configuration variables
 # Loaded from .env file if available
@@ -42,6 +42,21 @@ help:
 export
 
 APP_NAME = soccertime
+
+# Remote paths
+REMOTE_APP_PATH ?= ~/www/soccertime
+REMOTE_DOCKER_PATH ?= ~/docker
+REMOTE_DOCKER_COMPOSE_FILE ?= docker-compose.yml
+REMOTE_SOCCERTIME_SERVICE ?= soccertime-web
+
+# Production Docker volumes
+REMOTE_DB_VOLUME ?= docker_soccertime-db
+REMOTE_MEDIA_VOLUME ?= docker_soccertime-media
+REMOTE_STATIC_VOLUME ?= docker_soccertime-static
+
+# Paths inside helper containers
+REMOTE_DB_FILE_IN_VOLUME ?= db.sqlite3
+REMOTE_CACHE_FILE_IN_VOLUME ?= soccertime_data_cache.sqlite
 
 # === Development Commands ===
 
@@ -72,7 +87,6 @@ ARCHIVE_NAME = $(APP_NAME).tgz
 LOCAL_ARCHIVE_PATH = /tmp/$(ARCHIVE_NAME)
 
 # Configuration files to upload
-COMPOSE_PROD_FILE = compose.production.yaml
 ENV_PROD_FILE = .env.production
 
 # Main target for production deployment
@@ -86,12 +100,12 @@ archive_app:
 
 # Target to upload files to remote server
 upload_files:
-	@echo "--- Uploading application archive and configuration files ---"
-	scp -P$(REMOTE_PORT) $(LOCAL_ARCHIVE_PATH) $(REMOTE_HOST):$(REMOTE_PATH)/
-	scp -P$(REMOTE_PORT) $(COMPOSE_PROD_FILE) $(REMOTE_HOST):$(REMOTE_PATH)/
+	@echo "--- Uploading application archive and .env.production ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_APP_PATH)'
+	scp -P$(REMOTE_PORT) $(LOCAL_ARCHIVE_PATH) $(REMOTE_HOST):$(REMOTE_APP_PATH)/
 	@if [ -f "$(ENV_PROD_FILE)" ]; then \
 		echo "Uploading $(ENV_PROD_FILE)..."; \
-		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_PATH)/; \
+		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/; \
 	else \
 		echo "Warning: $(ENV_PROD_FILE) not found locally. Skipping upload."; \
 	fi
@@ -101,22 +115,17 @@ remote_deploy:
 	@echo "--- Initiating remote deployment via SSH ---"
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e && \
-		cd $(REMOTE_PATH) && \
-		echo "--- Pulling latest Docker images ---" && \
-		docker compose -f $(COMPOSE_PROD_FILE) pull nginx && \
-		echo "--- Stopping and removing old services ---" && \
-		docker compose -f $(COMPOSE_PROD_FILE) down --remove-orphans && \
+		cd $(REMOTE_APP_PATH) && \
 		echo "--- Extracting new application code ---" && \
 		tar zxfv $(ARCHIVE_NAME) && \
 		rm $(ARCHIVE_NAME) && \
-		echo "--- Copying compose file to compose.yaml ---" && \
-		cp $(COMPOSE_PROD_FILE) compose.yaml && \
-		echo "--- Bringing up new services ---" && \
-		docker compose -f $(COMPOSE_PROD_FILE) up -d --build --remove-orphans && \
+		echo "--- Rebuilding and recreating services via orchestrator ---" && \
+		cd $(REMOTE_DOCKER_PATH) && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans && \
 		echo "--- Applying database migrations ---" && \
-		docker compose -f $(COMPOSE_PROD_FILE) exec web python -m manage migrate --noinput && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput && \
 		echo "--- Collecting static files ---" && \
-		docker compose -f $(COMPOSE_PROD_FILE) exec web python -m manage collectstatic --noinput \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec $(REMOTE_SOCCERTIME_SERVICE) python manage.py collectstatic --noinput \
 	'
 
 # Target to clean up local temporary archive after upload
@@ -128,112 +137,124 @@ clean_local_archive:
 upload-only: archive_app upload_files clean_local_archive
 	@echo "Files uploaded successfully. No remote deployment executed."
 
-# Target to upload only configuration files (without code)
+# Target to upload only configuration file (.env.production)
 upload-config:
-	@echo "--- Uploading configuration files only ---"
-	scp -P$(REMOTE_PORT) $(COMPOSE_PROD_FILE) $(REMOTE_HOST):$(REMOTE_PATH)/
+	@echo "--- Uploading configuration file only ---"
 	@if [ -f "$(ENV_PROD_FILE)" ]; then \
 		echo "Uploading $(ENV_PROD_FILE)..."; \
-		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_PATH)/; \
+		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/; \
+		echo "Configuration file uploaded successfully."; \
 	else \
-		echo "Warning: $(ENV_PROD_FILE) not found locally. Skipping upload."; \
+		echo "Warning: $(ENV_PROD_FILE) not found locally. Nothing uploaded."; \
 	fi
-	@echo "Configuration files uploaded successfully."
 
-# Target to restart remote services without uploading
+# Target to rebuild/recreate remote services without uploading
 remote-restart:
-	@echo "--- Restarting remote services ---"
+	@echo "--- Rebuilding and restarting remote services (safe up) ---"
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
-		cd $(REMOTE_PATH); \
-		 \
-		echo "--- Stopping services ---"; \
-		docker compose -f $(COMPOSE_PROD_FILE) down --remove-orphans; \
-		 \
-		echo "--- Starting services ---"; \
-		docker compose -f $(COMPOSE_PROD_FILE) up -d --remove-orphans; \
-		 \
-		echo "Services restarted successfully." \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans; \
+		echo "Services rebuilt/restarted successfully." \
 	'
 
-# === Database Management ===
+# === Data Management (Docker volumes in production) ===
 
-# Data file paths
 LOCAL_DB_PATH = ./db/db.sqlite3
-REMOTE_DB_PATH = $(REMOTE_PATH)/db/db.sqlite3
 LOCAL_CACHE_PATH = ./soccertime_data_cache.sqlite
-REMOTE_CACHE_PATH = $(REMOTE_PATH)/soccertime_data_cache.sqlite
 LOCAL_MEDIA_PATH = ./media
-REMOTE_MEDIA_PATH = $(REMOTE_PATH)/media
 BACKUP_SUFFIX = .backup.$(shell date +%Y%m%d_%H%M%S)
 
-# Download database from server (with local backup)
+# Download database from remote DB volume (with local backup)
 download-db:
-	@echo "--- Downloading database from remote ---"
+	@echo "--- Downloading database from remote volume ---"
 	@if [ -f "$(LOCAL_DB_PATH)" ]; then \
 		echo "Backing up local database to $(LOCAL_DB_PATH)$(BACKUP_SUFFIX)"; \
 		cp $(LOCAL_DB_PATH) $(LOCAL_DB_PATH)$(BACKUP_SUFFIX); \
 	fi
-	scp -P$(REMOTE_PORT) $(REMOTE_HOST):$(REMOTE_DB_PATH) $(LOCAL_DB_PATH)
+	@mkdir -p $(dir $(LOCAL_DB_PATH))
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -v $(REMOTE_DB_VOLUME):/from -v /tmp:/to alpine sh -c "cp /from/$(REMOTE_DB_FILE_IN_VOLUME) /to/$(APP_NAME)-db.sqlite3"'
+	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-db.sqlite3 $(LOCAL_DB_PATH)
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-db.sqlite3'
 	@echo "Database downloaded successfully."
 
-# Upload database to server (with remote backup)
+# Upload database to remote DB volume (with remote backup)
 upload-db:
-	@echo "--- Uploading database to remote ---"
+	@echo "--- Uploading database to remote volume ---"
+	scp -P$(REMOTE_PORT) $(LOCAL_DB_PATH) $(REMOTE_HOST):/tmp/$(APP_NAME)-db.sqlite3
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		if [ -f "$(REMOTE_DB_PATH)" ]; then \
-			echo "Backing up remote database"; \
-			cp $(REMOTE_DB_PATH) $(REMOTE_DB_PATH).backup.$$(date +%Y%m%d_%H%M%S); \
-		fi \
+		set -e; \
+		docker run --rm -v $(REMOTE_DB_VOLUME):/data -v /tmp:/tmp alpine sh -c " \
+			if [ -f /data/$(REMOTE_DB_FILE_IN_VOLUME) ]; then \
+				echo Backing up remote database; \
+				cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.$$(date +%Y%m%d_%H%M%S); \
+			fi; \
+			cp /tmp/$(APP_NAME)-db.sqlite3 /data/$(REMOTE_DB_FILE_IN_VOLUME) \
+		"; \
+		rm -f /tmp/$(APP_NAME)-db.sqlite3 \
 	'
-	scp -P$(REMOTE_PORT) $(LOCAL_DB_PATH) $(REMOTE_HOST):$(REMOTE_DB_PATH)
 	@echo "Database uploaded successfully."
 
-# === Requests Cache Management ===
-
-# Download cache from server (with local backup)
+# Download cache from remote DB volume (with local backup)
 download-requests-cache:
-	@echo "--- Downloading cache from remote ---"
+	@echo "--- Downloading requests cache from remote volume ---"
 	@if [ -f "$(LOCAL_CACHE_PATH)" ]; then \
 		echo "Backing up local cache to $(LOCAL_CACHE_PATH)$(BACKUP_SUFFIX)"; \
 		cp $(LOCAL_CACHE_PATH) $(LOCAL_CACHE_PATH)$(BACKUP_SUFFIX); \
 	fi
-	scp -P$(REMOTE_PORT) $(REMOTE_HOST):$(REMOTE_CACHE_PATH) $(LOCAL_CACHE_PATH)
-	@echo "Cache downloaded successfully."
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -v $(REMOTE_DB_VOLUME):/from -v /tmp:/to alpine sh -c "cp /from/$(REMOTE_CACHE_FILE_IN_VOLUME) /to/$(APP_NAME)-requests-cache.sqlite"'
+	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-requests-cache.sqlite $(LOCAL_CACHE_PATH)
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-requests-cache.sqlite'
+	@echo "Requests cache downloaded successfully."
 
-# Upload cache to server (with remote backup)
+# Upload cache to remote DB volume (with remote backup)
 upload-requests-cache:
-	@echo "--- Uploading cache to remote ---"
+	@echo "--- Uploading requests cache to remote volume ---"
+	scp -P$(REMOTE_PORT) $(LOCAL_CACHE_PATH) $(REMOTE_HOST):/tmp/$(APP_NAME)-requests-cache.sqlite
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		if [ -f "$(REMOTE_CACHE_PATH)" ]; then \
-			echo "Backing up remote cache"; \
-			cp $(REMOTE_CACHE_PATH) $(REMOTE_CACHE_PATH).backup.$$(date +%Y%m%d_%H%M%S); \
-		fi \
+		set -e; \
+		docker run --rm -v $(REMOTE_DB_VOLUME):/data -v /tmp:/tmp alpine sh -c " \
+			if [ -f /data/$(REMOTE_CACHE_FILE_IN_VOLUME) ]; then \
+				echo Backing up remote cache; \
+				cp /data/$(REMOTE_CACHE_FILE_IN_VOLUME) /data/$(REMOTE_CACHE_FILE_IN_VOLUME).backup.$$(date +%Y%m%d_%H%M%S); \
+			fi; \
+			cp /tmp/$(APP_NAME)-requests-cache.sqlite /data/$(REMOTE_CACHE_FILE_IN_VOLUME) \
+		"; \
+		rm -f /tmp/$(APP_NAME)-requests-cache.sqlite \
 	'
-	scp -P$(REMOTE_PORT) $(LOCAL_CACHE_PATH) $(REMOTE_HOST):$(REMOTE_CACHE_PATH)
-	@echo "Cache uploaded successfully."
+	@echo "Requests cache uploaded successfully."
 
-# === Media Management (badges, flags) ===
-
-# Download media directory from server (with local backup)
+# Download media directory from remote media volume (with local backup)
 download-media:
-	@echo "--- Downloading media from remote ---"
+	@echo "--- Downloading media from remote volume ---"
 	@if [ -d "$(LOCAL_MEDIA_PATH)" ]; then \
 		echo "Backing up local media to $(LOCAL_MEDIA_PATH)$(BACKUP_SUFFIX)"; \
 		cp -r $(LOCAL_MEDIA_PATH) $(LOCAL_MEDIA_PATH)$(BACKUP_SUFFIX); \
 	fi
 	@mkdir -p $(LOCAL_MEDIA_PATH)
-	rsync -avz -e "ssh -p$(REMOTE_PORT)" $(REMOTE_HOST):$(REMOTE_MEDIA_PATH)/ $(LOCAL_MEDIA_PATH)/
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -v $(REMOTE_MEDIA_VOLUME):/from -v /tmp:/to alpine sh -c "cd /from && tar czf /to/$(APP_NAME)-media.tgz ."'
+	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-media.tgz /tmp/$(APP_NAME)-media.tgz
+	@tar xzf /tmp/$(APP_NAME)-media.tgz -C $(LOCAL_MEDIA_PATH)
+	@rm -f /tmp/$(APP_NAME)-media.tgz
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-media.tgz'
 	@echo "Media downloaded successfully."
 
-# Upload media directory to server (with remote backup)
+# Upload media directory to remote media volume (with remote backup)
 upload-media:
-	@echo "--- Uploading media to remote ---"
+	@echo "--- Uploading media to remote volume ---"
+	@tar czf /tmp/$(APP_NAME)-media.tgz -C $(LOCAL_MEDIA_PATH) .
+	scp -P$(REMOTE_PORT) /tmp/$(APP_NAME)-media.tgz $(REMOTE_HOST):/tmp/$(APP_NAME)-media.tgz
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		if [ -d "$(REMOTE_MEDIA_PATH)" ]; then \
-			echo "Backing up remote media"; \
-			cp -r $(REMOTE_MEDIA_PATH) $(REMOTE_MEDIA_PATH).backup.$$(date +%Y%m%d_%H%M%S); \
-		fi \
+		set -e; \
+		docker run --rm -v $(REMOTE_MEDIA_VOLUME):/data -v /tmp:/tmp alpine sh -c " \
+			if [ \"$$(ls -A /data 2>/dev/null)\" ]; then \
+				echo Backing up remote media; \
+				tar czf /tmp/$(APP_NAME)-media.backup.$$(date +%Y%m%d_%H%M%S).tgz -C /data .; \
+			fi && \
+			find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} + && \
+			tar xzf /tmp/$(APP_NAME)-media.tgz -C /data \
+		"; \
+		rm -f /tmp/$(APP_NAME)-media.tgz \
 	'
-	rsync -avz -e "ssh -p$(REMOTE_PORT)" $(LOCAL_MEDIA_PATH)/ $(REMOTE_HOST):$(REMOTE_MEDIA_PATH)/
+	@rm -f /tmp/$(APP_NAME)-media.tgz
 	@echo "Media uploaded successfully."

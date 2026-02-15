@@ -5,7 +5,6 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import Q
 
-
 from soccertime.models import Channel, ChannelLink, ChannelLinkSource
 
 
@@ -16,7 +15,6 @@ class Command(BaseCommand):
         parser.add_argument("--source", "-s", required=True, choices=["newera", "elcano"], help="Source parser")
         parser.add_argument("--file", "-f", required=True, help="Input file path")
         parser.add_argument("--dry", action="store_true", help="Dry run without saving")
-
 
     # ------------------------------------------------------------------
     # Parsing
@@ -47,13 +45,9 @@ class Command(BaseCommand):
             # Fix specific names and normalize
             name_fixed = self.fix_name(raw_name)
             name_norm = re.sub(r"\s+", " ", name_fixed).strip()
-            
+
             name_norm, quality = self.extract_quality(name_norm)
             subcategory = source_label.strip().lower() if source_label else None
-
-
-
-
 
             link = link_line
 
@@ -67,14 +61,12 @@ class Command(BaseCommand):
             entries.append((name_norm, subcategory, quality, link))
         return entries
 
-
-
     def parse_elcano(self, filepath):
         """Parse elcano custom text format.
-        
+
         Format:
         === CATEGORY ===
-        
+
         Channel Name
         acestream://hash
         """
@@ -83,27 +75,27 @@ class Command(BaseCommand):
 
         entries = []
         current_subcategory = None
-        
+
         # Skip header metadata lines until we hit the first separator or category
         start_idx = 0
         for i, line in enumerate(lines):
             if line.startswith("===") or line.startswith("====="):
                 start_idx = i
                 break
-        
+
         lines = lines[start_idx:]
-        
+
         i = 0
         while i < len(lines):
             line = lines[i]
-            
+
             # Category detection: === CATEGORY ===
             if line.startswith("===") and line.endswith("==="):
                 # Clean === markers
                 current_subcategory = line.replace("=", "").strip()
                 i += 1
                 continue
-                
+
             # Separators
             if line.startswith("====="):
                 i += 1
@@ -112,30 +104,29 @@ class Command(BaseCommand):
             # Assume line is Channel Name
             # Check if next line exists and looks like a link
             if i + 1 < len(lines):
-                link_line = lines[i+1]
+                link_line = lines[i + 1]
                 # Basic validation that next line is likely a link or hash
                 is_link = link_line.startswith("acestream://") or re.fullmatch(r"[0-9a-fA-F]{40}", link_line)
-                
+
                 if is_link:
                     raw_name = line
                     link = link_line
                     if not link.startswith("acestream://"):
                         link = f"acestream://{link}"
-                    
+
                     # Extract details
                     channel_name, quality = self.extract_name_parts(raw_name)
                     # Use the section header as subcategory
                     subcategory = current_subcategory.title() if current_subcategory else None
-                    
+
                     entries.append((channel_name, subcategory, quality, link))
-                    i += 2 # Skip name and link
+                    i += 2  # Skip name and link
                     continue
 
             # If not a valid pair, just skip this line (could be metadata or orphan)
             i += 1
 
         return entries
-
 
     # ------------------------------------------------------------------
     # Helpers
@@ -145,10 +136,10 @@ class Command(BaseCommand):
         name = name.replace("la liga", "laliga")
         if "plus+" not in name:
             name = name.replace("movistar plus", "movistar plus+")
-        
+
         # Use regex for "laliga 1" to avoid matching "laliga 1080p" -> "laliga080p"
         name = re.sub(r"\blaliga 1\b", "laliga", name)
-        
+
         name = name.replace("movistar vamos", "m+ vamos")
 
         name = name.replace("movistar deportes", "m+ deportes")
@@ -162,16 +153,16 @@ class Command(BaseCommand):
     def extract_quality(self, name):
         """Extract quality tag from name (HD, FHD, 1080p, etc.) and return cleaned name + quality enum."""
         quality = ChannelLink.Quality.ANY
-        
+
         # Regex matches quality tags surrounded by word boundaries or brackets
         # Order matters: longer matches first (e.g. 1080p before 1080 if we supported bare numbers, though here specific tags are safer)
         # We look for [TAG] or space+TAG+space/end
         pattern = re.compile(r"(?:^|\s+|\[)(4k|uhd|fhd|1080p|1080|hd|720p|720|sd)(?:\]|$|\s+)", re.IGNORECASE)
-        
+
         match = pattern.search(name)
         if match:
             tag = match.group(1).lower()
-            
+
             # Remove the detected tag from the name to clean it up
             # We use the full match (including brackets/spaces) to replace
             name = name.replace(match.group(0).strip(), "").strip()
@@ -186,21 +177,7 @@ class Command(BaseCommand):
                 quality = ChannelLink.Quality.HD
             elif tag == "sd":
                 quality = ChannelLink.Quality.SD
-                
-        return name, quality
 
-        match = pattern.search(name)
-        if match:
-            tag = match.group(1).lower()
-            name = pattern.sub("", name).strip()
-            if tag in {"4k", "uhd"}:
-                quality = ChannelLink.Quality.UHD
-            elif tag == "fhd":
-                quality = ChannelLink.Quality.FHD
-            elif tag == "hd":
-                quality = ChannelLink.Quality.HD
-            elif tag == "sd":
-                quality = ChannelLink.Quality.SD
         return name, quality
 
     def extract_name_parts(self, raw_name):
@@ -211,7 +188,6 @@ class Command(BaseCommand):
         name_norm, quality = self.extract_quality(name_norm)
 
         return name_norm, quality
-
 
     def match_channels(self, channel_name):
         """Match channels with numeric suffix priority and token-based fallback.
@@ -234,12 +210,13 @@ class Command(BaseCommand):
         if is_short_and_unsafe:
             return channels
 
-
         # Try numeric suffix combination
         if not channels.exists() and suffix_num:
             # 1. Try strict match including the number
             channels_strict = Channel.objects.filter(
-                Q(name__icontains=f" {suffix_num}") | Q(name__iendswith=suffix_num) | Q(name__icontains=f"{suffix_num} (")
+                Q(name__icontains=f" {suffix_num}")
+                | Q(name__iendswith=suffix_num)
+                | Q(name__icontains=f"{suffix_num} (")
             )
             for cpart in base_tokens:
                 if len(cpart) >= 2:
@@ -248,24 +225,23 @@ class Command(BaseCommand):
                         channels_strict = channels_strict.filter(name__regex=rf"(?i)\b{re.escape(cpart)}\b")
                     else:
                         channels_strict = channels_strict.filter(name__icontains=cpart)
-            
+
             if channels_strict.exists():
                 channels = channels_strict
-            
+
             # 2. Special case: If suffix is '1' and strict match failed, try matching without the number
             #    (e.g., "DAZN LaLiga 1" -> "DAZN LaLiga")
             elif suffix_num == "1":
-                 channels_no_num = Channel.objects.all()
-                 for cpart in base_tokens:
-                     if len(cpart) >= 2:
-                         if len(cpart) < 4:
-                             channels_no_num = channels_no_num.filter(name__regex=rf"(?i)\b{re.escape(cpart)}\b")
-                         else:
-                             channels_no_num = channels_no_num.filter(name__icontains=cpart)
+                channels_no_num = Channel.objects.all()
+                for cpart in base_tokens:
+                    if len(cpart) >= 2:
+                        if len(cpart) < 4:
+                            channels_no_num = channels_no_num.filter(name__regex=rf"(?i)\b{re.escape(cpart)}\b")
+                        else:
+                            channels_no_num = channels_no_num.filter(name__icontains=cpart)
 
-                 # Exclude channels that explicitly have other numbers (2, 3, etc.) to be safe
-                 channels = channels_no_num.exclude(name__regex=r"\b[2-9]\b")
-
+                # Exclude channels that explicitly have other numbers (2, 3, etc.) to be safe
+                channels = channels_no_num.exclude(name__regex=r"\b[2-9]\b")
 
         # Token fallback
         if not channels.exists():
@@ -290,7 +266,6 @@ class Command(BaseCommand):
                 channels = Channel.objects.none()
 
         return channels
-
 
     # ------------------------------------------------------------------
     # Main
@@ -331,10 +306,6 @@ class Command(BaseCommand):
 
                     channels = self.match_channels(channel_name)
                     if not channels.exists():
-
-
-
-
                         self.warnings.append(f"Canal no encontrado: {channel_name}")
                         stats["errores_canal_no_encontrado"] += 1
                         continue
@@ -351,8 +322,6 @@ class Command(BaseCommand):
                         },
                     )
 
-
-
                     if not dry_run:
                         channel_link.sources.add(source_obj)
 
@@ -367,20 +336,17 @@ class Command(BaseCommand):
                     # if the link doesn't explicitly ask for them.
                     # This allows "LA 2" to match "La 2 TVE" AND "La 2 Cat",
                     # but prevents "DAZN 1" from matching "DAZN 1 Bar".
-                    
+
                     target_channels = channels
 
                     for channel in target_channels:
                         # Safety: Avoid associating residential links to Horeca/Bar channels
                         # unless the link name explicitly says "BAR".
                         if "bar" in channel.name.lower() and "bar" not in channel_name.lower():
-                             continue
-
+                            continue
 
                         if channel.links.filter(link=channel_link.link).exists():
-                            self.warnings.append(
-                                f"Ya existe en {channel.name}: {channel_link.link[:40]}..."
-                            )
+                            self.warnings.append(f"Ya existe en {channel.name}: {channel_link.link[:40]}...")
                             continue
                         if not dry_run:
                             channel.links.add(channel_link)

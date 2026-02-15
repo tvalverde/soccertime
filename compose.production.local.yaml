@@ -1,0 +1,63 @@
+services:
+  traefik:
+    image: traefik:v2.11
+    container_name: soccertime-traefik-local
+    restart: unless-stopped
+    command:
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=soccertime-local
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --providers.file.filename=/etc/traefik/certs/tls.yml
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./.docker/traefik/certs:/etc/traefik/certs:ro
+    networks: !override
+      - soccertime-local
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.traefik-local.rule=Host(`traefik.mojon.local`)
+      - traefik.http.routers.traefik-local.entrypoints=web
+      - traefik.http.routers.traefik-local.service=api@internal
+
+  soccertime-web:
+    build: .
+    env_file:
+      - .env.production.local
+    networks: !override
+      - soccertime-local
+    labels:
+      - "traefik.http.routers.soccertime-app.tls.certresolver="
+      - "traefik.docker.network=soccertime-local"
+    volumes: !override
+      - ./media:/code/media:rw
+      - ./static:/code/static:rw
+      - soccertime-db:/code/db:rw
+    user: "${DOCKER_UID}:${DOCKER_GID}"
+
+  soccertime-nginx:
+    env_file:
+      - .env.production.local
+    networks: !override
+      - soccertime-local
+    labels:
+      - "traefik.docker.network=soccertime-local"
+    volumes: !override
+      - ./media:/usr/share/nginx/html/media:ro
+      - ./static:/usr/share/nginx/html/static:ro
+    user: "${DOCKER_UID}:${DOCKER_GID}"
+
+networks:
+  soccertime-local:
+    name: soccertime-local
+    driver: bridge
+  nassut-net:
+    name: nassut-net
+    driver: bridge

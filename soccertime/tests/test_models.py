@@ -24,7 +24,6 @@ from soccertime.models import (
 )
 
 
-
 class TestSport:
     """Tests for Sport model."""
 
@@ -142,7 +141,6 @@ class TestChannelLink:
             )
             link.sources.add(source)
             assert link.quality == quality
-
 
 
 class TestFavorite:
