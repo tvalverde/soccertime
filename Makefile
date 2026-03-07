@@ -181,17 +181,17 @@ download-db:
 # Upload database to remote DB volume (with remote backup)
 upload-db:
 	@echo "--- Uploading database to remote volume ---"
-	scp -P$(REMOTE_PORT) $(LOCAL_DB_PATH) $(REMOTE_HOST):/tmp/$(APP_NAME)-db.sqlite3
+	scp -P$(REMOTE_PORT) $(LOCAL_DB_PATH) $(REMOTE_HOST):~/$(APP_NAME)-db.sqlite3
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
-		docker run --rm -v $(REMOTE_DB_VOLUME):/data -v /tmp:/tmp alpine sh -c " \
+		docker run --rm -v $(REMOTE_DB_VOLUME):/data -v $$HOME:/src alpine sh -c " \
 			if [ -f /data/$(REMOTE_DB_FILE_IN_VOLUME) ]; then \
 				echo Backing up remote database; \
 				cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.$$(date +%Y%m%d_%H%M%S); \
 			fi; \
-			cp /tmp/$(APP_NAME)-db.sqlite3 /data/$(REMOTE_DB_FILE_IN_VOLUME) \
+			cp /src/$(APP_NAME)-db.sqlite3 /data/$(REMOTE_DB_FILE_IN_VOLUME) \
 		"; \
-		rm -f /tmp/$(APP_NAME)-db.sqlite3 \
+		rm -f ~/$(APP_NAME)-db.sqlite3 \
 	'
 	@echo "Database uploaded successfully."
 

@@ -133,6 +133,11 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------
     def fix_name(self, name):
         name = name.lower()
+        # Strip trailing server/mirror markers: *, **, (*), (**), etc.
+        name = re.sub(r"\s*\(\*+\)\s*$", "", name).strip()
+        name = re.sub(r"\s+\*+$", "", name).strip()
+        # Strip trailing locale/region suffixes: (ES), (PL), (DE), (UK), (RU), etc.
+        name = re.sub(r"\s*\([a-z]{2,3}\)\s*$", "", name).strip()
         name = name.replace("la liga", "laliga")
         if "plus+" not in name:
             name = name.replace("movistar plus", "movistar plus+")
@@ -144,6 +149,49 @@ class Command(BaseCommand):
 
         name = name.replace("movistar deportes", "m+ deportes")
         name = name.replace("movistar ellas", "m+ ellas vamos")
+        # Dot-variant alias used by some sources: "M. Deportes" -> "M+ Deportes"
+        name = re.sub(r"\bm\.\s+deportes\b", "m+ deportes", name)
+
+        # Normalize ACB event aliases to DAZN Baloncesto numbering
+        # Examples:
+        # - "ACB EVENTO 01" -> "dazn baloncesto 1"
+        # - "ACB EVENTO 01 720p" -> "dazn baloncesto 1" (quality tag present, use search not fullmatch)
+        # - "DAZN ACB 2" -> "dazn baloncesto 2"
+        acb_event_match = re.search(r"\bacb\s+evento\s+0*(\d+)\b", name)
+        if acb_event_match:
+            return f"dazn baloncesto {int(acb_event_match.group(1))}"
+
+        dazn_acb_match = re.search(r"\bdazn\s+acb\s+0*(\d+)\b", name)
+        if dazn_acb_match:
+            return f"dazn baloncesto {int(dazn_acb_match.group(1))}"
+
+        # "Eleven DAZN N" -> "dazn N"
+        # Eleven Sports was the Portuguese/Belgian operator that rebranded DAZN channels.
+        eleven_dazn_match = re.search(r"\beleven\s+dazn\s+(\d+)\b", name)
+        if eleven_dazn_match:
+            return f"dazn {int(eleven_dazn_match.group(1))}"
+
+        # "NBA EVENTOS N" -> "nba league pass"
+        if re.search(r"\bnba\s+eventos?\b", name):
+            return "nba league pass"
+
+        # "DAZN EVENTOS N" -> "dazn N"
+        dazn_eventos_match = re.search(r"\bdazn\s+eventos?\s+(\d+)\b", name)
+        if dazn_eventos_match:
+            return f"dazn {int(dazn_eventos_match.group(1))}"
+
+        # "Canal N (1RFEF) (SOLO EVENTOS)" -> "rfef tv"
+        if re.search(r"1rfef", name):
+            return "rfef tv"
+
+        # "Canal de Tenis" -> "tennis channel"
+        if re.search(r"\bcanal\s+de\s+tenis\b", name):
+            return "tennis channel"
+
+        # "Sky Sports LaLiga" -> "dazn laliga" (UK feed of same rights holder)
+        if re.search(r"\bsky\s+sports?\s+laliga\b", name):
+            return "dazn laliga"
+
         if name.startswith("liga de campeones"):
             name = "m+ " + name
         if name == "dazn pvv":
@@ -157,7 +205,7 @@ class Command(BaseCommand):
         # Regex matches quality tags surrounded by word boundaries or brackets
         # Order matters: longer matches first (e.g. 1080p before 1080 if we supported bare numbers, though here specific tags are safer)
         # We look for [TAG] or space+TAG+space/end
-        pattern = re.compile(r"(?:^|\s+|\[)(4k|uhd|fhd|1080p|1080|hd|720p|720|sd)(?:\]|$|\s+)", re.IGNORECASE)
+        pattern = re.compile(r"(?:^|\s+|\[)(4k|uhd|fhd|1080p?|hd|720p?|sd)p?(?:\]|$|\s+)", re.IGNORECASE)
 
         match = pattern.search(name)
         if match:
@@ -202,10 +250,21 @@ class Command(BaseCommand):
         # Short name safety: strict match only if very short AND no numeric suffix to aid specificity
         is_short_and_unsafe = len(channel_name_norm) < 4 and not suffix_num
 
+        # DAZN variant safety: when variant is present (e.g. dazn 1, dazn f1, dazn laliga),
+        # don't let generic DAZN channels absorb those links.
+        dazn_variant_phrase = None
+        if parts and parts[0].lower() == "dazn" and len(parts) >= 2:
+            dazn_variant_phrase = " ".join(parts[:2]).lower()
+
         # Exact or contains with parentheses
         channels = Channel.objects.filter(
             Q(name__iexact=channel_name_norm) | Q(name__icontains=f"{channel_name_norm} (")
         )
+
+        # Only use the broad dazn_variant_phrase fallback when there is no numeric suffix;
+        # if there IS a suffix, let the numeric suffix logic below handle precise selection.
+        if dazn_variant_phrase and not suffix_num and not channels.exists():
+            channels = Channel.objects.filter(name__istartswith=dazn_variant_phrase)
 
         if is_short_and_unsafe:
             return channels
@@ -264,6 +323,16 @@ class Command(BaseCommand):
                     )
             else:
                 channels = Channel.objects.none()
+
+        if dazn_variant_phrase:
+            # Build a precise startswith phrase. When suffix_num is present and > 1,
+            # include the number — but only if dazn_variant_phrase doesn't already end
+            # with it (e.g. "dazn 2" already contains the number; "dazn baloncesto" does not).
+            if suffix_num and suffix_num != "1" and not dazn_variant_phrase.endswith(f" {suffix_num}"):
+                precise_phrase = f"{dazn_variant_phrase} {suffix_num}"
+            else:
+                precise_phrase = dazn_variant_phrase
+            channels = channels.filter(name__istartswith=precise_phrase)
 
         return channels
 
