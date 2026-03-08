@@ -44,6 +44,7 @@ services:
     build:
       context: .
     image: soccertime:latest
+    pull_policy: if_not_present
     restart: unless-stopped
     stop_grace_period: 30s
     security_opt:

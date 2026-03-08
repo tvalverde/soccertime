@@ -41,6 +41,9 @@ help:
 -include .env
 export
 
+DOCKER_UID ?= 1000
+DOCKER_GID ?= 1000
+
 APP_NAME = soccertime
 
 # Remote paths
@@ -62,23 +65,23 @@ REMOTE_CACHE_FILE_IN_VOLUME ?= soccertime_data_cache.sqlite
 
 # Run tests
 test:
-	@docker compose exec web pytest
+	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest
 
 # Run tests with coverage report
 test-cov:
-	@docker compose exec web pytest --cov --cov-report=term-missing
+	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest --cov --cov-report=term-missing
 
 # Check code for linting errors
 lint:
-	@docker compose exec web ruff check soccertime/
+	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web ruff check soccertime/
 
 # Fix auto-fixable linting errors
 lint-fix:
-	@docker compose exec web ruff check soccertime/ --fix
+	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web ruff check soccertime/ --fix
 
 # Format code with ruff
 format:
-	@docker compose exec web ruff format soccertime/
+	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web ruff format soccertime/
 
 # === Deployment Commands ===
 
@@ -123,9 +126,9 @@ remote_deploy:
 		cd $(REMOTE_DOCKER_PATH) && \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans && \
 		echo "--- Applying database migrations ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(DOCKER_UID):$(DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput && \
 		echo "--- Collecting static files ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec $(REMOTE_SOCCERTIME_SERVICE) python manage.py collectstatic --noinput \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(DOCKER_UID):$(DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py collectstatic --noinput \
 	'
 
 # Target to clean up local temporary archive after upload
@@ -189,7 +192,8 @@ upload-db:
 				echo Backing up remote database; \
 				cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.$$(date +%Y%m%d_%H%M%S); \
 			fi; \
-			cp /src/$(APP_NAME)-db.sqlite3 /data/$(REMOTE_DB_FILE_IN_VOLUME) \
+			cp /src/$(APP_NAME)-db.sqlite3 /data/$(REMOTE_DB_FILE_IN_VOLUME); \
+			chown $(DOCKER_UID):$(DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME) \
 		"; \
 		rm -f ~/$(APP_NAME)-db.sqlite3 \
 	'
@@ -218,7 +222,8 @@ upload-requests-cache:
 				echo Backing up remote cache; \
 				cp /data/$(REMOTE_CACHE_FILE_IN_VOLUME) /data/$(REMOTE_CACHE_FILE_IN_VOLUME).backup.$$(date +%Y%m%d_%H%M%S); \
 			fi; \
-			cp /tmp/$(APP_NAME)-requests-cache.sqlite /data/$(REMOTE_CACHE_FILE_IN_VOLUME) \
+			cp /tmp/$(APP_NAME)-requests-cache.sqlite /data/$(REMOTE_CACHE_FILE_IN_VOLUME); \
+			chown $(DOCKER_UID):$(DOCKER_GID) /data/$(REMOTE_CACHE_FILE_IN_VOLUME) \
 		"; \
 		rm -f /tmp/$(APP_NAME)-requests-cache.sqlite \
 	'
@@ -252,7 +257,8 @@ upload-media:
 				tar czf /tmp/$(APP_NAME)-media.backup.$$(date +%Y%m%d_%H%M%S).tgz -C /data .; \
 			fi && \
 			find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} + && \
-			tar xzf /tmp/$(APP_NAME)-media.tgz -C /data \
+			tar xzf /tmp/$(APP_NAME)-media.tgz -C /data && \
+			chown -R $(DOCKER_UID):$(DOCKER_GID) /data \
 		"; \
 		rm -f /tmp/$(APP_NAME)-media.tgz \
 	'

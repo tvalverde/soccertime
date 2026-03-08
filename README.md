@@ -15,6 +15,7 @@ soccertime/
 ├── compose.production.yaml   # Docker Compose for production
 ├── Dockerfile                # Application Docker image
 ├── Makefile                  # Deployment and management commands (deprecated)
+├── CHANGELOG.md              # Project history and versioning
 ├── pyproject.toml            # Python project config (pytest, ruff, coverage)
 ├── requirements.txt          # Python dependencies (pinned versions)
 ├── .env.example              # Environment variables template
@@ -409,6 +410,8 @@ See `.env.example` for the complete list of available variables.
 | `DJANGO_ALLOWED_HOSTS` | `localhost` | `*` | Allowed hosts |
 | `DJANGO_STATIC_URL` | `/static/` | `/static/` | Static files URL |
 | `DJANGO_FORCE_SCRIPT_NAME` | - | (optional) | URL prefix (only when intentionally serving under a subpath) |
+| `DOCKER_UID` | `1000` | `1000` | User ID for application and database files |
+| `DOCKER_GID` | `1000` | `1000` | Group ID for application and database files |
 
 ### Generating a secret key
 
