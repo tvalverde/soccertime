@@ -11,7 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Event.child_event` property to handle polymorphic event types (`Match`, `Race`, `SimpleEvent`) cleanly in templates.
 - ARIA labels to all interactive elements and links for better accessibility.
 - Flags to competitions in the favorites bar for visual consistency.
-- Team names to all team quick-access bars to avoid ambiguity between teams sharing the same crest.
+
+### Fixed
+- Idempotency in `scrapit` command: existing `Race` and `SimpleEvent` records are now updated instead of duplicated when details or dates change slightly.
+- Removed hardcoded empty state alerts in favor of the global Django messages system.
+- Deployment building unrelated images: `remote_deploy` and `remote-restart` now explicitly target the `soccertime-web` service.
+- PermissionError during `collectstatic` in production: added a step to `chown` the static volume to the application user before running management commands.
+- Horizontal scroll issue on Fire TV Silk: removed `text-nowrap` from table cells and reverted quick-access bars to show only crests to save horizontal space.
 
 ### Changed
 - Unified all event listing views (`sport_events`, `channel_events`, `competition_events`) to use `agenda.html`, ensuring a consistent dark-themed UI.

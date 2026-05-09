@@ -124,7 +124,9 @@ remote_deploy:
 		rm $(ARCHIVE_NAME) && \
 		echo "--- Rebuilding and recreating services via orchestrator ---" && \
 		cd $(REMOTE_DOCKER_PATH) && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans $(REMOTE_SOCCERTIME_SERVICE) && \
+		echo "--- Fixing static volume permissions ---" && \
+		docker run --rm -v $(REMOTE_STATIC_VOLUME):/data alpine chown -R $(DOCKER_UID):$(DOCKER_GID) /data && \
 		echo "--- Applying database migrations ---" && \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(DOCKER_UID):$(DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput && \
 		echo "--- Collecting static files ---" && \
@@ -157,7 +159,7 @@ remote-restart:
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
 		cd $(REMOTE_DOCKER_PATH); \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans; \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans $(REMOTE_SOCCERTIME_SERVICE); \
 		echo "Services rebuilt/restarted successfully." \
 	'
 

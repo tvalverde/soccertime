@@ -11,7 +11,7 @@
   </td>
   {% if parent_event.match %}
   <td class="text-end">
-    <a href="{% url "team-events" event.local.pk %}" class="link-styled text-nowrap" aria-label="{% translate "Ver eventos de" %} {{ event.local.name }}">{{ event.local.name }}</a><br>
+    <a href="{% url "team-events" event.local.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ event.local.name }}">{{ event.local.name }}</a><br>
   </td>
   <td class="text-center">
     {{ event.local.crest_image|safe }}
@@ -20,7 +20,7 @@
     {{ event.visitor.crest_image|safe }}
   </td>
   <td class="text-start">
-    <a href="{% url "team-events" event.visitor.pk %}" class="link-styled text-nowrap" aria-label="{% translate "Ver eventos de" %} {{ event.visitor.name }}">{{ event.visitor.name }}</a>
+    <a href="{% url "team-events" event.visitor.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ event.visitor.name }}">{{ event.visitor.name }}</a>
   </td>
   {% elif parent_event.race or parent_event.simpleevent %}
   <td class="text-center" colspan="4">

@@ -128,14 +128,14 @@
       {% if competitions %}
       <div class="container mb-2 py-2 text-center text-light bg-primary">
         {% for competition in competitions %}
-        <span class="me-3 d-inline text-nowrap">{{ competition.flag.flag_image|safe }} <a href="{% url "competition-events" competition.pk %}" class="link-light link-styled" aria-label="{% translate "Ver eventos de" %} {{ competition.name }}">{{ competition.name }}</a></span>
+        <span class="me-3 d-inline">{{ competition.flag.flag_image|safe }} <a href="{% url "competition-events" competition.pk %}" class="link-light link-styled" aria-label="{% translate "Ver eventos de" %} {{ competition.name }}">{{ competition.name }}</a></span>
         {% endfor %}
       </div>
       {% endif %}
       {% if teams %}
 <div class="container mb-2 py-2 text-center bg-dark text-light">
         {% for team in teams %}
-        <span class="me-3 d-inline text-nowrap">{{ team.crest_image|safe }} <a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team.name }}</a></span>
+        <span class="me-3 d-inline"><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team.crest_image|safe }}</a></span>
         {% endfor %}
       </div>
       {% endif %}
