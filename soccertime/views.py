@@ -127,28 +127,32 @@ def channel_events(request, channel):
     channel_obj = get_object_or_404(Channel, pk=channel)
     queryset = Event.objects.for_channel(channel).in_progress_or_upcoming()
     add_empty_message(request, queryset)
-    return render(
-        request,
-        "soccertime/events.html",
+
+    context = get_base_context()
+    context.pop("teams", None)
+    context.update(
         {
             "events": queryset,
             "events_title": channel_obj.name,
-        },
+        }
     )
+    return render(request, "soccertime/agenda.html", context)
 
 
 def sport_events(request, sport):
     sport_obj = get_object_or_404(Sport, pk=sport)
     queryset = Event.objects.for_sport(sport).in_progress_or_upcoming()
     add_empty_message(request, queryset)
-    return render(
-        request,
-        "soccertime/events.html",
+
+    context = get_base_context()
+    context.pop("teams", None)
+    context.update(
         {
             "events": paginate_queryset(queryset, request),
             "events_title": sport_obj.name,
-        },
+        }
     )
+    return render(request, "soccertime/agenda.html", context)
 
 
 def competition_events(request, competition):
