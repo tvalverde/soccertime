@@ -171,6 +171,31 @@ class TestTeamEventsView:
         response = client.get(reverse("team-events", args=[team_home.pk]))
         assert "competition_teams" in response.context
 
+    def test_team_events_queries_performance(self, client, db, team_home, team_away, team_third, competition):
+        """Should have a constant number of queries regardless of the number of matches."""
+        # Create several matches
+        now = timezone.now()
+        for i in range(10):
+            opponent = team_away if i % 2 == 0 else team_third
+            Match.objects.create(
+                competition=competition,
+                local=team_home,
+                visitor=opponent,
+                date=now + datetime.timedelta(days=i + 1),
+            )
+
+        # Measure queries. Without select_related, this would be N queries (one per match to fetch visitor)
+        # plus the base queries.
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as queries:
+            client.get(reverse("team-events", args=[team_home.pk]))
+
+        # We expect a low number of queries. If N+1 exists, it will be around 15-20.
+        # If optimized, it should be around 5-8.
+        assert len(queries) < 10
+
 
 class TestChannelEventsView:
     """Tests for channel_events view."""
@@ -286,12 +311,41 @@ class TestCompetitionsView:
     def test_shows_sports_with_events(self, client, match, sport):
         """Should display sports that have events."""
         response = client.get(reverse("competitions"))
-        assert sport in response.context["sports"]
+        sports = [item["sport"] for item in response.context["sports_data"]]
+        assert sport in sports
 
     def test_excludes_sports_without_events(self, client, sport_tennis):
         """Should not display sports without events."""
         response = client.get(reverse("competitions"))
-        assert sport_tennis not in response.context["sports"]
+        sports = [item["sport"] for item in response.context["sports_data"]]
+        assert sport_tennis not in sports
+
+    def test_competitions_queries_performance(self, client, db, competition, team_home, team_away):
+        """Should have a constant number of queries regardless of the number of sports and competitions."""
+        # Create 5 sports, each with 3 competitions, each with 2 events
+        from soccertime.models import Competition, Flag, Match, Sport
+
+        now = timezone.now()
+        flag = Flag.objects.create(name="testflag")
+
+        for i in range(5):
+            s = Sport.objects.create(name=f"Sport {i}", order=i)
+            for j in range(3):
+                c = Competition.objects.create(name=f"Comp {i}-{j}", sport=s, flag=flag)
+                for k in range(2):
+                    Match.objects.create(
+                        competition=c, local=team_home, visitor=team_away, date=now + datetime.timedelta(days=k + 1)
+                    )
+
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as queries:
+            client.get(reverse("competitions"))
+
+        # Without optimization, this would be dozens of queries.
+        # With proper pre-fetching and pre-calculation, it should be under 10.
+        assert len(queries) < 15
 
 
 class TestRedirects:

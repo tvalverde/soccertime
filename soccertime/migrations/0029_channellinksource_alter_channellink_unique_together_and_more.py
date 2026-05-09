@@ -8,9 +8,7 @@ def forwards(apps, schema_editor):
 
     # Crear sources únicos por nombre
     existing_sources = (
-        ChannelLink.objects.exclude(Q(source__isnull=True) | Q(source=""))
-        .values_list("source", flat=True)
-        .distinct()
+        ChannelLink.objects.exclude(Q(source__isnull=True) | Q(source="")).values_list("source", flat=True).distinct()
     )
     name_to_source = {}
     for name in existing_sources:
@@ -41,37 +39,35 @@ def backwards(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0028_favorite_favorite_requires_competition_or_team'),
+        ("soccertime", "0028_favorite_favorite_requires_competition_or_team"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ChannelLinkSource',
+            name="ChannelLinkSource",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255, unique=True)),
-                ('display_name', models.CharField(blank=True, max_length=255, null=True)),
-                ('enabled', models.BooleanField(default=True)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("name", models.CharField(max_length=255, unique=True)),
+                ("display_name", models.CharField(blank=True, max_length=255, null=True)),
+                ("enabled", models.BooleanField(default=True)),
             ],
             options={
-                'ordering': ['name'],
+                "ordering": ["name"],
             },
         ),
         migrations.AddField(
-            model_name='channellink',
-            name='sources',
-            field=models.ManyToManyField(blank=True, related_name='links', to='soccertime.channellinksource'),
+            model_name="channellink",
+            name="sources",
+            field=models.ManyToManyField(blank=True, related_name="links", to="soccertime.channellinksource"),
         ),
         migrations.AlterUniqueTogether(
-            name='channellink',
+            name="channellink",
             unique_together=set(),
         ),
         migrations.RunPython(forwards, backwards),
         migrations.RemoveField(
-            model_name='channellink',
-            name='source',
+            model_name="channellink",
+            name="source",
         ),
     ]
-

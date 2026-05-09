@@ -211,6 +211,62 @@ class TestScrapitCommandProcessing:
         match = Match.objects.filter(local__name="Test Home Team").first()
         assert match.channels.filter(name="Test Channel").exists()
 
+    def test_race_event_no_duplication_on_details_change(self, db, mock_race_event):
+        """Should update existing race event instead of creating a new one when details change and date shifts slightly."""
+        # First scrape
+        with patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get:
+            mock_get.return_value = iter([mock_race_event])
+            call_command("scrapit", "--source=example", "--include-disabled")
+
+        assert Race.objects.count() == 1
+        initial_race = Race.objects.first()
+        assert initial_race.details == "Mountain stage"
+        initial_date = initial_race.date
+
+        # Second scrape with changed details and slightly different time (within 2 days)
+        modified_race_event = mock_race_event
+        modified_race_event.details.details = "Modified mountain stage"
+        modified_race_event.datetime = modified_race_event.datetime + datetime.timedelta(minutes=5)
+
+        with patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get:
+            mock_get.return_value = iter([modified_race_event])
+            call_command("scrapit", "--source=example", "--include-disabled")
+
+        # This should still be 1, but currently it fails and creates 2
+        # because the first get() fails due to 'details' mismatch,
+        # and the fallback get_or_create() fails to find it because the exact 'date' changed.
+        assert Race.objects.count() == 1
+        updated_race = Race.objects.first()
+        assert updated_race.details == "Modified mountain stage"
+        assert updated_race.date != initial_date
+
+    def test_simple_event_no_duplication_on_details_change(self, db, mock_simple_event):
+        """Should update existing simple event instead of creating a new one when details change and date shifts slightly."""
+        # First scrape
+        with patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get:
+            mock_get.return_value = iter([mock_simple_event])
+            call_command("scrapit", "--source=example", "--include-disabled")
+
+        assert SimpleEvent.objects.count() == 1
+        initial_event = SimpleEvent.objects.first()
+        assert initial_event.details == "Singles final"
+        initial_date = initial_event.date
+
+        # Second scrape with changed details and slightly different time (within 2 days)
+        modified_simple_event = mock_simple_event
+        modified_simple_event.details.details = "Modified singles final"
+        modified_simple_event.datetime = modified_simple_event.datetime + datetime.timedelta(minutes=5)
+
+        with patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get:
+            mock_get.return_value = iter([modified_simple_event])
+            call_command("scrapit", "--source=example", "--include-disabled")
+
+        # This should still be 1, but currently it fails and creates 2
+        assert SimpleEvent.objects.count() == 1
+        updated_event = SimpleEvent.objects.first()
+        assert updated_event.details == "Modified singles final"
+        assert updated_event.date != initial_date
+
 
 class TestScrapingSourceBase:
     """Tests for scraping base module."""

@@ -202,10 +202,10 @@ class Command(BaseCommand):
                 competition=competition,
                 name=event.details.name,
                 date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-                details=event.details.details,
             )
-            if simple_event.date != event_datetime:
+            if simple_event.date != event_datetime or simple_event.details != event.details.details:
                 simple_event.date = event_datetime
+                simple_event.details = event.details.details
                 simple_event.save()
         except SimpleEvent.DoesNotExist:
             simple_event, created = SimpleEvent.objects.get_or_create(
@@ -214,7 +214,7 @@ class Command(BaseCommand):
                 date=event_datetime,
                 defaults={"details": event.details.details},
             )
-            if not created:
+            if not created and simple_event.details != event.details.details:
                 simple_event.details = event.details.details
                 simple_event.save()
         except SimpleEvent.MultipleObjectsReturned:
@@ -222,10 +222,13 @@ class Command(BaseCommand):
                 competition=competition,
                 name=event.details.name,
                 date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-                details=event.details.details,
             )
             simple_event = simple_events.order_by("-last_updated_at").first()
             simple_events.exclude(id=simple_event.id).delete()
+            if simple_event.date != event_datetime or simple_event.details != event.details.details:
+                simple_event.date = event_datetime
+                simple_event.details = event.details.details
+                simple_event.save()
 
         return simple_event
 
@@ -235,10 +238,10 @@ class Command(BaseCommand):
                 competition=competition,
                 name=event.details.name,
                 date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-                details=event.details.details,
             )
-            if race.date != event_datetime:
+            if race.date != event_datetime or race.details != event.details.details:
                 race.date = event_datetime
+                race.details = event.details.details
                 race.save()
         except Race.DoesNotExist:
             race, created = Race.objects.get_or_create(
@@ -247,7 +250,7 @@ class Command(BaseCommand):
                 date=event_datetime,
                 defaults={"details": event.details.details},
             )
-            if not created:
+            if not created and race.details != event.details.details:
                 race.details = event.details.details
                 race.save()
         except Race.MultipleObjectsReturned:
@@ -255,10 +258,13 @@ class Command(BaseCommand):
                 competition=competition,
                 name=event.details.name,
                 date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-                details=event.details.details,
             )
             race = races.order_by("-last_updated_at").first()
             races.exclude(id=race.id).delete()
+            if race.date != event_datetime or race.details != event.details.details:
+                race.date = event_datetime
+                race.details = event.details.details
+                race.save()
 
         return race
 

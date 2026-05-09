@@ -90,7 +90,9 @@ def team_events(request, team):
     # Obtener IDs de partidos futuros del equipo
     from soccertime.models import Match
 
-    future_matches = Match.objects.filter(Q(local=team_obj) | Q(visitor=team_obj), date__gte=now)
+    future_matches = Match.objects.select_related("local", "visitor").filter(
+        Q(local=team_obj) | Q(visitor=team_obj), date__gte=now
+    )
 
     # Obtener equipos rivales con la fecha del próximo enfrentamiento
     opponent_ids = set()
@@ -181,13 +183,54 @@ def channels(request):
 
 
 def competitions(request):
-    queryset = Sport.objects.with_events().annotate(count=Count("competitions")).order_by("-count", "name").distinct()
+    """
+    Exhibe deportes y sus competiciones, optimizado para evitar N+1 queries.
+    """
+    from django.db.models import Exists, OuterRef, Q
+
+    from soccertime.models import Favorite
+
+    today = timezone.now().date()
+
+    # 1. Obtener deportes activos (con eventos próximos)
+    active_sports = (
+        Sport.objects.with_events().annotate(num_comps=Count("competitions")).order_by("-num_comps", "name").distinct()
+    )
+
+    # 2. Obtener todas las competiciones de esos deportes con anotaciones
+    competitions_qs = (
+        Competition.objects.filter(sport__in=active_sports)
+        .select_related("flag")
+        .annotate(
+            num_events=Count("events", filter=Q(events__date__date__gte=today)),
+            is_fav=Exists(Favorite.objects.filter(competition=OuterRef("pk"))),
+        )
+    )
+
+    # 3. Agrupar datos en Python
+    sports_map = {sport.id: {"sport": sport, "with_events": [], "without_events": []} for sport in active_sports}
+
+    for comp in competitions_qs:
+        sport_id = comp.sport_id
+        if sport_id in sports_map:
+            if comp.num_events > 0:
+                sports_map[sport_id]["with_events"].append(comp)
+            else:
+                sports_map[sport_id]["without_events"].append(comp)
+
+    # Ordenar las listas de competiciones con eventos por número de eventos (desc) y nombre
+    for data in sports_map.values():
+        data["with_events"].sort(key=lambda x: (-x.num_events, x.name))
+        data["without_events"].sort(key=lambda x: x.name)
+
+    # Preparar el contexto final manteniendo el orden de los deportes
+    sports_data = [sports_map[sport.id] for sport in active_sports]
 
     return render(
         request,
         "soccertime/competitions.html",
         {
-            "sports": queryset,
+            "sports_data": sports_data,
             "competitions": get_favorite_competitions(),
         },
     )
