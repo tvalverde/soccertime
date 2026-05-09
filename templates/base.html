@@ -1,5 +1,6 @@
 {% load django_bootstrap5 %}
 {% load soccertime_tags %}
+{% load static %}
 {% load i18n %}
 <!doctype html>
 <html lang="es" data-bs-theme="dark">
@@ -11,6 +12,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     {% bootstrap_css %}
+    <link rel="stylesheet" href="{% static 'soccertime/css/theme.css' %}">
     {% bootstrap_javascript %}
     {% block javascript %}
     {% endblock %}
@@ -18,9 +20,6 @@
     <style>
       html, body {
         height: 100%;
-      }
-      html {
-        font-size:0.875em
       }
       .wrapper {
         display: flex;
@@ -59,10 +58,6 @@
       }
       .link-styled:hover {
         text-decoration: underline;
-      }
-      .nav-link:hover {
-        color: #007bff;
-        background-color: rgba(0, 123, 255, 0.1);
       }
     </style>
     <link rel="icon" type="image/svg+xml"

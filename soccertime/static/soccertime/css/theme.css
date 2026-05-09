@@ -1,0 +1,122 @@
+@import url('https://fonts.googleapis.com/css2?family=Anybody:wght@700;800&family=Inter:wght@400;500;700&display=swap');
+
+[data-bs-theme="dark"] {
+    /* Colors from DESIGN.md */
+    --bs-body-bg: #131313;
+    --bs-body-bg-rgb: 19, 19, 19;
+    
+    --bs-body-color: #e5e2e1;
+    --bs-body-color-rgb: 229, 226, 225;
+    
+    --bs-primary: #00ff41;
+    --bs-primary-rgb: 0, 255, 65;
+    
+    --bs-secondary: #00e0ff;
+    --bs-secondary-rgb: 0, 224, 255;
+    
+    --bs-dark: #1c1b1b;
+    --bs-dark-rgb: 28, 27, 27;
+
+    --bs-border-color: #3b4b37;
+    
+    --bs-danger: #ffb4ab;
+    --bs-danger-rgb: 255, 180, 171;
+
+    --bs-tertiary-bg: #1c1b1b;
+}
+
+:root {
+    --bs-font-sans-serif: 'Inter', sans-serif;
+    --bs-body-font-family: 'Inter', sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
+    font-family: 'Anybody', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+body {
+    font-size: 1.05rem;
+}
+
+/* Header and navigation bars */
+header, .bg-dark-blue {
+    background-color: #0e0e0e !important;
+}
+
+/* Navbar active state - Neon Green background, dark green text */
+.nav-pills .nav-link.active {
+    background-color: var(--bs-primary) !important;
+    color: #003907 !important;
+    font-weight: 700;
+}
+
+/* General bg-primary - Defaulting to dark green bar style for the competitions bar */
+.bg-primary {
+    background-color: #007117 !important;
+    color: #ebffe2 !important;
+}
+
+/* Badges and specifically text-bg utilities - ensuring dark text on bright backgrounds */
+.badge.bg-primary, .text-bg-primary {
+    background-color: var(--bs-primary) !important;
+    color: #003907 !important;
+}
+
+.badge.bg-secondary, .text-bg-secondary {
+    background-color: var(--bs-secondary) !important;
+    color: #00363f !important;
+}
+
+.badge.bg-info, .text-bg-info {
+    background-color: var(--bs-secondary) !important; /* using secondary as info for consistency */
+    color: #00363f !important;
+}
+
+/* Fix for links inside the competitions bar or other primary-bg areas */
+.bg-primary a, .text-bg-primary a {
+    color: inherit !important;
+    text-decoration: underline !important;
+}
+
+/* General table and content styling */
+.bg-dark {
+    background-color: #1c1b1b !important;
+}
+
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--bs-body-color);
+    --bs-table-border-color: var(--bs-border-color);
+}
+
+.table-hover > tbody > tr:hover > * {
+    --bs-table-bg-state: #1c1b1b;
+    color: var(--bs-body-color);
+}
+
+.table-active {
+    --bs-table-bg-state: #2a2a2a;
+    color: var(--bs-body-color);
+}
+
+.text-secondary {
+    color: #b9ccb2 !important; /* on-surface-variant */
+}
+
+.link-primary {
+    color: var(--bs-primary) !important;
+}
+
+.btn-outline-primary {
+    --bs-btn-color: var(--bs-primary);
+    --bs-btn-border-color: var(--bs-primary);
+    --bs-btn-hover-bg: var(--bs-primary);
+    --bs-btn-hover-color: #003907;
+}
+
+/* Ensure channel links and other badges have dark text */
+.badge {
+    font-weight: 600;
+}
