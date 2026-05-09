@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django.db.models.signals import m2m_changed, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
@@ -237,7 +237,7 @@ class Channel(models.Model):
 
     @property
     def enabled_links(self):
-        return self.links.filter(enabled=True)
+        return [link for link in self.links.all() if link.enabled]
 
 
 class ChannelLink(models.Model):
@@ -370,7 +370,7 @@ class EventQuerySet(models.QuerySet):
             "competition__sport",
             "competition__flag",
         ).prefetch_related(
-            "channels",
+            Prefetch("channels", queryset=Channel.objects.prefetch_related("links")),
         )
 
         # Solo añadir relaciones de subtipos si estamos en Event (no en Match/Race/SimpleEvent)

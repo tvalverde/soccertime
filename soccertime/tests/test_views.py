@@ -142,6 +142,44 @@ class TestAgendaView:
         response = client.get(reverse("agenda"))
         assert "teams" in response.context
 
+    def test_agenda_channels_performance(self, client, db, competition, team_home, team_away):
+        """Should have a constant number of queries regardless of the number of channels/links."""
+        from soccertime.models import Channel, ChannelLink, ChannelLinkSource, Match
+        source = ChannelLinkSource.objects.create(name="perf-test")
+        now = timezone.now()
+
+        # Create 3 events, each with 3 channels, each with 2 links
+        for i in range(3):
+            match = Match.objects.create(
+                competition=competition,
+                local=team_home,
+                visitor=team_away,
+                date=now + datetime.timedelta(hours=i + 1)
+            )
+            for j in range(3):
+                ch = Channel.objects.create(name=f"Channel {i}-{j}")
+                for k in range(2):
+                    link = ChannelLink.objects.create(
+                        name=f"Link {i}-{j}-{k}",
+                        link="http://example.com",
+                        enabled=True
+                    )
+                    link.sources.add(source)
+                    ch.links.add(link)
+                match.channels.add(ch)
+
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as queries:
+            client.get(reverse("agenda"))
+
+        # Current state: many queries due to N+1 in channels_list.html
+        # Goal after optimization: < 15 queries total
+        # We set it higher now to see it "pass" but we know it's inefficient.
+        # Actually, let's set a strict limit to see it FAIL first (TDD).
+        assert len(queries) < 15
+
 
 class TestTeamEventsView:
     """Tests for team_events view."""

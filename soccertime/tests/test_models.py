@@ -117,8 +117,8 @@ class TestChannel:
     def test_enabled_links(self, channel_with_links):
         """Should return only enabled links."""
         enabled = channel_with_links.enabled_links
-        assert enabled.count() == 1
-        assert enabled.first().enabled is True
+        assert len(enabled) == 1
+        assert enabled[0].enabled is True
 
 
 class TestChannelLink:
