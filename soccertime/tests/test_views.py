@@ -145,25 +145,19 @@ class TestAgendaView:
     def test_agenda_channels_performance(self, client, db, competition, team_home, team_away):
         """Should have a constant number of queries regardless of the number of channels/links."""
         from soccertime.models import Channel, ChannelLink, ChannelLinkSource, Match
+
         source = ChannelLinkSource.objects.create(name="perf-test")
         now = timezone.now()
 
         # Create 3 events, each with 3 channels, each with 2 links
         for i in range(3):
             match = Match.objects.create(
-                competition=competition,
-                local=team_home,
-                visitor=team_away,
-                date=now + datetime.timedelta(hours=i + 1)
+                competition=competition, local=team_home, visitor=team_away, date=now + datetime.timedelta(hours=i + 1)
             )
             for j in range(3):
                 ch = Channel.objects.create(name=f"Channel {i}-{j}")
                 for k in range(2):
-                    link = ChannelLink.objects.create(
-                        name=f"Link {i}-{j}-{k}",
-                        link="http://example.com",
-                        enabled=True
-                    )
+                    link = ChannelLink.objects.create(name=f"Link {i}-{j}-{k}", link="http://example.com", enabled=True)
                     link.sources.add(source)
                     ch.links.add(link)
                 match.channels.add(ch)

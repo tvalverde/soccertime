@@ -47,3 +47,20 @@ This document provides the necessary context for understanding and working on th
 -   **External Data Files:** Files used as input for `addlinksource` (like `elcano.txt` or `newera.txt`) are considered external data sources and are **not** part of the git repository. Do not commit them.
 -   **Local TLS Key Material:** For local production simulation with Traefik, generate `.docker/traefik/certs/mojon.local.key` locally. This private key file must never be committed; only non-sensitive templates/configuration should be tracked.
 -   **Initial Fixtures:** The application includes initial fixtures (`soccertime/fixtures/`) that are automatically loaded via a `post_migrate` signal when the database is empty. These include basic sports, competitions (La Liga, Champions League, Fórmula 1, MotoGP), teams (FC Barcelona, CD Castellón, Barça Basket, etc.), and their corresponding favorites. Fixtures use sequential PKs starting from 1.
+
+## 5. Development Best Practices & Patterns
+
+-   **Performance (N+1 Avoidance):**
+    -   Always use `.select_related()` for ForeignKey relationships and `.prefetch_related()` for ManyToMany or reverse relationships in Views.
+    -   When rendering lists of channels/links in templates, use the `EventQuerySet.with_related()` method which performs nested prefetching.
+    -   In templates, use `{% with %}` blocks to cache expensive property calls or methods that are used multiple times (e.g., `channel.enabled_links`).
+-   **Model Architecture:**
+    -   **Polymorphism:** Use the `Event.child_event` property to access specific event instances (`Match`, `Race`, `SimpleEvent`) instead of using complex `if/elif` chains in templates.
+    -   **In-Memory Filtering:** Properties that filter related sets (like `Channel.enabled_links`) should use list comprehensions over `self.links.all()` to leverage Django's prefetch cache instead of hitting the DB with `.filter()`.
+-   **Template & UI Standardization:**
+    -   **Unified Rendering:** `agenda.html` is the reference template for all event listings. Do not create new listing templates unless strictly necessary.
+    -   **Component Consistency:**
+        -   **Competitions:** Always show with their flag (`{{ competition.flag.flag_image|safe }}`).
+        -   **Teams:** Always show as `[Crest] + Name` to avoid ambiguity between teams sharing the same crest (e.g., Male/Female categories).
+    -   **Empty States:** Use the global Django `messages` framework instead of hardcoded alert blocks in specific templates.
+    -   **Accessibility:** Always provide `aria-label` for links and interactive elements, especially those containing only icons or images.

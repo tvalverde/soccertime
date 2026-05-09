@@ -2,6 +2,14 @@
 
 Django application for aggregating and displaying sports events (football, cycling, tennis, motorsports, and more) with TV channel information.
 
+## Key Features
+
+- **Automated Scraping:** Robust daily scraping from multiple sports sources with intelligent deduplication and updates.
+- **Optimized Performance:** Aggressive N+1 query prevention using nested prefetching and view-level data pre-calculation.
+- **Unified Visual Experience:** Consistent dark-themed UI across all event listings (favorites, daily agenda, sports, channels, and competitions).
+- **Accessibility:** Accessible UI components with semantic HTML and ARIA labels.
+- **Developer Friendly:** Clean architecture using polymorphism patterns (`child_event`) and standardized component structures.
+
 ## Requirements
 
 - [Docker](https://docs.docker.com/get-docker/)
@@ -87,7 +95,7 @@ docker compose exec web python manage.py createsuperuser
 # Collect static files
 docker compose exec web python manage.py collectstatic --noinput
 
-# Run data scraper
+# Run data scraper (Idempotent: updates existing records if details or time change slightly)
 docker compose exec web python manage.py scrapit
 
 # Run scraper (dry run - show events without saving)
