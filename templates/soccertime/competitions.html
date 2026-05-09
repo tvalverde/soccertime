@@ -9,7 +9,8 @@ Soccertime :: {% translate "Competiciones" %}
         <h3 class="pt-3">{{ item.sport.name }}</h3>
         {% for competition in item.with_events %}
             <div class="d-inline-block me-3 mb-2">
-            <a href="{% url "competition-events" competition.pk %}" class="link-styled{% if competition.is_fav %} text-bg-warning px-1 rounded{% endif %}">{{ competition.flag.flag_image|safe }} {{ competition.name }}</a> <span class="badge rounded-pill text-bg-primary">{{ competition.num_events }}</span>
+            <a href="{% url "competition-events" competition.pk %}" class="link-styled{% if competition.is_fav %} text-bg-warning px-1 rounded{% endif %}" aria-label="{% translate "Ver eventos de" %} {{ competition.name }}">{{ competition.flag.flag_image|safe }} {{ competition.name }}</a>
+ <span class="badge rounded-pill text-bg-primary">{{ competition.num_events }}</span>
             </div>
         {% empty %}
             <p class="text-secondary"><em>{% translate "No hay competiciones con eventos próximos" %}</em></p>

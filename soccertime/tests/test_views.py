@@ -258,6 +258,11 @@ class TestChannelEventsView:
         response = client.get(reverse("channel-events", args=[channel.pk]))
         assert response.context["events_title"] == channel.name
 
+    def test_uses_correct_template(self, client, channel):
+        """Should use agenda.html template."""
+        response = client.get(reverse("channel-events", args=[channel.pk]))
+        assert "soccertime/agenda.html" in [t.name for t in response.templates]
+
 
 class TestSportEventsView:
     """Tests for sport_events view."""
@@ -281,6 +286,11 @@ class TestSportEventsView:
         """Should not display events from other sports."""
         response = client.get(reverse("sport-events", args=[sport.pk]))
         assert race.pk not in get_event_pks(response.context["events"])
+
+    def test_uses_correct_template(self, client, sport):
+        """Should use agenda.html template."""
+        response = client.get(reverse("sport-events", args=[sport.pk]))
+        assert "soccertime/agenda.html" in [t.name for t in response.templates]
 
 
 class TestCompetitionEventsView:
