@@ -477,6 +477,17 @@ class Event(models.Model):
     class Meta:
         ordering = ["date__date", "date", "competition__sport", "competition"]
 
+    @property
+    def child_event(self):
+        """Returns the specific child instance of this event (Match, Race, or SimpleEvent)."""
+        if self.event_type == self.EventType.MATCH and hasattr(self, "match"):
+            return self.match
+        elif self.event_type == self.EventType.RACE and hasattr(self, "race"):
+            return self.race
+        elif hasattr(self, "simpleevent"):
+            return self.simpleevent
+        return None
+
     def __str__(self):
         if self.event_type == self.EventType.MATCH:
             return f"{self.match} @ {self.competition} on {self.date}"

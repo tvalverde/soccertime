@@ -45,16 +45,11 @@ def add_empty_message(request, queryset, message="No hay eventos a la vista :)",
 def favorites(request):
     queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3)
     add_empty_message(request, queryset, "No hay eventos a la vista :(", messages.WARNING)
-    # Note: teams is intentionally omitted from context here.
-    # The favorites view only shows the competitions bar, not the teams shortcut bar.
-    return render(
-        request,
-        "soccertime/agenda.html",
-        {
-            "events": queryset,
-            "competitions": get_favorite_competitions(),
-        },
-    )
+
+    context = get_base_context()
+    context.pop("teams", None)
+    context.update({"events": queryset})
+    return render(request, "soccertime/agenda.html", context)
 
 
 def agenda(request):

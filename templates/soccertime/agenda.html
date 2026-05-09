@@ -37,24 +37,12 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 <table class="table table-sm table-hover">
     <tbody>
         {% for parent_event in events %}
-            {% if parent_event.match %}
-                {% with event=parent_event.match %}
+            {% with event=parent_event.child_event %}
+                {% if event %}
                     {% include "soccertime/agenda_header.html" %}
                     {% include "soccertime/agenda_item.html" %}
-                {% endwith %}
-            {% elif parent_event.race %}
-                {% with event=parent_event.race %}
-                    {% include "soccertime/agenda_header.html" %}
-                    {% include "soccertime/agenda_item.html" %}
-                {% endwith %}
-            {% elif parent_event.simpleevent %}
-                {% with event=parent_event.simpleevent %}
-                    {% include "soccertime/agenda_header.html" %}
-                    {% include "soccertime/agenda_item.html" %}
-                {% endwith %}
-            {% else %}
-                <!-- Tipo de evento no reconocido -->
-            {% endif %}
+                {% endif %}
+            {% endwith %}
         {% endfor %}
     </tbody>
 </table>
