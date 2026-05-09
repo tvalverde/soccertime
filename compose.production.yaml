@@ -44,7 +44,6 @@ services:
     build:
       context: .
     image: soccertime:latest
-    pull_policy: if_not_present
     restart: unless-stopped
     stop_grace_period: 30s
     security_opt:
@@ -55,11 +54,12 @@ services:
     tmpfs:
       - /tmp:size=50M,mode=1777
       - /var/tmp/soccertime_cache:size=50M,mode=1777
-    command: python -m uvicorn soccertime.asgi:application --host 0.0.0.0 --port 8000
+    command: python -m uvicorn soccertime.asgi:application --host 0.0.0.0 --port 8000 --root-path /soccertime
     volumes:
       - soccertime-db:/code/db:rw
       - soccertime-media:/code/media:rw
       - soccertime-static:/code/static:rw
+      - /home/toni/shared:/shared:ro
     env_file:
       - .env.production
     user: 1000:1000
