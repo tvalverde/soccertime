@@ -178,7 +178,7 @@ download-db:
 		cp $(LOCAL_DB_PATH) $(LOCAL_DB_PATH)$(BACKUP_SUFFIX); \
 	fi
 	@mkdir -p $(dir $(LOCAL_DB_PATH))
-	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -v $(REMOTE_DB_VOLUME):/from -v /tmp:/to alpine sh -c "cp /from/$(REMOTE_DB_FILE_IN_VOLUME) /to/$(APP_NAME)-db.sqlite3"'
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'HOST_UID=$$(id -u); HOST_GID=$$(id -g); docker run --rm -v $(REMOTE_DB_VOLUME):/from -v /tmp:/to alpine sh -c "cp /from/$(REMOTE_DB_FILE_IN_VOLUME) /to/$(APP_NAME)-db.sqlite3 && chown $$HOST_UID:$$HOST_GID /to/$(APP_NAME)-db.sqlite3"'
 	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-db.sqlite3 $(LOCAL_DB_PATH)
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-db.sqlite3'
 	@echo "Database downloaded successfully."
@@ -208,7 +208,7 @@ download-requests-cache:
 		echo "Backing up local cache to $(LOCAL_CACHE_PATH)$(BACKUP_SUFFIX)"; \
 		cp $(LOCAL_CACHE_PATH) $(LOCAL_CACHE_PATH)$(BACKUP_SUFFIX); \
 	fi
-	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -v $(REMOTE_DB_VOLUME):/from -v /tmp:/to alpine sh -c "cp /from/$(REMOTE_CACHE_FILE_IN_VOLUME) /to/$(APP_NAME)-requests-cache.sqlite"'
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'HOST_UID=$$(id -u); HOST_GID=$$(id -g); docker run --rm -v $(REMOTE_DB_VOLUME):/from -v /tmp:/to alpine sh -c "cp /from/$(REMOTE_CACHE_FILE_IN_VOLUME) /to/$(APP_NAME)-requests-cache.sqlite && chown $$HOST_UID:$$HOST_GID /to/$(APP_NAME)-requests-cache.sqlite"'
 	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-requests-cache.sqlite $(LOCAL_CACHE_PATH)
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-requests-cache.sqlite'
 	@echo "Requests cache downloaded successfully."
@@ -239,7 +239,7 @@ download-media:
 		cp -r $(LOCAL_MEDIA_PATH) $(LOCAL_MEDIA_PATH)$(BACKUP_SUFFIX); \
 	fi
 	@mkdir -p $(LOCAL_MEDIA_PATH)
-	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -v $(REMOTE_MEDIA_VOLUME):/from -v /tmp:/to alpine sh -c "cd /from && tar czf /to/$(APP_NAME)-media.tgz ."'
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'HOST_UID=$$(id -u); HOST_GID=$$(id -g); docker run --rm -v $(REMOTE_MEDIA_VOLUME):/from -v /tmp:/to alpine sh -c "cd /from && tar czf /to/$(APP_NAME)-media.tgz . && chown $$HOST_UID:$$HOST_GID /to/$(APP_NAME)-media.tgz"'
 	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-media.tgz /tmp/$(APP_NAME)-media.tgz
 	@tar xzf /tmp/$(APP_NAME)-media.tgz -C $(LOCAL_MEDIA_PATH)
 	@rm -f /tmp/$(APP_NAME)-media.tgz
