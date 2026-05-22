@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Flags to competitions in the favorites bar for visual consistency.
 
 ### Fixed
-- Idempotency in `scrapit` command: existing `Race` and `SimpleEvent` records are now updated instead of duplicated when details or dates change slightly.
+- F1 multi-session scraping: all sessions of the same Grand Prix weekend (Libres, Clasificación al Sprint, Sprint, Clasificación, Carrera) are now stored as independent `Race` records. Previously, all sessions shared the same race name and fell within the ±2-day deduplication window, causing `MultipleObjectsReturned` which deleted all but the most recent record, keeping only the Sunday race.
+- Idempotency in `scrapit` command: `Race` and `SimpleEvent` deduplication now includes `details` (session type) as part of the lookup key, so only the datetime shifts within the same session type trigger an update.
 - Removed hardcoded empty state alerts in favor of the global Django messages system.
 - Deployment building unrelated images: `remote_deploy` and `remote-restart` now explicitly target the `soccertime-web` service.
 - PermissionError during `collectstatic` in production: added a step to `chown` the static volume to the application user before running management commands.
