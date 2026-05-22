@@ -19,4 +19,4 @@ ENV DJANGO_DEBUG=true \
     DJANGO_USE_X_FORWARDED_HOST=false \
     DJANGO_SESSION_COOKIE_PATH=/ \
     DJANGO_DATABASE_DEFAULT_NAME=/code/db/db.sqlite3 \
-    REQUESTS_CACHE=/code/db/soccertime_data_cache.sqlite
+    REQUESTS_CACHE=/var/tmp/soccertime_cache/soccertime_data_cache
