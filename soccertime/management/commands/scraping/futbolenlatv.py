@@ -36,11 +36,12 @@ HEADERS = {
     "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
 }
 
-# Configure requests cache
-requests_cache.install_cache(
-    os.environ.get("REQUESTS_CACHE", "soccertime_data_cache"),
-    expire_after=timedelta(hours=6),
-)
+def _configure_cache() -> None:
+    cache_path = os.environ.get("REQUESTS_CACHE", "soccertime_data_cache")
+    cache_dir = os.path.dirname(cache_path)
+    if cache_dir:
+        os.makedirs(cache_dir, exist_ok=True)
+    requests_cache.install_cache(cache_path, expire_after=timedelta(hours=6))
 
 # Configure retry strategy
 retry_strategy = Retry(
@@ -339,6 +340,7 @@ def create_session():
 
 def get_events() -> Iterator[Event]:
     """Fetch and parse events from all configured pages."""
+    _configure_cache()
     session = create_session()
     total_stats = ScrapingStats()
 

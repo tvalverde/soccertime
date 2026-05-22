@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PermissionError during `collectstatic` in production: added a step to `chown` the static volume to the application user before running management commands.
 - Horizontal scroll issue on Fire TV Silk: removed `text-nowrap` from table cells and reverted quick-access bars to show only crests to save horizontal space.
 - PermissionError ("Operation not permitted") when downloading the database, requests cache, or media via `Makefile` by correctly setting file ownership on the remote host.
-- `sqlite3.OperationalError` during `scrapit` in production: aligned `REQUESTS_CACHE` env var in Dockerfile to point at `/var/tmp/soccertime_cache/` (the `tmpfs` already declared in `compose.production.yaml`) instead of `/code/db/`. Also removed the spurious `.sqlite` extension from the cache name, which caused `requests_cache` to double-append it.
+- `sqlite3.OperationalError` during `scrapit` in production: moved `requests_cache.install_cache()` out of module-level code into `_configure_cache()`, called lazily from `get_events()`. Added `os.makedirs(..., exist_ok=True)` to guarantee the cache directory exists before SQLite tries to open it. Also removed the spurious `.sqlite` extension from `REQUESTS_CACHE` in the Dockerfile (the library appends it automatically).
 
 ### Removed
 - Legacy and redundant template files: `events.html`, `match_item.html`, `simple_event_item.html`, and `event_header.html`.
