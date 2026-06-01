@@ -63,11 +63,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-if not DEBUG and os.environ.get("DJANGO_CACHE", "true").lower() != "false":
-    MIDDLEWARE += [
-        "django.middleware.cache.UpdateCacheMiddleware",
-        "django.middleware.cache.FetchFromCacheMiddleware",
-    ]
+_caching_enabled = not DEBUG and os.environ.get("DJANGO_CACHE", "true").lower() != "false"
 
 ROOT_URLCONF = "soccertime.urls"
 
@@ -150,7 +146,7 @@ SESSION_COOKIE_PATH = os.environ.get("DJANGO_SESSION_COOKIE_PATH") or None
 MEDIA_URL = os.environ.get("DJANGO_MEDIA_URL") or "media/"
 MEDIA_ROOT = os.environ.get("DJANGO_MEDIA_ROOT") or BASE_DIR / "media"
 
-if not DEBUG and os.environ.get("DJANGO_CACHE", "true").lower() != "false":
+if _caching_enabled:
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
@@ -158,6 +154,8 @@ if not DEBUG and os.environ.get("DJANGO_CACHE", "true").lower() != "false":
             "TIMEOUT": 3600,
         }
     }
+
+CACHE_PAGE_TIMEOUT = 3600 if _caching_enabled else 0
 
 FORMAT_MODULE_PATH = ["soccertime.formats"]
 

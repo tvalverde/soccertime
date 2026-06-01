@@ -35,6 +35,21 @@ def get_event_pks(context_events):
         return list(context_events.values_list("pk", flat=True))
 
 
+class TestHealthzView:
+    """Tests for healthz endpoint."""
+
+    def test_returns_200(self, client, db):
+        """Should return 200 status code."""
+        response = client.get(reverse("healthz"))
+        assert response.status_code == 200
+
+    def test_returns_json(self, client, db):
+        """Should return JSON response with status ok."""
+        response = client.get(reverse("healthz"))
+        assert response["Content-Type"] == "application/json"
+        assert response.json() == {"status": "ok"}
+
+
 class TestFavoritesView:
     """Tests for favorites view."""
 

@@ -1,8 +1,11 @@
+from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Max, Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
+from django.views.decorators.cache import cache_page
 
 from soccertime.models import Channel, ChannelLink, Competition, Event, Sport, Team
 
@@ -42,6 +45,11 @@ def add_empty_message(request, queryset, message="No hay eventos a la vista :)",
 # --- Views ---
 
 
+def healthz(request):
+    return JsonResponse({"status": "ok"})
+
+
+@cache_page(settings.CACHE_PAGE_TIMEOUT)
 def favorites(request):
     queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3)
     add_empty_message(request, queryset, "No hay eventos a la vista :(", messages.WARNING)
@@ -52,6 +60,7 @@ def favorites(request):
     return render(request, "soccertime/agenda.html", context)
 
 
+@cache_page(settings.CACHE_PAGE_TIMEOUT)
 def agenda(request):
     max_date_result = Event.objects.aggregate(Max("date"))["date__max"]
     max_date = max_date_result.strftime("%Y-%m-%d") if max_date_result else None
@@ -74,6 +83,7 @@ def agenda(request):
     return render(request, "soccertime/agenda.html", context)
 
 
+@cache_page(settings.CACHE_PAGE_TIMEOUT)
 def team_events(request, team):
     team_obj = get_object_or_404(Team, pk=team)
     queryset = Event.objects.for_team(team).in_progress_or_upcoming()
@@ -118,6 +128,7 @@ def team_events(request, team):
     )
 
 
+@cache_page(settings.CACHE_PAGE_TIMEOUT)
 def channel_events(request, channel):
     channel_obj = get_object_or_404(Channel, pk=channel)
     queryset = Event.objects.for_channel(channel).in_progress_or_upcoming()
@@ -134,6 +145,7 @@ def channel_events(request, channel):
     return render(request, "soccertime/agenda.html", context)
 
 
+@cache_page(settings.CACHE_PAGE_TIMEOUT)
 def sport_events(request, sport):
     sport_obj = get_object_or_404(Sport, pk=sport)
     queryset = Event.objects.for_sport(sport).in_progress_or_upcoming()
@@ -150,6 +162,7 @@ def sport_events(request, sport):
     return render(request, "soccertime/agenda.html", context)
 
 
+@cache_page(settings.CACHE_PAGE_TIMEOUT)
 def competition_events(request, competition):
     competition_obj = get_object_or_404(Competition, pk=competition)
     queryset = Event.objects.for_competition(competition).in_progress_or_upcoming()
@@ -171,6 +184,7 @@ def competition_events(request, competition):
     )
 
 
+@cache_page(settings.CACHE_PAGE_TIMEOUT)
 def channels(request):
     queryset = ChannelLink.objects.order_by("category", "subcategory", "name")
     add_empty_message(request, queryset, "No hay canales disponibles :_(", messages.ERROR)
@@ -181,6 +195,7 @@ def channels(request):
     )
 
 
+@cache_page(settings.CACHE_PAGE_TIMEOUT)
 def competitions(request):
     """
     Exhibe deportes y sus competiciones, optimizado para evitar N+1 queries.

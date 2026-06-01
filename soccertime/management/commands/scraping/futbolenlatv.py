@@ -36,12 +36,14 @@ HEADERS = {
     "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
 }
 
+
 def _configure_cache() -> None:
     cache_path = os.environ.get("REQUESTS_CACHE", "soccertime_data_cache")
     cache_dir = os.path.dirname(cache_path)
     if cache_dir:
         os.makedirs(cache_dir, exist_ok=True)
     requests_cache.install_cache(cache_path, expire_after=timedelta(hours=6))
+
 
 # Configure retry strategy
 retry_strategy = Retry(

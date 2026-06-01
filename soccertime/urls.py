@@ -30,6 +30,7 @@ from soccertime.views import (
     competition_events,
     competitions,
     favorites,
+    healthz,
     sport_events,
     team_events,
 )
@@ -40,6 +41,7 @@ if os.environ.get("DJANGO_ADMIN_ENABLED", "").lower() == "true":
     urlpatterns.append(path("admin/", admin.site.urls))
 
 urlpatterns += [
+    path("healthz/", healthz, name="healthz"),
     path("", RedirectView.as_view(url="favorites/")),
     path("favorites/", favorites, name="favorites"),
     path("events/", RedirectView.as_view(url="../favorites/")),
