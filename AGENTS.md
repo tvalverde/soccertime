@@ -36,9 +36,7 @@ This document provides the necessary context for understanding and working on th
     -   `docker compose exec web python manage.py resetdb`: Resets the database (deletes and recreates with migrations + fixtures). Useful for development.
 
 -   **Production Deployment:**
-    -   **Status:** **To Be Defined (TBD)**.
-    -   **Note:** The previous deployment method using the `Makefile` is considered deprecated.
-    -   **Future Direction:** The new workflow will be based on building and deploying a production-ready Docker image of the application. The specific steps for this process (e.g., CI/CD pipeline, registry pushes) will be discussed and defined separately.
+    -   Execute `make deploy-production` to deploy the application to the production server.
 
 ## 4. Guardrails & Knowledge
 
