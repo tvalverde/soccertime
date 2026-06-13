@@ -240,8 +240,8 @@ class TestTeamEventsView:
             client.get(reverse("team-events", args=[team_home.pk]))
 
         # We expect a low number of queries. If N+1 exists, it will be around 15-20.
-        # If optimized, it should be around 5-8.
-        assert len(queries) < 10
+        # If optimized, it should be around 5-12.
+        assert len(queries) < 13
 
 
 class TestChannelEventsView:

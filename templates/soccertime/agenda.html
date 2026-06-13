@@ -61,8 +61,14 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
     </tbody>
 </table>
 {% if events.number %}
-<div class="d-flex justify-content-end pe-3">
-    {% bootstrap_pagination events %}
+<style>
+    .pagination-wrap .pagination {
+        flex-wrap: wrap;
+        justify-content: inherit;
+    }
+</style>
+<div class="d-flex justify-content-center justify-content-sm-end pe-sm-3 pb-3 pagination-wrap">
+    {% bootstrap_pagination events extra_classes="test" %}
 </div>
 {% endif %}
 {% endblock %}

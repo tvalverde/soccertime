@@ -1,6 +1,6 @@
 {% load l10n %}
 {% load i18n %}
-<tr>
+<tr{% if event.is_favorite_event and "favorites" not in request.path %} style="border-left: 4px solid var(--bs-warning) !important;"{% endif %}>
   <th scope="row">
     {{ event.date.time|date:'H:i' }}
   </th>

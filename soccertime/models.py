@@ -140,6 +140,10 @@ class Competition(models.Model):
         return self.favorite.exists()
 
     @property
+    def is_favorite_cached(self):
+        return bool(self.favorite.all())
+
+    @property
     def has_events(self):
         return self.events.filter(date__date__gte=timezone.now().date()).exists()
 
@@ -165,6 +169,10 @@ class Team(ImageMixin, models.Model):
     def crest_image(self):
         """Alias for backward compatibility."""
         return self.render_image()
+
+    @property
+    def is_favorite_cached(self):
+        return bool(self.favorite.all())
 
     def save_crest(self, crest, crest_filename):
         """Alias for backward compatibility."""
@@ -380,6 +388,10 @@ class EventQuerySet(models.QuerySet):
                 "match__visitor",
                 "race",
                 "simpleevent",
+            ).prefetch_related(
+                "match__local__favorite",
+                "match__visitor__favorite",
+                "competition__favorite",
             )
 
         return qs
@@ -515,6 +527,10 @@ class Match(Event):
     def __str__(self):
         return f"{self.local} - {self.visitor}"
 
+    @property
+    def is_favorite_event(self):
+        return self.local.is_favorite_cached or self.visitor.is_favorite_cached
+
 
 class Race(Event):
     name = models.CharField(max_length=255)
@@ -529,6 +545,10 @@ class Race(Event):
     def __str__(self):
         return f"{self.name}"
 
+    @property
+    def is_favorite_event(self):
+        return False
+
 
 class SimpleEvent(Event):
     name = models.CharField(max_length=255)
@@ -542,3 +562,7 @@ class SimpleEvent(Event):
 
     def __str__(self):
         return f"{self.name}"
+
+    @property
+    def is_favorite_event(self):
+        return False

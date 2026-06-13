@@ -18,6 +18,7 @@ This document provides the necessary context for understanding and working on th
     -   **Code Style & Linting:** The project uses [Ruff](https://docs.astral.sh/ruff/) for all code formatting and linting. Configuration is located in `pyproject.toml`. Before committing, always run `ruff format .` and `ruff check . --fix`.
     -   **Changelog:** Maintain the `CHANGELOG.md` file. Document all notable changes (Added, Changed, Deprecated, Removed, Fixed, Security) after every modification, following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) standard.
     -   **Testing:** The project uses `pytest` and `pytest-django`. All new features or bug fixes should be accompanied by tests.
+    -   **Regression Testing:** Always create a regression test when fixing a bug to prevent it from reappearing in the future.
     -   Tests are located in the `soccertime/tests/` directory.
     -   Run the full test suite with: `docker compose exec web pytest`
 

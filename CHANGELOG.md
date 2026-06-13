@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Visual highlight (orange/gold left border) to `agenda_item.html` for matches involving favorite teams.
+- `is_favorite_cached` property to `Team` and `Competition` models, and `is_favorite_event` to `Event` subclasses.
+- Database prefetching for favorite relationships in `EventQuerySet.with_related()` to prevent N+1 queries.
+- Rule regarding regression testing for bug fixes in `AGENTS.md`.
 - Competition/Events title header to `agenda.html` to improve context visibility when filtering.
 - Language and localization rules to `AGENTS.md`.
 - Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
@@ -16,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
 
 ### Fixed
+- Fixed mobile layout for pagination overflowing the screen by wrapping elements in `agenda.html`.
 - Fixed expandable teams bar not working on competition pages by moving the toggle script outside the favorites block in `base.html` and standardizing the UI component in `agenda.html`.
 
 - `/healthz/` endpoint for Docker healthchecks, independent of the application cache.
