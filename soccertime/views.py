@@ -27,7 +27,11 @@ def get_favorite_competitions():
 
 def get_favorite_teams():
     """Get teams marked as favorites, ordered by preference."""
-    return Team.objects.filter(favorite__isnull=False).order_by("favorite__order")
+    return (
+        Team.objects.filter(favorite__isnull=False)
+        .exclude(Q(crest__isnull=True) | Q(crest=""))
+        .order_by("favorite__order")
+    )
 
 
 def get_base_context():
@@ -121,8 +125,11 @@ def team_events(request, team):
             opponent_ids.add(opponent.id)
             opponent_dates[opponent.id] = match.date
 
-    # Ordenar equipos por fecha de enfrentamiento
-    competition_teams = sorted(Team.objects.filter(id__in=opponent_ids), key=lambda t: opponent_dates.get(t.id))
+    # Ordenar equipos por fecha de enfrentamiento, excluyendo los que no tienen escudo
+    competition_teams = sorted(
+        Team.objects.filter(id__in=opponent_ids).exclude(Q(crest__isnull=True) | Q(crest="")),
+        key=lambda t: opponent_dates.get(t.id),
+    )
 
     return render(
         request,
@@ -186,6 +193,7 @@ def competition_events(request, competition):
             "competition_teams": Team.objects.filter(
                 Q(home_matches__competition=competition_obj) | Q(away_matches__competition=competition_obj)
             )
+            .exclude(Q(crest__isnull=True) | Q(crest=""))
             .order_by("name")
             .distinct(),
         },
