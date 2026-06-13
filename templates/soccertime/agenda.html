@@ -11,11 +11,27 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 {% endif %}
 {% endblock %}
 {% block content %}
+{% if events_title %}
+<div class="py-3 text-center">
+  <h2 class="m-0 text-light">{{ events_title }}</h2>
+</div>
+{% endif %}
 {% if competition_teams %}
-<div class="container mb-2 py-2 text-center bg-dark text-light">
-  {% for team in competition_teams %}
-  <span class="me-3 d-inline"><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team.crest_image|safe }}</a></span>
-  {% endfor %}
+<div class="container mb-2 py-2 bg-dark text-light">
+  <div class="d-flex align-items-start">
+    <div id="teams-container" class="flex-grow-1 overflow-hidden" style="max-height: 44px; transition: max-height 0.3s ease;">
+      <div class="d-flex flex-wrap justify-content-center gap-3">
+        {% for team in competition_teams %}
+        <span><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team.crest_image|safe }}</a></span>
+        {% endfor %}
+      </div>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary ms-2 border-0" id="toggle-teams-btn" aria-label="{% translate 'Expandir equipos' %}" aria-expanded="false">
+      <svg id="toggle-teams-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-down" viewBox="0 0 16 16">
+        <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+      </svg>
+    </button>
+  </div>
 </div>
 {% endif %}
 {% if "agenda" in request.path %}
@@ -31,9 +47,7 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
     </div>
 </div>
 {% endif %}
-{% if events_title %}
-<p class="lead">{{ events_title }}</p>
-{% endif %}
+
 <table class="table table-sm table-hover">
     <tbody>
         {% for parent_event in events %}

@@ -128,17 +128,49 @@
       {% if competitions %}
       <div class="container mb-2 py-2 text-center text-light bg-primary">
         {% for competition in competitions %}
-        <span class="me-3 d-inline">{{ competition.flag.flag_image|safe }} <a href="{% url "competition-events" competition.pk %}" class="link-light link-styled" aria-label="{% translate "Ver eventos de" %} {{ competition.name }}">{{ competition.name }}</a></span>
+        <span class="me-3 d-inline-block text-nowrap">{{ competition.flag.flag_image|safe }} <a href="{% url "competition-events" competition.pk %}" class="link-light link-styled" aria-label="{% translate "Ver eventos de" %} {{ competition.name }}">{{ competition.name }}</a></span>
         {% endfor %}
       </div>
       {% endif %}
       {% if teams %}
-<div class="container mb-2 py-2 text-center bg-dark text-light">
-        {% for team in teams %}
-        <span class="me-3 d-inline"><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team.crest_image|safe }}</a></span>
-        {% endfor %}
+      <div class="container mb-2 py-2 bg-dark text-light">
+        <div class="d-flex align-items-start">
+          <div id="teams-container" class="flex-grow-1 overflow-hidden" style="max-height: 44px; transition: max-height 0.3s ease;">
+            <div class="d-flex flex-wrap justify-content-center gap-3">
+              {% for team in teams %}
+              <span><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team.crest_image|safe }}</a></span>
+              {% endfor %}
+            </div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary ms-2 border-0" id="toggle-teams-btn" aria-label="{% translate 'Expandir equipos' %}" aria-expanded="false">
+            <svg id="toggle-teams-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-down" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+            </svg>
+          </button>
+        </div>
       </div>
       {% endif %}
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          const btn = document.getElementById('toggle-teams-btn');
+          const container = document.getElementById('teams-container');
+          const icon = document.getElementById('toggle-teams-icon');
+          
+          if (btn && container) {
+            btn.addEventListener('click', function() {
+              if (container.style.maxHeight === '44px' || container.style.maxHeight === '') {
+                container.style.maxHeight = '1000px';
+                icon.innerHTML = '<path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>';
+                btn.setAttribute('aria-expanded', 'true');
+              } else {
+                container.style.maxHeight = '44px';
+                icon.innerHTML = '<path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>';
+                btn.setAttribute('aria-expanded', 'false');
+              }
+            });
+          }
+        });
+      </script>
       <div class="container mt-2">
         {% bootstrap_messages %}
 </div>

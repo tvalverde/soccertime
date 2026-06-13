@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Competition/Events title header to `agenda.html` to improve context visibility when filtering.
+- Language and localization rules to `AGENTS.md`.
+- Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
+
+### Changed
+- Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
+
+### Fixed
+- Fixed expandable teams bar not working on competition pages by moving the toggle script outside the favorites block in `base.html` and standardizing the UI component in `agenda.html`.
+
 - `/healthz/` endpoint for Docker healthchecks, independent of the application cache.
 
 ### Fixed

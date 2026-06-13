@@ -14,7 +14,14 @@ from soccertime.models import Channel, ChannelLink, Competition, Event, Sport, T
 
 def get_favorite_competitions():
     """Get competitions marked as favorites, ordered by preference."""
-    return Competition.objects.filter(favorite__isnull=False).order_by("favorite__order")
+    return (
+        Competition.objects.filter(
+            favorite__isnull=False,
+            events__date__date__gte=timezone.now().date(),
+        )
+        .distinct()
+        .order_by("favorite__order")
+    )
 
 
 def get_favorite_teams():
