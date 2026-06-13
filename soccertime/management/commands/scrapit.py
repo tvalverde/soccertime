@@ -99,6 +99,8 @@ class Command(BaseCommand):
 
         if self.dry_run:
             self.stdout.write(self.style.WARNING("DRY RUN - No changes will be saved to database"))
+        else:
+            self.init_caches()
 
         # Process all sources
         for source in sources:
@@ -111,6 +113,49 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Scraping completed successfully"))
         else:
             self.stdout.write(self.style.SUCCESS("Dry run completed"))
+
+    def init_caches(self):
+        """Initialize in-memory caches for reference objects to avoid DB hits in loops."""
+        self._sports_cache = {s.name: s for s in Sport.objects.all()}
+        self._flags_cache = {f.name: f for f in Flag.objects.all()}
+        self._competitions_cache = {
+            (c.name, c.sport_id): c for c in Competition.objects.select_related("sport", "flag")
+        }
+        self._teams_cache = {t.name: t for t in Team.objects.all()}
+        self._channels_cache = {c.name: c for c in Channel.objects.all()}
+
+    def get_or_create_sport(self, name):
+        if name in self._sports_cache:
+            return self._sports_cache[name]
+        sport, _ = Sport.objects.get_or_create(name=name)
+        self._sports_cache[name] = sport
+        return sport
+
+    def get_or_create_competition(self, name, sport, flag):
+        key = (name, sport.id)
+        if key in self._competitions_cache:
+            comp = self._competitions_cache[key]
+            if not comp.flag and flag:
+                comp.flag = flag
+                comp.save(update_fields=["flag"])
+            return comp
+        comp, _ = Competition.objects.get_or_create(name=name, sport=sport, defaults={"flag": flag})
+        self._competitions_cache[key] = comp
+        return comp
+
+    def get_or_create_team(self, name):
+        if name in self._teams_cache:
+            return self._teams_cache[name]
+        team, _ = Team.objects.get_or_create(name=name)
+        self._teams_cache[name] = team
+        return team
+
+    def get_or_create_channel(self, name):
+        if name in self._channels_cache:
+            return self._channels_cache[name]
+        channel, _ = Channel.objects.get_or_create(name=name)
+        self._channels_cache[name] = channel
+        return channel
 
     def process_source(self, source: EventSource):
         """Process events from a single source."""
@@ -147,17 +192,9 @@ class Command(BaseCommand):
             self.display_event(agenda_event)
             return
 
-        sport, _ = Sport.objects.get_or_create(name=agenda_event.sport)
-
+        sport = self.get_or_create_sport(agenda_event.sport)
         flag = self.get_or_create_flag(agenda_event.competition_crest)
-
-        competition, _ = Competition.objects.get_or_create(
-            name=agenda_event.competition, sport=sport, defaults={"flag": flag}
-        )
-
-        if not competition.flag and flag:
-            competition.flag = flag
-            competition.save()
+        competition = self.get_or_create_competition(agenda_event.competition, sport, flag)
 
         event_datetime = timezone.make_aware(agenda_event.datetime, timezone=timezone.get_current_timezone())
 
@@ -181,7 +218,11 @@ class Command(BaseCommand):
         if not flag_url:
             return None
 
-        flag, _ = Flag.objects.get_or_create(name=flag_url, defaults={"display_name": flag_url})
+        if flag_url in self._flags_cache:
+            flag = self._flags_cache[flag_url]
+        else:
+            flag, _ = Flag.objects.get_or_create(name=flag_url, defaults={"display_name": flag_url})
+            self._flags_cache[flag_url] = flag
 
         if not flag.image or not flag.image.storage.exists(flag.image.name):
             response = requests.get(flag_url, stream=True, timeout=10)
@@ -193,7 +234,7 @@ class Command(BaseCommand):
     def update_channels(self, event, channels):
         event.channels.clear()
         for channel_name in channels:
-            channel, _ = Channel.objects.get_or_create(name=channel_name)
+            channel = self.get_or_create_channel(channel_name)
             event.channels.add(channel)
 
     def save_simple_event(self, competition, event_datetime, event):
@@ -263,12 +304,12 @@ class Command(BaseCommand):
         return race
 
     def save_match_event(self, competition, event_datetime, event):
-        local, _ = Team.objects.get_or_create(name=event.details.local)
+        local = self.get_or_create_team(event.details.local)
         if not local.crest or not local.crest.storage.exists(local.crest.name):
             response = requests.get(event.details.local_crest, stream=True, timeout=10)
             if response.status_code == 200:
                 local.save_crest(io.BytesIO(response.content), event.details.local_crest)
-        visitor, _ = Team.objects.get_or_create(name=event.details.visitor)
+        visitor = self.get_or_create_team(event.details.visitor)
 
         if not visitor.crest or not visitor.crest.storage.exists(visitor.crest.name):
             response = requests.get(event.details.visitor_crest, stream=True, timeout=10)

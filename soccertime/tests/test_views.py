@@ -80,6 +80,30 @@ class TestFavoritesView:
         response = client.get(reverse("favorites"))
         assert "competitions" in response.context
 
+    def test_favorite_competitions_queries_performance(self, client, db, sport, team_home, team_away):
+        """Should fetch favorite competitions without N+1 queries for flags."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from soccertime.models import Competition, Favorite, Flag, Match
+
+        for i in range(5):
+            flag = Flag.objects.create(name=f"flag_{i}", display_name=f"Flag {i}")
+            comp = Competition.objects.create(name=f"Comp {i}", sport=sport, flag=flag)
+            Favorite.objects.create(competition=comp, order=i)
+            Match.objects.create(
+                date=timezone.now() + datetime.timedelta(days=1),
+                competition=comp,
+                local=team_home,
+                visitor=team_away,
+            )
+
+        with CaptureQueriesContext(connection) as queries:
+            client.get(reverse("favorites"))
+
+        # We want to make sure fetching flags does not cause N+1 queries
+        assert len(queries) < 15
+
 
 class TestAgendaView:
     """Tests for agenda view."""

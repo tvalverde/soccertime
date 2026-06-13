@@ -139,6 +139,9 @@ class TeamAdmin(AutoModelAdmin):
 
 
 class EventModelAdmin(AutoModelAdmin):
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("channels")
+
     def get_list_display(self, request):
         list_display = super().get_list_display(request)
         list_display.insert(list_display.index("competition_link"), "competition_sport")

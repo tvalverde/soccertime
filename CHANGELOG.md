@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
 
 ### Fixed
+- Fixed global N+1 query issue in `base.html` by adding `.select_related("flag")` to `get_favorite_competitions()` context processor.
+- Fixed N+1 query issue in Django Admin's `EventModelAdmin` by prefetching channels for the `channels_names` column.
+- Fixed severe N+1 query overhead in properties `is_favorite`, `has_events`, and `events_count` of `Competition` by refactoring them to use Python list comprehensions, enabling them to leverage the `prefetch_related` cache instead of hitting the database repeatedly.
+- Fixed performance overhead in default `EventManager` by removing the implicit `with_related()` call, resolving massive `JOIN` drags on simple `.count()` and `.aggregate()` operations. Views now explicitly call `.with_related()`.
+- Fixed performance bottleneck in `scrapit` command by introducing an in-memory local cache (`dict`) for `Team`, `Sport`, `Competition`, `Flag`, and `Channel` objects, drastically reducing `get_or_create` database operations during scraping loops.
 - Fixed mobile layout for pagination overflowing the screen by wrapping elements in `agenda.html`.
 - Fixed severe layout bug causing the `fixed-bottom` mobile navigation bar to overflow horizontally and detach vertically from the viewport by wrapping the `<table class="table">` in `agenda.html` with a `.table-responsive` container, preventing it from widening the body width.
 - Fixed expandable teams bar not working on competition pages by moving the toggle script outside the favorites block in `base.html` and standardizing the UI component in `agenda.html`.

@@ -274,6 +274,40 @@ class TestScrapitCommandProcessing:
         assert SimpleEvent.objects.count() == 1
         assert SimpleEvent.objects.first().date != initial_date
 
+    def test_caching_reduces_queries(self, db, mock_match_event):
+        """Should cache reference objects and minimize DB queries on subsequent events."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        # Create 10 identical events with different times
+        events = []
+        for i in range(10):
+            event = ScrapingEvent(
+                datetime=mock_match_event.datetime + datetime.timedelta(days=i * 3),
+                sport=mock_match_event.sport,
+                competition=mock_match_event.competition,
+                competition_crest=mock_match_event.competition_crest,
+                channels=mock_match_event.channels,
+                details=mock_match_event.details,
+            )
+            events.append(event)
+
+        with (
+            patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
+            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+        ):
+            mock_get.return_value = iter(events)
+            mock_requests.return_value.status_code = 404
+
+            # First run, populate DB
+            with CaptureQueriesContext(connection) as queries:
+                call_command("scrapit", "--source=example", "--include-disabled")
+
+            # Check that query count is bounded because of the cache
+            # Without cache, it would be well over 100 queries for 10 events
+            assert len(queries) < 120
+            assert Match.objects.count() == 10
+
 
 class TestScrapingSourceBase:
     """Tests for scraping base module."""

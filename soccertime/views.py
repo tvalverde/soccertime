@@ -19,6 +19,7 @@ def get_favorite_competitions():
             favorite__isnull=False,
             events__date__date__gte=timezone.now().date(),
         )
+        .select_related("flag")
         .distinct()
         .order_by("favorite__order")
     )
@@ -58,7 +59,7 @@ def healthz(request):
 
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def favorites(request):
-    queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3)
+    queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3).with_related()
     add_empty_message(request, queryset, "No hay eventos a la vista :(", messages.WARNING)
 
     context = get_base_context()
@@ -73,9 +74,9 @@ def agenda(request):
     max_date = max_date_result.strftime("%Y-%m-%d") if max_date_result else None
 
     if request.GET.get("events-date"):
-        queryset = Event.objects.for_date(request.GET.get("events-date"))
+        queryset = Event.objects.for_date(request.GET.get("events-date")).with_related()
     else:
-        queryset = Event.objects.today_onwards()
+        queryset = Event.objects.today_onwards().with_related()
 
     queryset = queryset.search(request.GET.get("search")).order_by("date")
     add_empty_message(request, queryset)
@@ -93,7 +94,7 @@ def agenda(request):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def team_events(request, team):
     team_obj = get_object_or_404(Team, pk=team)
-    queryset = Event.objects.for_team(team).in_progress_or_upcoming()
+    queryset = Event.objects.for_team(team).in_progress_or_upcoming().with_related()
     add_empty_message(request, queryset)
 
     # Obtener equipos rivales en partidos futuros, ordenados por fecha de enfrentamiento
@@ -138,7 +139,7 @@ def team_events(request, team):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def channel_events(request, channel):
     channel_obj = get_object_or_404(Channel, pk=channel)
-    queryset = Event.objects.for_channel(channel).in_progress_or_upcoming()
+    queryset = Event.objects.for_channel(channel).in_progress_or_upcoming().with_related()
     add_empty_message(request, queryset)
 
     context = get_base_context()
@@ -155,7 +156,7 @@ def channel_events(request, channel):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def sport_events(request, sport):
     sport_obj = get_object_or_404(Sport, pk=sport)
-    queryset = Event.objects.for_sport(sport).in_progress_or_upcoming()
+    queryset = Event.objects.for_sport(sport).in_progress_or_upcoming().with_related()
     add_empty_message(request, queryset)
 
     context = get_base_context()
@@ -172,7 +173,7 @@ def sport_events(request, sport):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def competition_events(request, competition):
     competition_obj = get_object_or_404(Competition, pk=competition)
-    queryset = Event.objects.for_competition(competition).in_progress_or_upcoming()
+    queryset = Event.objects.for_competition(competition).in_progress_or_upcoming().with_related()
     add_empty_message(request, queryset)
 
     return render(

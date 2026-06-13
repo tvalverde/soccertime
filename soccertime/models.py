@@ -137,7 +137,7 @@ class Competition(models.Model):
 
     @property
     def is_favorite(self):
-        return self.favorite.exists()
+        return bool(self.favorite.all())
 
     @property
     def is_favorite_cached(self):
@@ -145,11 +145,13 @@ class Competition(models.Model):
 
     @property
     def has_events(self):
-        return self.events.filter(date__date__gte=timezone.now().date()).exists()
+        today = timezone.now().date()
+        return any(event.date.date() >= today for event in self.events.all())
 
     @property
     def events_count(self):
-        return self.events.filter(date__date__gte=timezone.now().date()).distinct().count()
+        today = timezone.now().date()
+        return len({event for event in self.events.all() if event.date.date() >= today})
 
 
 class Team(ImageMixin, models.Model):
@@ -415,7 +417,10 @@ class EventManager(models.Manager):
     """Custom manager for Event model."""
 
     def get_queryset(self):
-        return EventQuerySet(self.model, using=self._db).with_related()
+        return EventQuerySet(self.model, using=self._db)
+
+    def with_related(self):
+        return self.get_queryset().with_related()
 
     def in_progress_or_upcoming(self, hours_before=3):
         return self.get_queryset().in_progress_or_upcoming(hours_before)

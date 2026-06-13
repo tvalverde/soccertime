@@ -244,3 +244,37 @@ class TestImageMixin:
         """Flag should also use the mixin correctly."""
         result = flag.render_image()
         assert "<svg" in result
+
+
+class TestCodeReviewRegressions:
+    """Regression tests for Code Review Points 1 and 4."""
+
+    def test_manager_no_implicit_with_related(self):
+        """
+        Point 1: EventManager should not implicitly call with_related()
+        on get_queryset(), avoiding unnecessary JOINs for count() etc.
+        """
+        qs = Event.objects.all()
+        assert qs.query.select_related is False
+        assert not qs._prefetch_related_lookups
+
+    def test_manager_explicit_with_related(self):
+        """
+        Point 1: EventManager should provide with_related() explicitly.
+        """
+        qs = Event.objects.with_related()
+        assert qs.query.select_related is not False
+        assert qs._prefetch_related_lookups
+
+    def test_competition_properties_use_prefetch(self, db, django_assert_max_num_queries, competition, match):
+        """
+        Point 4: Competition properties should not do N+1 queries.
+        They should use list comprehensions to leverage prefetch cache.
+        """
+        comp = Competition.objects.prefetch_related("events", "favorite").get(id=competition.id)
+
+        # Access properties and ensure they don't hit the DB
+        with django_assert_max_num_queries(0):
+            _ = comp.is_favorite
+            _ = comp.has_events
+            _ = comp.events_count
