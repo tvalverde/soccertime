@@ -11,7 +11,7 @@ From now on, all development tasks must be divided and processed strictly under 
 
 ### 6.1 Subagent: Architect (Planning and Design)
 - **Model:** Claude Opus 4.6 (Thinking). If unavailable, use Gemini 3.1 Pro (High).
-- **Responsibility:** Design the architecture, define the data model, plan the development phases, and anticipate logical blockers.
+- **Responsibility:** Design the architecture, define the data model, plan the development phases, anticipate logical blockers, and **investigate/diagnose complex bugs or UI errors**.
 - **Output Format:** Technical design documents, database schemas, and roadmaps in Markdown.
 
 ### 6.2 Subagent: Orchestrator (Context Control, Validation, and Synchronization)

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Rule in `GEMINI.md` to officially assign complex bug investigations and UI error diagnosis to the Opus 4.6 Architect subagent.
 - Visual highlight (orange/gold left border) to `agenda_item.html` for matches involving favorite teams.
 - `is_favorite_cached` property to `Team` and `Competition` models, and `is_favorite_event` to `Event` subclasses.
 - Database prefetching for favorite relationships in `EventQuerySet.with_related()` to prevent N+1 queries.
@@ -17,10 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
 
 ### Changed
+- Increased the mobile tab bar breakpoint trigger from `sm` (576px) to `md` (768px) to prevent layout breakages on tablets and landscape phones, offering a better mobile-like experience on medium screens.
 - Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
 
 ### Fixed
 - Fixed mobile layout for pagination overflowing the screen by wrapping elements in `agenda.html`.
+- Fixed severe layout bug causing the `fixed-bottom` mobile navigation bar to overflow horizontally and detach vertically from the viewport by wrapping the `<table class="table">` in `agenda.html` with a `.table-responsive` container, preventing it from widening the body width.
 - Fixed expandable teams bar not working on competition pages by moving the toggle script outside the favorites block in `base.html` and standardizing the UI component in `agenda.html`.
 
 - `/healthz/` endpoint for Docker healthchecks, independent of the application cache.
