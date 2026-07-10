@@ -45,6 +45,12 @@ export
 DOCKER_UID ?= 1000
 DOCKER_GID ?= 1000
 
+# UID/GID of the appuser inside the production image. This is decoupled from
+# DOCKER_UID (the local host user) because remote SSH targets run against the
+# production container, whose appuser and data volumes are owned by this UID.
+REMOTE_DOCKER_UID ?= 1000
+REMOTE_DOCKER_GID ?= 1000
+
 APP_NAME = soccertime
 
 # Remote paths
@@ -131,11 +137,11 @@ remote_deploy:
 		cd $(REMOTE_DOCKER_PATH) && \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans $(REMOTE_SOCCERTIME_SERVICE) && \
 		echo "--- Fixing static volume permissions ---" && \
-		docker run --rm -v $(REMOTE_STATIC_VOLUME):/data alpine chown -R $(DOCKER_UID):$(DOCKER_GID) /data && \
+		docker run --rm -v $(REMOTE_STATIC_VOLUME):/data alpine chown -R $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data && \
 		echo "--- Applying database migrations ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(DOCKER_UID):$(DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput && \
 		echo "--- Collecting static files ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(DOCKER_UID):$(DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py collectstatic --noinput \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py collectstatic --noinput \
 	'
 
 # Target to clean up local temporary archive after upload
@@ -200,7 +206,7 @@ upload-db:
 				cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.$$(date +%Y%m%d_%H%M%S); \
 			fi; \
 			cp /src/$(APP_NAME)-db.sqlite3 /data/$(REMOTE_DB_FILE_IN_VOLUME); \
-			chown $(DOCKER_UID):$(DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME) \
+			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME) \
 		"; \
 		rm -f ~/$(APP_NAME)-db.sqlite3 \
 	'
@@ -230,7 +236,7 @@ upload-requests-cache:
 				cp /data/$(REMOTE_CACHE_FILE_IN_VOLUME) /data/$(REMOTE_CACHE_FILE_IN_VOLUME).backup.$$(date +%Y%m%d_%H%M%S); \
 			fi; \
 			cp /tmp/$(APP_NAME)-requests-cache.sqlite /data/$(REMOTE_CACHE_FILE_IN_VOLUME); \
-			chown $(DOCKER_UID):$(DOCKER_GID) /data/$(REMOTE_CACHE_FILE_IN_VOLUME) \
+			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data/$(REMOTE_CACHE_FILE_IN_VOLUME) \
 		"; \
 		rm -f /tmp/$(APP_NAME)-requests-cache.sqlite \
 	'
@@ -265,7 +271,7 @@ upload-media:
 			fi && \
 			find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} + && \
 			tar xzf /tmp/$(APP_NAME)-media.tgz -C /data && \
-			chown -R $(DOCKER_UID):$(DOCKER_GID) /data \
+			chown -R $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data \
 		"; \
 		rm -f /tmp/$(APP_NAME)-media.tgz \
 	'

@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
 
 ### Fixed
+- Fixed `attempt to write a readonly database` in production management commands: remote SSH targets in the `Makefile` (`remote_deploy`, `upload-db`, `upload-requests-cache`, `upload-media`) hardcoded the local host UID (`DOCKER_UID`), which did not match the production container's `appuser` (UID 1000, owner of the data volumes). Introduced dedicated `REMOTE_DOCKER_UID`/`REMOTE_DOCKER_GID` variables (default 1000) for remote targets, decoupling them from the local `DOCKER_UID`.
 - Fixed over-broad token fallback in the channel matcher (`BaseLinkImportCommand.match_channels`): short tokens ("5", "mx") were dropped, letting a generic token like "canal" associate a link (e.g. "CANAL 5 MX") to every unrelated "Canal *" channel. Short tokens are now required with word-boundary matching.
 - Marked `test_dry_run_does_not_save` with the `integration` marker since it scrapes the real futbolenlatv source; the full non-integration suite no longer performs network requests.
 - Fixed global N+1 query issue in `base.html` by adding `.select_related("flag")` to `get_favorite_competitions()` context processor.
