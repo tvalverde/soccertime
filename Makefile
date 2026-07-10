@@ -1,4 +1,4 @@
-.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-cov lint lint-fix format
+.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -10,7 +10,8 @@ help:
 	@echo "USAGE: make <target>"
 	@echo ""
 	@echo "DEVELOPMENT:"
-	@echo "  test                 Run tests"
+	@echo "  test                 Run tests (excludes integration tests)"
+	@echo "  test-integration     Run integration tests (real HTTP requests)"
 	@echo "  test-cov             Run tests with coverage report"
 	@echo "  lint                 Check code for linting errors"
 	@echo "  lint-fix             Fix auto-fixable linting errors"
@@ -65,11 +66,15 @@ REMOTE_CACHE_FILE_IN_VOLUME ?= soccertime_data_cache.sqlite
 
 # Run tests
 test:
-	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest
+	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest -m "not integration"
+
+# Run integration tests (may make real HTTP requests)
+test-integration:
+	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest -m integration
 
 # Run tests with coverage report
 test-cov:
-	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest --cov --cov-report=term-missing
+	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest -m "not integration" --cov --cov-report=term-missing
 
 # Check code for linting errors
 lint:

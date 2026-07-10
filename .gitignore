@@ -76,6 +76,8 @@ dmypy.json
 *~
 
 # Project specific
+# External channel-link data sources (see AGENTS.md): never commit them
+*.m3u
 soccertime_data_cache.sqlite
 media
 db

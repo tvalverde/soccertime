@@ -43,8 +43,9 @@ class TestScrapitCommandBasic:
         output = out.getvalue()
         assert "futbolenlatv" in output
 
+    @pytest.mark.integration
     def test_dry_run_does_not_save(self, db):
-        """Dry run should not create any database records."""
+        """Dry run should not create any database records (scrapes the real source)."""
         initial_count = Event.objects.count()
         out = StringIO()
         call_command("scrapit", "--dry-run", "--source=futbolenlatv", stdout=out)

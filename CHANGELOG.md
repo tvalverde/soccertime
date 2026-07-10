@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `importm3u` management command to import acestream links from M3U playlist files (e.g. `mundial.m3u`), with the source name derived from the file name stem and an optional `--source` override.
+- `*.m3u` pattern to `.gitignore`, since M3U playlists are external data sources that must not be committed.
 - Rule in `GEMINI.md` to officially assign complex bug investigations and UI error diagnosis to the Opus 4.6 Architect subagent.
 - Visual highlight (orange/gold left border) to `agenda_item.html` for matches involving favorite teams.
 - `is_favorite_cached` property to `Team` and `Competition` models, and `is_favorite_event` to `Event` subclasses.
@@ -18,10 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
 
 ### Changed
+- `make test` and `make test-cov` now exclude integration tests (`-m "not integration"`) so the suite runs fast and offline; added `make test-integration` for the tests that scrape real sources.
+- Extracted the shared link-import pipeline (name normalization, quality extraction, fuzzy channel matching, persistence and stats) from `addlinksource` into `BaseLinkImportCommand` (`_link_import_base.py`) for reuse by `importm3u`.
 - Increased the mobile tab bar breakpoint trigger from `sm` (576px) to `md` (768px) to prevent layout breakages on tablets and landscape phones, offering a better mobile-like experience on medium screens.
 - Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
 
 ### Fixed
+- Fixed over-broad token fallback in the channel matcher (`BaseLinkImportCommand.match_channels`): short tokens ("5", "mx") were dropped, letting a generic token like "canal" associate a link (e.g. "CANAL 5 MX") to every unrelated "Canal *" channel. Short tokens are now required with word-boundary matching.
+- Marked `test_dry_run_does_not_save` with the `integration` marker since it scrapes the real futbolenlatv source; the full non-integration suite no longer performs network requests.
 - Fixed global N+1 query issue in `base.html` by adding `.select_related("flag")` to `get_favorite_competitions()` context processor.
 - Fixed N+1 query issue in Django Admin's `EventModelAdmin` by prefetching channels for the `channels_names` column.
 - Fixed severe N+1 query overhead in properties `is_favorite`, `has_events`, and `events_count` of `Competition` by refactoring them to use Python list comprehensions, enabling them to leverage the `prefetch_related` cache instead of hitting the database repeatedly.
