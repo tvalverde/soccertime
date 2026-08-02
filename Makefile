@@ -1,4 +1,4 @@
-.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -22,6 +22,7 @@ help:
 	@echo "  upload-only          Upload code and .env.production without running deploy"
 	@echo "  upload-config        Upload only .env.production"
 	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
+	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo ""
 	@echo "DATABASE (SQLite in Docker volume):"
 	@echo "  download-db          Download database from remote volume"
@@ -172,6 +173,19 @@ remote-restart:
 		cd $(REMOTE_DOCKER_PATH); \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans $(REMOTE_SOCCERTIME_SERVICE); \
 		echo "Services rebuilt/restarted successfully." \
+	'
+
+# Target to run the scraper on the remote production server and clear the cache
+remote-scrape:
+	@echo "--- Running remote scraper and clearing cache ---"
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		set -e; \
+		cd $(REMOTE_DOCKER_PATH); \
+		echo "Running scraper..."; \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py scrapit; \
+		echo "Clearing cache..."; \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py shell -c "from django.core.cache import cache; cache.clear()"; \
+		echo "Remote scrape and cache clear completed successfully." \
 	'
 
 # === Data Management (Docker volumes in production) ===
