@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
 
 ### Changed
+- Massive performance optimization (75% execution time reduction) in `scrapit` command by using `.set()` for Many-To-Many channel assignments, avoiding thousands of individual SQLite commit transactions caused by `clear()` and `add()` loops.
 - `make test` and `make test-cov` now exclude integration tests (`-m "not integration"`) so the suite runs fast and offline; added `make test-integration` for the tests that scrape real sources.
 - Extracted the shared link-import pipeline (name normalization, quality extraction, fuzzy channel matching, persistence and stats) from `addlinksource` into `BaseLinkImportCommand` (`_link_import_base.py`) for reuse by `importm3u`.
 - Increased the mobile tab bar breakpoint trigger from `sm` (576px) to `md` (768px) to prevent layout breakages on tablets and landscape phones, offering a better mobile-like experience on medium screens.

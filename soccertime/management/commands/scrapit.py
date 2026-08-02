@@ -243,10 +243,8 @@ class Command(BaseCommand):
         return flag
 
     def update_channels(self, event, channels):
-        event.channels.clear()
-        for channel_name in channels:
-            channel = self.get_or_create_channel(channel_name)
-            event.channels.add(channel)
+        channel_objs = [self.get_or_create_channel(c) for c in channels]
+        event.channels.set(channel_objs)
 
     def save_simple_event(self, competition, event_datetime, event):
         try:
