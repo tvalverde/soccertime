@@ -387,7 +387,7 @@ def get_events() -> Iterator[Event]:
             response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
 
-            soup = BeautifulSoup(response.content, "html.parser")
+            soup = BeautifulSoup(response.content, "lxml")
 
             yield from parse_iter(soup, sport, url, page_stats)
 
@@ -421,7 +421,7 @@ def get_events() -> Iterator[Event]:
             response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
 
-            soup = BeautifulSoup(response.content, "html.parser")
+            soup = BeautifulSoup(response.content, "lxml")
             yield from parse_iter(soup, TEAM_PAGE_SPORT, url, page_stats)
 
             total_stats.processed += page_stats.processed
