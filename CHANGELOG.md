@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Scraper support for team-specific pages in the `futbolenlatv` source to capture extra events (e.g. friendlies) not listed in the general agenda.
+- Auto-discovery mechanism in `scrapit` command to automatically extract and persist team slugs from `<a>` tags during standard scraping.
+- `futbolenlatv_slug` field to the `Team` model to store the identifier used on the source website.
+- `local_slug` and `visitor_slug` fields to `MatchDetails` to decouple slug extraction from database persistence.
 - `importm3u` management command to import acestream links from M3U playlist files (e.g. `mundial.m3u`), with the source name derived from the file name stem and an optional `--source` override.
 - `*.m3u` pattern to `.gitignore`, since M3U playlists are external data sources that must not be committed.
 - Rule in `GEMINI.md` to officially assign complex bug investigations and UI error diagnosis to the Opus 4.6 Architect subagent.

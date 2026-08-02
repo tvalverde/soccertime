@@ -72,7 +72,8 @@
     "pk": 1,
     "fields": {
       "name": "FC Barcelona",
-      "crest": null
+      "crest": null,
+      "futbolenlatv_slug": "fc-barcelona"
     }
   },
   {
@@ -80,7 +81,8 @@
     "pk": 2,
     "fields": {
       "name": "CD Castellón",
-      "crest": null
+      "crest": null,
+      "futbolenlatv_slug": "castellon"
     }
   },
   {
@@ -96,7 +98,8 @@
     "pk": 4,
     "fields": {
       "name": "FC Barcelona Femenino",
-      "crest": null
+      "crest": null,
+      "futbolenlatv_slug": "fc-barcelona-femenino"
     }
   },
   {

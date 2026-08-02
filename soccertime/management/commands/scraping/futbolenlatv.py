@@ -181,24 +181,34 @@ def parse_simple_event(cols, sport, details):
     return event_name, event_details, channels
 
 
+def extract_team_slug(col):
+    """Extract the futbolenlatv team slug from an <a> link in a team column."""
+    anchor = col.find("a", class_="internalLink")
+    if anchor and anchor.get("href", "").startswith("/equipo/"):
+        return anchor["href"].removeprefix("/equipo/")
+    return None
+
+
 def parse_match_event(cols, base_url, details):
     """Parse a match event (5+ columns - with teams)."""
     # Home team
     home_team_span = cols[2].find("span")
     home_team = clean_text(" ".join(home_team_span.stripped_strings)) if home_team_span else None
     home_crest = extract_image_url(cols[2], base_url)
+    home_slug = extract_team_slug(cols[2])
 
     # Away team
     away_team_span = cols[3].find("span")
     away_team = clean_text(" ".join(away_team_span.stripped_strings)) if away_team_span else None
     away_crest = extract_image_url(cols[3], base_url)
+    away_slug = extract_team_slug(cols[3])
 
     # Channels (safely access cols[4])
     channels = []
     if len(cols) > 4:
         channels = [clean_text(li.get_text(strip=True)) for li in cols[4].find_all("li")]
 
-    return home_team, home_crest, away_team, away_crest, channels
+    return home_team, home_crest, home_slug, away_team, away_crest, away_slug, channels
 
 
 def parse_iter(soup, sport, base_url, stats=None):
@@ -292,7 +302,9 @@ def parse_iter(soup, sport, base_url, stats=None):
                 )
             else:
                 # Match event
-                home_team, home_crest, away_team, away_crest, channels = parse_match_event(cols, base_url, details)
+                home_team, home_crest, home_slug, away_team, away_crest, away_slug, channels = parse_match_event(
+                    cols, base_url, details
+                )
 
                 if not home_team or not away_team:
                     logger.warning(
@@ -310,8 +322,10 @@ def parse_iter(soup, sport, base_url, stats=None):
                     details=MatchDetails(
                         local=home_team,
                         local_crest=home_crest,
+                        local_slug=home_slug,
                         visitor=away_team,
                         visitor_crest=away_crest,
+                        visitor_slug=away_slug,
                         details=details,
                     ),
                 )
@@ -338,6 +352,24 @@ def create_session():
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     return session
+
+
+TEAM_PAGE_BASE_URL = "https://www.futbolenlatv.es/equipo/"
+TEAM_PAGE_SPORT = "Fútbol"
+
+
+def get_favorite_team_slugs():
+    from soccertime.models import Team
+
+    return list(
+        Team.objects.filter(
+            favorite__isnull=False,
+            futbolenlatv_slug__isnull=False,
+        )
+        .exclude(futbolenlatv_slug="")
+        .values_list("futbolenlatv_slug", flat=True)
+        .distinct()
+    )
 
 
 def get_events() -> Iterator[Event]:
@@ -376,6 +408,38 @@ def get_events() -> Iterator[Event]:
             continue
         except Exception as e:
             logger.critical(f"[{sport}] Unexpected error for {url}: {type(e).__name__}: {e}")
+            total_stats.errors += 1
+            continue
+
+    # Scrape team pages for favorite teams with a futbolenlatv slug
+    team_slugs = get_favorite_team_slugs()
+    for slug in team_slugs:
+        url = f"{TEAM_PAGE_BASE_URL}{slug}"
+        page_stats = ScrapingStats()
+
+        try:
+            response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.content, "html.parser")
+            yield from parse_iter(soup, TEAM_PAGE_SPORT, url, page_stats)
+
+            total_stats.processed += page_stats.processed
+            total_stats.skipped += page_stats.skipped
+            total_stats.errors += page_stats.errors
+
+            logger.info(f"[Team: {slug}] Completed: {page_stats}")
+
+        except requests.exceptions.Timeout:
+            logger.error(f"[Team: {slug}] Timeout fetching URL {url} after {REQUEST_TIMEOUT}s")
+            total_stats.errors += 1
+            continue
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[Team: {slug}] Network/HTTP error fetching {url}: {type(e).__name__}: {e}")
+            total_stats.errors += 1
+            continue
+        except Exception as e:
+            logger.critical(f"[Team: {slug}] Unexpected error for {url}: {type(e).__name__}: {e}")
             total_stats.errors += 1
             continue
 

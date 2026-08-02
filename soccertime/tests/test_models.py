@@ -102,6 +102,17 @@ class TestTeam:
         with pytest.raises(IntegrityError):
             Team.objects.create(name="Test Team")
 
+    def test_futbolenlatv_slug_nullable(self, db):
+        """futbolenlatv_slug can be null."""
+        team = Team.objects.create(name="No Slug Team", futbolenlatv_slug=None)
+        assert team.futbolenlatv_slug is None
+
+    def test_futbolenlatv_slug_unique(self, db):
+        """futbolenlatv_slug must be unique."""
+        Team.objects.create(name="Team 1", futbolenlatv_slug="slug")
+        with pytest.raises(IntegrityError):
+            Team.objects.create(name="Team 2", futbolenlatv_slug="slug")
+
     def test_crest_image_without_crest(self, team_home):
         """Should return fallback SVG when no crest."""
         result = team_home.crest_image()

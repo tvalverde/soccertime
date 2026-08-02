@@ -33,8 +33,10 @@ class MatchDetails:
 
     local: str | None = None
     local_crest: str | None = None
+    local_slug: str | None = None
     visitor: str | None = None
     visitor_crest: str | None = None
+    visitor_slug: str | None = None
     details: str | None = None
 
 

@@ -309,6 +309,35 @@ class TestScrapitCommandProcessing:
             assert len(queries) < 120
             assert Match.objects.count() == 10
 
+    def test_auto_discovers_slug_for_favorite(self, db, mock_match_event):
+        """Should auto-discover and save slug only for favorite teams."""
+        from soccertime.models import Favorite
+
+        # We need to setup a favorite manually before scraping
+        # But wait, the command uses get_or_create, so we pre-create the team
+        team = Team.objects.create(name="Test Home Team")
+        Favorite.objects.create(team=team, order=1)
+
+        # Add slugs to the mock event
+        mock_match_event.details.local_slug = "test-home-slug"
+        mock_match_event.details.visitor_slug = "test-away-slug"
+
+        with (
+            patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
+            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+        ):
+            mock_get.return_value = iter([mock_match_event])
+            mock_requests.return_value.status_code = 404
+            call_command("scrapit", "--source=example", "--include-disabled")
+
+        # Verify local team (favorite) got the slug
+        team.refresh_from_db()
+        assert team.futbolenlatv_slug == "test-home-slug"
+
+        # Verify visitor team (non-favorite) didn't get the slug
+        visitor = Team.objects.get(name="Test Away Team")
+        assert visitor.futbolenlatv_slug is None
+
 
 class TestScrapingSourceBase:
     """Tests for scraping base module."""
@@ -372,6 +401,36 @@ class TestFutbolEnLaTVSource:
         assert source.enabled is True
 
 
+class TestFutbolEnLaTVTeamPages:
+    """Tests for scraping team pages."""
+
+    def test_get_favorite_team_slugs(self, db):
+        """Should return distinct non-empty slugs of favorite teams."""
+        from soccertime.management.commands.scraping.futbolenlatv import get_favorite_team_slugs
+        from soccertime.models import Favorite
+
+        # 1. Favorite with slug
+        t1 = Team.objects.create(name="Team A", futbolenlatv_slug="team-a")
+        Favorite.objects.create(team=t1, order=1)
+
+        # 2. Favorite without slug (None)
+        t2 = Team.objects.create(name="Team B", futbolenlatv_slug=None)
+        Favorite.objects.create(team=t2, order=2)
+
+        # 3. Favorite with empty slug ("")
+        t3 = Team.objects.create(name="Team C", futbolenlatv_slug="")
+        Favorite.objects.create(team=t3, order=3)
+
+        # 4. Non-favorite with slug
+        Team.objects.create(name="Team D", futbolenlatv_slug="team-d")
+
+        slugs = get_favorite_team_slugs()
+
+        # Only team-a should be returned
+        assert len(slugs) == 1
+        assert slugs[0] == "team-a"
+
+
 class TestScrapingHelpers:
     """Tests for scraping helper functions."""
 
@@ -398,3 +457,24 @@ class TestScrapingHelpers:
         assert is_valid_date(today + datetime.timedelta(days=400)) is False
         assert is_valid_date(today - datetime.timedelta(days=30)) is False
         assert is_valid_date(None) is False
+
+    def test_extract_team_slug(self):
+        """extract_team_slug should correctly identify team slugs from <a> tags."""
+        from bs4 import BeautifulSoup
+
+        from soccertime.management.commands.scraping.futbolenlatv import extract_team_slug
+
+        # Valid link
+        html_valid = '<td class="local"><a class="internalLink" href="/equipo/fc-barcelona"><span title="FC Barcelona">FC Barcelona</span></a></td>'
+        soup = BeautifulSoup(html_valid, "html.parser")
+        assert extract_team_slug(soup.find("td")) == "fc-barcelona"
+
+        # Missing link
+        html_missing = '<td class="local"><span title="FC Barcelona">FC Barcelona</span></td>'
+        soup = BeautifulSoup(html_missing, "html.parser")
+        assert extract_team_slug(soup.find("td")) is None
+
+        # Invalid link
+        html_invalid = '<td class="local"><a class="internalLink" href="/other/link"><span title="FC Barcelona">FC Barcelona</span></a></td>'
+        soup = BeautifulSoup(html_invalid, "html.parser")
+        assert extract_team_slug(soup.find("td")) is None

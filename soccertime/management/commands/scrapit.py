@@ -121,7 +121,7 @@ class Command(BaseCommand):
         self._competitions_cache = {
             (c.name, c.sport_id): c for c in Competition.objects.select_related("sport", "flag")
         }
-        self._teams_cache = {t.name: t for t in Team.objects.all()}
+        self._teams_cache = {t.name: t for t in Team.objects.prefetch_related("favorite")}
         self._channels_cache = {c.name: c for c in Channel.objects.all()}
 
     def get_or_create_sport(self, name):
@@ -149,6 +149,17 @@ class Command(BaseCommand):
         team, _ = Team.objects.get_or_create(name=name)
         self._teams_cache[name] = team
         return team
+
+    def update_team_slug(self, team, slug):
+        """Update a team's futbolenlatv_slug if it's a favorite and the slug is new."""
+        if not slug or team.futbolenlatv_slug:
+            return
+        if not getattr(team, "is_favorite_cached", False):
+            return
+        team.futbolenlatv_slug = slug
+        team.save(update_fields=["futbolenlatv_slug"])
+        self._teams_cache[team.name] = team
+        self.stdout.write(self.style.SUCCESS(f"  Auto-discovered slug for '{team.name}': {slug}"))
 
     def get_or_create_channel(self, name):
         if name in self._channels_cache:
@@ -315,6 +326,9 @@ class Command(BaseCommand):
             response = requests.get(event.details.visitor_crest, stream=True, timeout=10)
             if response.status_code == 200:
                 visitor.save_crest(io.BytesIO(response.content), event.details.visitor_crest)
+
+        self.update_team_slug(local, getattr(event.details, "local_slug", None))
+        self.update_team_slug(visitor, getattr(event.details, "visitor_slug", None))
 
         try:
             match = Match.objects.get(
