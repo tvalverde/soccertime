@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `duration` field (`DurationField`) to `Event` model allowing custom event durations (defaults to 2 hours if not specified).
+- `validate_channel_link` validator to `ChannelLink.link` supporting IPTV and P2P protocols (`acestream`, `sop`, `rtmp`, `m3u8`, `intent`, `http`, `https`).
+- `render_image_markup` template filter in `soccertime_tags.py` to decouple HTML markup generation from ORM models.
+- Expanded test suite with 18 unit tests covering custom event durations across midnight, P2P link validation, manager forwarding, and template tags.
 - Scraper support for team-specific pages in the `futbolenlatv` source to capture extra events (e.g. friendlies) not listed in the general agenda.
 - Auto-discovery mechanism in `scrapit` command to automatically extract and persist team slugs from `<a>` tags during standard scraping.
 - `futbolenlatv_slug` field to the `Team` model to store the identifier used on the source website.
@@ -24,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
 
 ### Changed
+- Refactored `EventManager` to `EventQuerySet.as_manager()` in `soccertime/models.py`.
+- Removed redundant `event_ptr` from `unique_together` constraints on child MTI models (`Match`, `Race`, `SimpleEvent`).
+- Refactored `Favorite.__str__` to safely handle unassigned or missing team/competition relations.
 - Massive performance optimization (75% execution time reduction) in `scrapit` command by using `.set()` for Many-To-Many channel assignments, avoiding thousands of individual SQLite commit transactions caused by `clear()` and `add()` loops.
 - `make test` and `make test-cov` now exclude integration tests (`-m "not integration"`) so the suite runs fast and offline; added `make test-integration` for the tests that scrape real sources.
 - Extracted the shared link-import pipeline (name normalization, quality extraction, fuzzy channel matching, persistence and stats) from `addlinksource` into `BaseLinkImportCommand` (`_link_import_base.py`) for reuse by `importm3u`.
