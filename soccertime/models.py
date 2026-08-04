@@ -4,12 +4,25 @@ import os
 from urllib.parse import urlparse
 
 from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
 from django.db import models
 from django.db.models import Count, Prefetch, Q
 from django.db.models.signals import m2m_changed, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext as _
+
+ALLOWED_LINK_SCHEMES = ["http", "https", "ftp", "ftps", "acestream", "sop", "intent", "rtmp", "m3u8"]
+standard_url_validator = URLValidator(schemes=["http", "https", "ftp", "ftps"])
+
+
+def validate_channel_link(value):
+    if not value:
+        return
+    parsed = urlparse(value)
+    if parsed.scheme in ALLOWED_LINK_SCHEMES:
+        return
+    standard_url_validator(value)
 
 
 class SportManager(models.Manager):
@@ -205,9 +218,13 @@ class Favorite(models.Model):
         ]
 
     def __str__(self):
-        if self.team:
+        if self.team and self.competition:
             return f"{self.team} @ {self.competition}"
-        return self.competition.name
+        if self.team:
+            return str(self.team)
+        if self.competition:
+            return self.competition.name
+        return "Favorite"
 
     def clean(self):
         super().clean()
@@ -263,7 +280,7 @@ class ChannelLink(models.Model):
     subcategory = models.CharField(max_length=255, null=True, blank=True)
     name = models.CharField(max_length=255)
     quality = models.CharField(max_length=255, choices=Quality, default=Quality.ANY)
-    link = models.CharField(max_length=1000, null=True)
+    link = models.CharField(max_length=1000, null=True, blank=True, validators=[validate_channel_link])
     sources = models.ManyToManyField("ChannelLinkSource", related_name="links", blank=True)
     date_added = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
@@ -414,64 +431,6 @@ def delete_orphan_channel_links_on_m2m(sender, instance, action, **kwargs):
             instance.delete()
 
 
-class EventManager(models.Manager):
-    """Custom manager for Event model."""
-
-    def get_queryset(self):
-        return EventQuerySet(self.model, using=self._db)
-
-    def with_related(self):
-        return self.get_queryset().with_related()
-
-    def in_progress_or_upcoming(self, hours_before=3):
-        return self.get_queryset().in_progress_or_upcoming(hours_before)
-
-    def in_window(self, hours_before=3, days_ahead=3):
-        return self.get_queryset().in_window(hours_before, days_ahead)
-
-    def today_onwards(self):
-        return self.get_queryset().today_onwards()
-
-    def for_date(self, date):
-        return self.get_queryset().for_date(date)
-
-    def for_date_range(self, start_date, end_date):
-        return self.get_queryset().for_date_range(start_date, end_date)
-
-    def upcoming_days(self, days=7):
-        return self.get_queryset().upcoming_days(days)
-
-    def favorites(self):
-        return self.get_queryset().favorites()
-
-    def search(self, query):
-        return self.get_queryset().search(query)
-
-    def for_team(self, team_id):
-        return self.get_queryset().for_team(team_id)
-
-    def for_competition(self, competition_id):
-        return self.get_queryset().for_competition(competition_id)
-
-    def for_sport(self, sport_id):
-        return self.get_queryset().for_sport(sport_id)
-
-    def for_channel(self, channel_id):
-        return self.get_queryset().for_channel(channel_id)
-
-    def by_type(self, event_type):
-        return self.get_queryset().by_type(event_type)
-
-    def matches(self):
-        return self.get_queryset().matches()
-
-    def races(self):
-        return self.get_queryset().races()
-
-    def simple_events(self):
-        return self.get_queryset().simple_events()
-
-
 class Event(models.Model):
     class EventType(models.TextChoices):
         MATCH = "match", _("Match")
@@ -487,10 +446,15 @@ class Event(models.Model):
     competition = models.ForeignKey(Competition, related_name="events", on_delete=models.CASCADE)
     details = models.TextField(null=True)
     date = models.DateTimeField(db_index=True)
+    duration = models.DurationField(
+        null=True,
+        blank=True,
+        help_text=_("Custom duration of the event (defaults to 2 hours if not set)."),
+    )
     channels = models.ManyToManyField(Channel, related_name="events")
     last_updated_at = models.DateTimeField(auto_now=True)
 
-    objects = EventManager()
+    objects = EventQuerySet.as_manager()
 
     class Meta:
         ordering = ["date__date", "date", "competition__sport", "competition"]
@@ -515,7 +479,7 @@ class Event(models.Model):
 
     @property
     def date_end(self):
-        return self.date + datetime.timedelta(hours=2)
+        return self.date + (self.duration or datetime.timedelta(hours=2))
 
 
 class Match(Event):
@@ -523,7 +487,6 @@ class Match(Event):
     visitor = models.ForeignKey(Team, related_name="away_matches", on_delete=models.CASCADE)
 
     class Meta:
-        unique_together = (("local", "visitor", "event_ptr"),)
         verbose_name_plural = "matches"
 
     def save(self, *args, **kwargs):
@@ -541,9 +504,6 @@ class Match(Event):
 class Race(Event):
     name = models.CharField(max_length=255)
 
-    class Meta:
-        unique_together = (("name", "event_ptr"),)
-
     def save(self, *args, **kwargs):
         self.event_type = Event.EventType.RACE
         super().save(*args, **kwargs)
@@ -558,9 +518,6 @@ class Race(Event):
 
 class SimpleEvent(Event):
     name = models.CharField(max_length=255)
-
-    class Meta:
-        unique_together = (("name", "event_ptr"),)
 
     def save(self, *args, **kwargs):
         self.event_type = Event.EventType.SIMPLE

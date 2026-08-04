@@ -289,3 +289,109 @@ class TestCodeReviewRegressions:
             _ = comp.is_favorite
             _ = comp.has_events
             _ = comp.events_count
+
+
+class TestEventDuration:
+    """Tests for Event duration and date_end property."""
+
+    def test_default_duration(self, match):
+        import datetime
+
+        assert match.duration is None
+        assert match.date_end == match.date + datetime.timedelta(hours=2)
+
+    def test_custom_duration(self, match):
+        import datetime
+
+        match.duration = datetime.timedelta(minutes=90)
+        match.save()
+        match.refresh_from_db()
+        assert match.date_end == match.date + datetime.timedelta(minutes=90)
+
+    def test_duration_across_midnight(self, db, competition):
+        import datetime
+
+        from django.utils import timezone
+
+        start_time = timezone.now().replace(hour=23, minute=0, second=0, microsecond=0)
+        event = Event.objects.create(
+            competition=competition,
+            date=start_time,
+            duration=datetime.timedelta(hours=3),
+        )
+        assert event.date_end.day != start_time.day
+        assert event.date_end == start_time + datetime.timedelta(hours=3)
+
+
+class TestChannelLinkURLValidation:
+    """Tests for ChannelLink.link URL validation with custom schemes."""
+
+    @pytest.mark.parametrize(
+        "valid_url",
+        [
+            "https://stream.example.com/live",
+            "http://192.168.1.1:8080/channel",
+            "acestream://1234567890abcdef1234567890abcdef12345678",
+            "sop://broker.sopcast.com:3912/123456",
+            "intent://stream#Intent;scheme=acestream;end",
+            "rtmp://rtmp.example.com/live/stream",
+            "http://example.com/playlist.m3u8",
+        ],
+    )
+    def test_valid_link_schemes(self, db, valid_url):
+        link_obj = ChannelLink(name="Test Stream", link=valid_url)
+        link_obj.full_clean()  # Should not raise ValidationError
+
+    def test_invalid_link_url(self, db):
+        link_obj = ChannelLink(name="Bad Stream", link="not-a-valid-url")
+        with pytest.raises(ValidationError):
+            link_obj.full_clean()
+
+
+class TestFavoriteStrCornerCases:
+    """Tests for Favorite.__str__ corner cases."""
+
+    def test_favorite_team_and_competition(self, favorite_team, team_home, competition):
+        assert str(favorite_team) == f"{team_home} @ {competition}"
+
+    def test_favorite_team_only(self, db, team_home):
+        fav = Favorite.objects.create(team=team_home)
+        assert str(fav) == str(team_home)
+
+    def test_favorite_competition_only(self, favorite_competition, competition):
+        assert str(favorite_competition) == competition.name
+
+    def test_favorite_neither(self):
+        fav = Favorite()
+        assert str(fav) == "Favorite"
+
+
+class TestAsManagerForwarding:
+    """Tests to verify EventQuerySet methods work via Event.objects manager."""
+
+    def test_manager_methods_forwarded(self, match, race, simple_event):
+        match_pks = set(Event.objects.matches().values_list("pk", flat=True))
+        race_pks = set(Event.objects.races().values_list("pk", flat=True))
+        simple_pks = set(Event.objects.simple_events().values_list("pk", flat=True))
+
+        assert match.pk in match_pks
+        assert race.pk in race_pks
+        assert simple_event.pk in simple_pks
+        assert Event.objects.today_onwards().exists()
+        assert Event.objects.search("Madrid").exists()
+
+
+class TestSoccertimeTemplateTags:
+    """Tests for custom template tags/filters."""
+
+    def test_render_image_markup_with_none(self):
+        from soccertime.templatetags.soccertime_tags import render_image_markup
+
+        result = render_image_markup(None)
+        assert "<svg" in result
+
+    def test_render_image_markup_with_obj(self, team_home):
+        from soccertime.templatetags.soccertime_tags import render_image_markup
+
+        result = render_image_markup(team_home)
+        assert "<svg" in result
