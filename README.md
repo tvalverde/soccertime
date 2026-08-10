@@ -280,17 +280,30 @@ make help
 
 | Command | Description |
 |---------|-------------|
-| `make deploy-production` | Full deployment (upload code + run on remote) |
+| `make deploy-production` | Full deployment (upload code + snapshot the database + run on remote) |
 | `make upload-only` | Upload code and configs without running deploy |
 | `make upload-config` | Upload only configuration files |
 | `make remote-restart` | Restart remote services without uploading code |
+| `make remote-scrape` | Run the scraper on the server and clear the cache |
+| `make remote-check` | Run Django's deployment checks against production |
+| `make remote-clear-cache` | Drop the rendered page cache |
+| `make remote-redownload-images` | Restore flag images missing from the media volume |
+
+> **Note:** pages are cached for an hour, so a fix is not visible until
+> `make remote-clear-cache` runs (or the cache expires).
 
 #### Database
 
 | Command | Description |
 |---------|-------------|
+| `make backup-remote-db` | Snapshot the production database inside its volume |
+| `make list-remote-backups` | List the snapshots kept in the remote volume |
+| `make restore-remote-db BACKUP=<file>` | Restore a snapshot and restart the service |
 | `make download-db` | Download database from server |
 | `make upload-db` | Upload database to server |
+
+> **Note:** `deploy-production` snapshots the database automatically before applying
+> migrations, so there is always a rollback point.
 
 #### Requests cache
 
@@ -420,6 +433,27 @@ See `.env.example` for the complete list of available variables.
 | `DJANGO_FORCE_SCRIPT_NAME` | - | (optional) | URL prefix (only when intentionally serving under a subpath) |
 | `DOCKER_UID` | `1000` | `1000` | User ID for application and database files |
 | `DOCKER_GID` | `1000` | `1000` | Group ID for application and database files |
+
+### Transport security
+
+Off by default so local development keeps working over plain HTTP.
+
+| Variable | Development | Production | Description |
+|----------|-------------|------------|-------------|
+| `DJANGO_BEHIND_TLS_PROXY` | `false` | `true` | Trust `X-Forwarded-Proto`, so Django knows the proxied request is HTTPS |
+| `DJANGO_SECURE_COOKIES` | `false` | `true` | Mark the session and CSRF cookies as `Secure` |
+| `DJANGO_SECURE_SSL_REDIRECT` | `false` | `true` | Redirect `http://` inside Django. Requires `DJANGO_BEHIND_TLS_PROXY`, otherwise Django never sees a request as secure and redirects it to itself forever |
+| `DJANGO_SECURE_HSTS_SECONDS` | `0` | `31536000` | HSTS lifetime. Browsers remember it: a visitor that receives the header refuses plain HTTP for the whole period even after the header is removed |
+| `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | `false` | `false` | Extends HSTS to every subdomain. Deliberately off |
+| `DJANGO_SECURE_HSTS_PRELOAD` | `false` | `false` | Submits the domain to the browser preload lists. Deliberately off: leaving them takes months |
+
+`manage.py check --deploy` must come back clean; `make remote-check` runs it against
+production. Two checks are silenced on purpose in `settings.py` (`W005` and `W021`),
+because `includeSubDomains` and `preload` are policy decisions rather than defects.
+
+`healthz` is exempt from the SSL redirect via `SECURE_REDIRECT_EXEMPT`: the container
+health check reaches the app directly over plain HTTP, and redirecting it makes the
+check fail, which takes the service out of the proxy's routing table.
 
 ### Generating a secret key
 

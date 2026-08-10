@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `redownload_images` management command (with `--dry-run`) to restore flag images whose file is missing from storage, re-fetching them from the URL each `Flag` keeps in its `name`.
+- Shared `_image_download` module so `scrapit` and `redownload_images` use one guarded implementation of the image download.
+- `EventQuerySet.chronological()` for the listing order (start time, then sport order, then competition name), now that the model default no longer carries it.
+- `empty_state()` view helper and `soccertime/empty_state.html`, replacing the messages-based empty notice.
+- `image_width` / `image_height` on `Flag` and `crest_width` / `crest_height` on `Team`, recorded by `save_image` and backfilled for existing rows, so rendering never opens an image file to measure it.
+- Transport security settings driven from the environment through a new `env_flag()` helper: `DJANGO_BEHIND_TLS_PROXY`, `DJANGO_SECURE_COOKIES`, `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_HSTS_SECONDS`, `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` and `DJANGO_SECURE_HSTS_PRELOAD`.
+- Makefile targets for production operations: `backup-remote-db` (run automatically by `deploy-production` before migrating), `list-remote-backups`, `restore-remote-db`, `remote-check`, `remote-clear-cache` and `remote-redownload-images`.
+- `CLAUDE.md`, pointing at `AGENTS.md` and recording the verification rules learned from two production incidents.
 - `duration` field (`DurationField`) to `Event` model allowing custom event durations (defaults to 2 hours if not specified).
 - `validate_channel_link` validator to `ChannelLink.link` supporting IPTV and P2P protocols (`acestream`, `sop`, `rtmp`, `m3u8`, `intent`, `http`, `https`).
 - `render_image_markup` template filter in `soccertime_tags.py` to decouple HTML markup generation from ORM models.
@@ -28,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
 
 ### Changed
+- `Event.Meta.ordering` reduced to `["date"]`. Ordering by competition and sport joined both tables and cast the timestamp on every query, including counts, lookups and admin lists; `Event` queries went from 2 joins to 0 and `Match` from 3 to 1.
+- `ChannelLink.link` is unique again, restoring the constraint lost in migration `0029` and making the `update_or_create` upsert in `import_entries` safe. Existing duplicates are merged into the oldest row, which inherits its sources, channels and `verified` flag.
+- Empty-state notices travel in the view context instead of the `messages` framework, which also removes one `.exists()` query per view. `AGENTS.md` updated accordingly.
 - Refactored `EventManager` to `EventQuerySet.as_manager()` in `soccertime/models.py`.
 - Removed redundant `event_ptr` from `unique_together` constraints on child MTI models (`Match`, `Race`, `SimpleEvent`).
 - Refactored `Favorite.__str__` to safely handle unassigned or missing team/competition relations.
@@ -37,7 +48,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Increased the mobile tab bar breakpoint trigger from `sm` (576px) to `md` (768px) to prevent layout breakages on tablets and landscape phones, offering a better mobile-like experience on medium screens.
 - Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
 
+### Removed
+- Legacy and redundant template files: `events.html`, `match_item.html`, `simple_event_item.html`, and `event_header.html`.
+
 ### Fixed
+- Deleting a `ChannelLinkSource` no longer destroys every source-less `ChannelLink`, including links created by hand in the admin. Only the links that belonged to the deleted source are considered.
+- Detaching a link from the source side (`source.links.remove(...)`, as the admin form does) no longer raises `AttributeError`; the `m2m_changed` receiver honours `reverse` and `pk_set`.
+- `/agenda/?events-date=<garbage>` returns the default agenda instead of HTTP 500.
+- `EventQuerySet.favorites()` no longer duplicates an event when a team is listed in several `Favorite` rows.
+- Scraping no longer aborts when a crest URL is missing or unreachable; failures are reported and skipped.
+- `render_image` no longer opens each image file to measure it, cutting a 40-image page from 13.53 ms to 1.68 ms.
+- Loading a row whose image file is missing no longer raises `FileNotFoundError`. Declaring `width_field` hooked Django's `update_dimension_fields` to `post_init`, which took `/competitions/` down with a 500 in production.
+- The container health check is exempt from `SECURE_SSL_REDIRECT`. It reaches the app over plain HTTP, and a 301 made it fail, marking the container unhealthy and withdrawing it from the proxy, which returned 404 for every page.
+- `BACKUP_SUFFIX` in the Makefile is an immediate assignment; as a recursive variable it re-ran `date` on every expansion and could name a different file than the one it created.
 - Fixed `attempt to write a readonly database` in production management commands: remote SSH targets in the `Makefile` (`remote_deploy`, `upload-db`, `upload-requests-cache`, `upload-media`) hardcoded the local host UID (`DOCKER_UID`), which did not match the production container's `appuser` (UID 1000, owner of the data volumes). Introduced dedicated `REMOTE_DOCKER_UID`/`REMOTE_DOCKER_GID` variables (default 1000) for remote targets, decoupling them from the local `DOCKER_UID`.
 - Fixed over-broad token fallback in the channel matcher (`BaseLinkImportCommand.match_channels`): short tokens ("5", "mx") were dropped, letting a generic token like "canal" associate a link (e.g. "CANAL 5 MX") to every unrelated "Canal *" channel. Short tokens are now required with word-boundary matching.
 - Marked `test_dry_run_does_not_save` with the `integration` marker since it scrapes the real futbolenlatv source; the full non-integration suite no longer performs network requests.
@@ -49,17 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed mobile layout for pagination overflowing the screen by wrapping elements in `agenda.html`.
 - Fixed severe layout bug causing the `fixed-bottom` mobile navigation bar to overflow horizontally and detach vertically from the viewport by wrapping the `<table class="table">` in `agenda.html` with a `.table-responsive` container, preventing it from widening the body width.
 - Fixed expandable teams bar not working on competition pages by moving the toggle script outside the favorites block in `base.html` and standardizing the UI component in `agenda.html`.
-
 - `/healthz/` endpoint for Docker healthchecks, independent of the application cache.
-
-### Fixed
 - Intermittent 404 on `/soccertime/favorites/`: replaced per-site cache middleware (`UpdateCacheMiddleware`/`FetchFromCacheMiddleware`) with per-view `@cache_page` decorators. The per-site middleware was caching responses from the Docker healthcheck (which bypasses Traefik's `StripPrefix`), polluting the cache with entries keyed under inconsistent `SCRIPT_NAME` contexts. Per-view caching gives granular control and prevents the healthcheck from contaminating the cache.
-
 - `Event.child_event` property to handle polymorphic event types (`Match`, `Race`, `SimpleEvent`) cleanly in templates.
 - ARIA labels to all interactive elements and links for better accessibility.
 - Flags to competitions in the favorites bar for visual consistency.
-
-### Fixed
 - F1 multi-session scraping: all sessions of the same Grand Prix weekend (Libres, Clasificación al Sprint, Sprint, Clasificación, Carrera) are now stored as independent `Race` records. Previously, all sessions shared the same race name and fell within the ±2-day deduplication window, causing `MultipleObjectsReturned` which deleted all but the most recent record, keeping only the Sunday race.
 - Idempotency in `scrapit` command: `Race` and `SimpleEvent` deduplication now includes `details` (session type) as part of the lookup key, so only the datetime shifts within the same session type trigger an update.
 - Removed hardcoded empty state alerts in favor of the global Django messages system.
@@ -69,8 +86,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PermissionError ("Operation not permitted") when downloading the database, requests cache, or media via `Makefile` by correctly setting file ownership on the remote host.
 - `sqlite3.OperationalError` during `scrapit` in production: moved `requests_cache.install_cache()` out of module-level code into `_configure_cache()`, called lazily from `get_events()`. Added `os.makedirs(..., exist_ok=True)` to guarantee the cache directory exists before SQLite tries to open it. Also removed the spurious `.sqlite` extension from `REQUESTS_CACHE` in the Dockerfile (the library appends it automatically).
 
-### Removed
-- Legacy and redundant template files: `events.html`, `match_item.html`, `simple_event_item.html`, and `event_header.html`.
+### Security
+- Session and CSRF cookies are marked `Secure` in production, where the admin is publicly reachable and they previously travelled without the flag.
+- HSTS enabled with a one-year lifetime, after confirming the public pages serve no `http://` resources. `includeSubDomains` and `preload` stay off deliberately, and their checks are silenced with that rationale so `check --deploy` stays a useful signal.
+- `SECURE_SSL_REDIRECT` and `SECURE_PROXY_SSL_HEADER` enabled in production, so Django both recognises proxied HTTPS and redirects plain HTTP itself.
 
 ## [0.1.0] - 2026-03-08
 

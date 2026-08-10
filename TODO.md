@@ -12,35 +12,47 @@ public path.
 
 ### High
 
-Empty: the three items at this level were done on 2026-08-10 and are recorded below.
-Nothing outstanding currently threatens the live site or the request path.
+1. **Verify the deploy automatically instead of by eye.** Two outages on 2026-08-10 were
+   both announced by `make deploy-production` as "completed successfully": one served
+   500s on `/competitions/`, the other 404s everywhere once the health check started
+   failing. Add a `remote-smoke-test` target — wait for the container to report `healthy`,
+   fetch the public pages plus `healthz`, assert 200 and no `500` in the logs — and run it
+   at the end of `deploy-production` so a broken deploy fails loudly. This is the single
+   change that would have caught both.
 
 ### Medium
 
-1. **Restrict the `env` template filter to an allowlist.** `{{ "DJANGO_SECRET_KEY"|env }}`
+2. **Find out why 49 flag files vanished from the media volume.** They were restored with
+   `redownload_images`, but the cause is unknown: the rows were intact and only the files
+   were gone, so something removed them from the volume without touching the database.
+   Until that is understood it can happen again, silently, since a missing image only
+   shows up as a placeholder. Worth checking whether an old `migrate_crests` run, a
+   volume restore or a `media` upload is responsible.
+
+3. **Restrict the `env` template filter to an allowlist.** `{{ "DJANGO_SECRET_KEY"|env }}`
    renders the secret today; only `DJANGO_DEBUG` is actually used. A footgun rather than
    an open hole — it needs someone to write that in a template — which is why it did not
    rank alongside the transport security work.
 
-2. **Decide the intended `ChannelLink` ordering, then simplify it.** The current
+4. **Decide the intended `ChannelLink` ordering, then simplify it.** The current
    `["-date_updated__date", "date_updated__time", "-verified", "-id"]` means "newest day
    first, oldest first within that day" and casts the timestamp instead of using an
    index, exactly like the `Event` ordering that was just fixed. Collapsing it to
    `["-date_updated", "-verified", "-id"]` is a behaviour change, not just an
    optimization — confirm the sort is intentional first.
 
-3. **Add the missing test modules.** Nothing covers `soccertime/filters.py`
+5. **Add the missing test modules.** Nothing covers `soccertime/filters.py`
    (`LinkSchemeFilter`) or `soccertime/templatetags/soccertime_tags.py` (`env`,
    `sort_by_list_length`, `normalize_subcategory`, `sort_categories_by_total_links`,
-   `render_image_markup`). Writing tests is a project rule, and item 1 needs them anyway.
+   `render_image_markup`). Writing tests is a project rule, and item 3 needs them anyway.
 
-4. **Remove the unused model properties.** `Sport.competitions_with_events` /
+6. **Remove the unused model properties.** `Sport.competitions_with_events` /
    `competitions_without_events` were superseded by the aggregation in the `competitions`
    view, and `Competition.is_favorite` / `is_favorite_cached` are byte-identical
    duplicates that no template or view uses — `competitions.html` reads the `is_fav`
    annotation. Delete them together with the tests that only exist to keep them alive.
 
-5. **Finish decoupling presentation from the models.** The migration stopped half way:
+7. **Finish decoupling presentation from the models.** The migration stopped half way:
    `render_image_markup` in `soccertime_tags.py` is used by no template and carries a
    second copy of `FALLBACK_SVG` duplicating `ImageMixin.FALLBACK_SVG`, while
    `base.html`, `agenda_item.html` and `competitions.html` still call
@@ -48,68 +60,68 @@ Nothing outstanding currently threatens the live site or the request path.
    the templates onto the tag and drop `render_image` from the model, or delete the tag.
    Whichever wins must keep reading the stored dimensions rather than the file.
 
-6. **Translate the source artifacts to English.** Docstrings and comments across
+8. **Translate the source artifacts to English.** Docstrings and comments across
    `models.py`, `views.py`, `_link_import_base.py`, `soccertime_tags.py` and the import
    commands are in Spanish, and the import commands print Spanish output
    (`"Canal no encontrado"`, `"RESUMEN"`). The project convention is English for all
    code, comments and documentation; every future edit pays this tax.
 
-7. **Fix the cache configuration.** The file-based cache path
+9. **Fix the cache configuration.** The file-based cache path
    `/var/tmp/soccertime_cache` is hardcoded, and when caching is disabled Django falls
    back to `LocMemCache`, so the `cache.clear()` calls in the management commands only
    affect the calling process. Make the location configurable and select `DummyCache`
    explicitly when caching is off.
 
-8. **Collapse the triplicated upsert in `scrapit`.** `save_simple_event`,
-   `save_race_event` and `save_match_event` are the same get / update / dedupe algorithm
-   copy-pasted per model. Extract one `_upsert_event(model, lookup, event_datetime)`.
+10. **Collapse the triplicated upsert in `scrapit`.** `save_simple_event`,
+    `save_race_event` and `save_match_event` are the same get / update / dedupe algorithm
+    copy-pasted per model. Extract one `_upsert_event(model, lookup, event_datetime)`.
 
 ### Low
 
-9. **Stop using private Django API in the admin.** `AutoModelAdmin.get_list_filter`
-   filters on `field._choices`; the public `field.choices` is equivalent and will not
-   break on an upgrade. `get_list_display` also mutates the shared `ModelAdmin`
-   singleton with `setattr(self, ...)` per request — harmless today because the
-   generated callables are equivalent, but it should build a local mapping instead.
+11. **Stop using private Django API in the admin.** `AutoModelAdmin.get_list_filter`
+    filters on `field._choices`; the public `field.choices` is equivalent and will not
+    break on an upgrade. `get_list_display` also mutates the shared `ModelAdmin`
+    singleton with `setattr(self, ...)` per request — harmless today because the
+    generated callables are equivalent, but it should build a local mapping instead.
 
-10. **Wrap the user-facing strings in `gettext_lazy`.** The `empty_state()` defaults in
+12. **Wrap the user-facing strings in `gettext_lazy`.** The `empty_state()` defaults in
     `views.py` (`"No hay eventos a la vista :)"`, `"No hay canales disponibles :_("`) are
     hardcoded while the templates already use `{% translate %}`.
 
-11. **Make the view context consistent.** `team_events` and `competition_events` rebuild
+13. **Make the view context consistent.** `team_events` and `competition_events` rebuild
     the context by hand instead of using `get_base_context()`, and both `team_events` and
     `competitions` use function-level imports (`from soccertime.models import Match`,
     `from django.db.models import Exists, OuterRef`). Move the imports to module scope and
     reuse the shared helper.
 
-12. **Give `self.warnings` an owner.** `BaseLinkImportCommand.import_entries` reads it,
+14. **Give `self.warnings` an owner.** `BaseLinkImportCommand.import_entries` reads it,
     but only each subclass's `handle()` initialises it, so a new subclass breaks the
     pipeline. Initialise it in the base class.
 
-13. **Replace the dry-run exception abuse.** `import_entries` triggers its rollback by
+15. **Replace the dry-run exception abuse.** `import_entries` triggers its rollback by
     raising `transaction.TransactionManagementError` and catching it. Use
     `transaction.set_rollback(True)` or a dedicated private exception.
 
-14. **Deduplicate `is_favorite_event`.** `Race` and `SimpleEvent` both define it
+16. **Deduplicate `is_favorite_event`.** `Race` and `SimpleEvent` both define it
     returning `False`. Move the default to `Event` and override only in `Match`.
 
-15. **`LinkSchemeFilter` reads every link URL.** It iterates the whole `ChannelLink`
+17. **`LinkSchemeFilter` reads every link URL.** It iterates the whole `ChannelLink`
     table on each admin list render to build the scheme dropdown. Negligible at today's
     377 rows and admin-only, hence the low rank; persist the scheme or cache a
     `values_list(...).distinct()` if the table grows.
 
-16. **`match_channels` runs many queries per imported entry.** Several chained
+18. **`match_channels` runs many queries per imported entry.** Several chained
     `.exists()` probes plus a per-channel `channel.links.filter(...).exists()` inside the
     import loop. Offline cost only. Preload the channel names and match in Python if
     large playlists become slow.
 
-17. **Centralize the `event_type` logic.** Set it in the base `Event.save()` or a
+19. **Centralize the `event_type` logic.** Set it in the base `Event.save()` or a
     `pre_save` signal instead of repeating the assignment in every subclass.
 
-18. **Add type hints** to models, managers and querysets for IDE support and earlier
+20. **Add type hints** to models, managers and querysets for IDE support and earlier
     error detection.
 
-19. **Revisit MTI performance only if measured.** Originally filed as high priority, but
+21. **Revisit MTI performance only if measured.** Originally filed as high priority, but
     a query-count check on the real database showed `with_related()` already works:
     reaching `child_event` and then its `competition`, `sport`, `channels` and `links`
     across 25 events costs **0 extra queries**, because the MTI child fetched via
@@ -117,6 +129,12 @@ Nothing outstanding currently threatens the live site or the request path.
     `InheritanceManager` only if profiling later shows JOIN overhead.
 
 ## Done
+
+### Production hardening and incidents — 2026-08-10
+- [x] **Enable the SSL redirect instead of silencing its check.** `security.W008` had been silenced as redundant, since Traefik already answers `http://` with a 301. It turned out to be genuinely fixable: Django only emits the HSTS header when `request.is_secure()` is true, and production does emit it, which proves `SECURE_PROXY_SSL_HEADER` works and the proxy forwards `X-Forwarded-Proto`. `check --deploy` went from 3 silenced checks to 2, and the remaining two — `includeSubDomains` and `preload` — are deliberate policy, not defects.
+- [x] **Exempt the health check from that redirect.** Enabling it took the site down: the container health check reaches the app directly over plain HTTP, got a 301, failed, and the orchestrator withdrew the route, so every page returned 404. `SECURE_REDIRECT_EXEMPT` keeps `healthz` unredirected; the regression test reproduces the 301 when the exemption is removed.
+- [x] **Restore the 49 flag images missing from the media volume.** Every `Flag` keeps the URL it was fetched from in its `name`, so all of them were recoverable. Added the `redownload_images` command (with `--dry-run`) and `make remote-redownload-images`; production now has 227/227 flags and 3313/3313 crests with both file and dimensions. The download moved to a shared `_image_download` module so `scrapit` and the command share one implementation. The cause of the loss is still unknown — see pending item 2.
+- [x] **Codify the production operations that were being done over ad-hoc SSH.** `backup-remote-db` (now run automatically by `deploy-production` before migrating), `list-remote-backups`, `restore-remote-db`, `remote-check` and `remote-clear-cache`. Also fixed `BACKUP_SUFFIX`, which re-ran `date` on every expansion and could name a different file than the one it created.
 
 ### Priority round — 2026-08-10
 - [x] **Harden the production security settings.** `check --deploy` reported 4 warnings while `/soccertime/admin/login/` answered 200 to the world, so the admin session and CSRF cookies travelled without the `Secure` flag. Added `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_PROXY_SSL_HEADER`, `SECURE_SSL_REDIRECT` and the HSTS trio, all read from the environment through a new `env_flag()` helper so development stays on plain HTTP. Production enables secure cookies, the proxy header and `SECURE_HSTS_SECONDS=31536000`; going straight to a year was backed by checking that the five public pages serve zero `http://` resources, so the usual ramp had nothing left to discover. `includeSubDomains` and `preload` stay off deliberately, and `SECURE_SSL_REDIRECT` stays off because Traefik already answers `http://` with a 301 — the three matching checks are silenced with that rationale, leaving `check --deploy` clean.
