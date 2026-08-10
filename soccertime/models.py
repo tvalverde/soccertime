@@ -43,83 +43,48 @@ class Sport(models.Model):
     def __str__(self):
         return self.name
 
-    @property
-    def competitions_with_events(self):
-        """Retorna competiciones con eventos próximos, ordenadas por cantidad de eventos."""
-        today = timezone.now().date()
-        return (
-            self.competitions.filter(events__date__date__gte=today)
-            .distinct()
-            .annotate(num_events=models.Count("events", filter=models.Q(events__date__date__gte=today)))
-            .order_by("-num_events", "name")
-        )
-
-    @property
-    def competitions_without_events(self):
-        """Retorna competiciones sin eventos próximos."""
-        today = timezone.now().date()
-        return self.competitions.exclude(events__date__date__gte=today).order_by("name")
-
 
 def gen_upload_to(instance, filename):
     return f"{instance.IMG_PARENT_DIR}/{filename[:2]}/{filename[2:4]}/{filename}"
 
 
 class ImageMixin(models.Model):
-    """
-    Mixin for models that have an image field with:
-    - Upload path based on content hash
-    - Fallback SVG when image is missing
-    - HTML rendering method
+    """Shared behaviour for models holding an image: content-hashed upload path and
+    cached dimensions. The HTML lives in `soccertime.rendering`, not here.
     """
 
     IMG_PARENT_DIR = ""  # Override in subclass
     IMG_FIELD_NAME = "image"  # Override if field has different name
     IMG_WIDTH_DIVISOR = 1  # For scaling in HTML output
 
-    FALLBACK_SVG = """
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-emoji-dizzy" viewBox="0 0 16 16">
-          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
-          <path d="M9.146 5.146a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708.708l-.647.646.647.646a.5.5 0 0 1-.708.708l-.646-.647-.646.647a.5.5 0 1 1-.708-.708l.647-.646-.647-.646a.5.5 0 0 1 0-.708m-5 0a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 1 1 .708.708l-.647.646.647.646a.5.5 0 1 1-.708.708L5.5 7.207l-.646.647a.5.5 0 1 1-.708-.708l.647-.646-.647-.646a.5.5 0 0 1 0-.708M10 11a2 2 0 1 1-4 0 2 2 0 0 1 4 0"/>
-        </svg>
-    """
-
     class Meta:
         abstract = True
 
-    def _get_image_field(self):
-        """Get the image field instance."""
+    @property
+    def image_file(self):
+        """The image field itself, whatever the concrete model calls it."""
         return getattr(self, self.IMG_FIELD_NAME)
 
-    def _get_image_dimensions(self):
-        """Dimensions of the image, read from the database rather than from the file.
+    @property
+    def image_dimensions(self):
+        """Dimensions read from the database rather than from the file.
 
         `image.width` opens and parses the file on every access, which costs roughly an
-        order of magnitude more than the storage lookup. `save_image` records the
-        dimensions instead; rows stored before those fields existed fall back to reading
-        the file, which callers must only reach after checking the file is there.
+        order of magnitude more than the storage lookup. `save_image` records them
+        instead; rows stored before those fields existed fall back to reading the file,
+        which callers must only reach after checking the file is there.
 
         The field deliberately does not declare `width_field` / `height_field`: that
         hooks Django's `update_dimension_fields` to `post_init`, so merely loading a row
         with unknown dimensions reads the file — and raises `FileNotFoundError` when the
-        media is missing, which is the very case the fallback SVG exists for.
+        media is missing, which is the very case the placeholder exists for.
         """
-        image = self._get_image_field()
+        image = self.image_file
         width = getattr(self, f"{self.IMG_FIELD_NAME}_width", None)
         height = getattr(self, f"{self.IMG_FIELD_NAME}_height", None)
         if width and height:
             return width, height
         return image.width, image.height
-
-    def render_image(self):
-        """Render HTML for the image with fallback SVG."""
-        image = self._get_image_field()
-        if not image or not image.storage.exists(image.name):
-            return self.FALLBACK_SVG
-        image_width, image_height = self._get_image_dimensions()
-        width = image_width / self.IMG_WIDTH_DIVISOR
-        height = image_height / self.IMG_WIDTH_DIVISOR
-        return f'<img src="{image.url}" width="{width}" height="{height}" />'
 
     def save_image(self, image_bytes, original_filename):
         """Save image from bytes, using content hash as filename.
@@ -133,7 +98,7 @@ class ImageMixin(models.Model):
         image = ImageFile(image_bytes, name=name)
         setattr(self, f"{self.IMG_FIELD_NAME}_width", image.width)
         setattr(self, f"{self.IMG_FIELD_NAME}_height", image.height)
-        self._get_image_field().save(name, image)
+        self.image_file.save(name, image)
         self.save()
 
 
@@ -153,10 +118,6 @@ class Flag(ImageMixin, models.Model):
 
     def __str__(self):
         return self.name
-
-    def flag_image(self):
-        """Alias for backward compatibility."""
-        return self.render_image()
 
     def save_flag(self, image, flag_filename):
         """Alias for backward compatibility."""
@@ -179,14 +140,6 @@ class Competition(models.Model):
 
     def __str__(self):
         return f"{self.name}"
-
-    @property
-    def is_favorite(self):
-        return bool(self.favorite.all())
-
-    @property
-    def is_favorite_cached(self):
-        return bool(self.favorite.all())
 
     @property
     def has_events(self):
@@ -215,10 +168,6 @@ class Team(ImageMixin, models.Model):
 
     def __str__(self):
         return self.name
-
-    def crest_image(self):
-        """Alias for backward compatibility."""
-        return self.render_image()
 
     @property
     def is_favorite_cached(self):

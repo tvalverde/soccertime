@@ -1,3 +1,4 @@
+{% load soccertime_tags %}
 {% load l10n %}
 {% load i18n %}
 <tr{% if event.is_favorite_event and "favorites" not in request.path %} style="border-left: 4px solid var(--bs-warning) !important;"{% endif %}>
@@ -5,7 +6,7 @@
     {{ event.date.time|date:'H:i' }}
   </th>
   <td class="text-start">
-    <a href="{% url "competition-events" event.competition.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ event.competition }}">{{ event.competition.flag.flag_image|safe }} {{ event.competition }}</a><br>
+    <a href="{% url "competition-events" event.competition.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ event.competition }}">{{ event.competition.flag|render_image_markup }} {{ event.competition }}</a><br>
     <a href="{% url "sport-events" event.competition.sport.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ event.competition.sport }}">{{ event.competition.sport|upper }}</a>
     <br><span class="text-secondary">{{ event.details|default_if_none:"" }}</span>
   </td>
@@ -14,10 +15,10 @@
     <a href="{% url "team-events" event.local.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ event.local.name }}">{{ event.local.name }}</a><br>
   </td>
   <td class="text-center">
-    {{ event.local.crest_image|safe }}
+    {{ event.local|render_image_markup }}
   </td>
   <td class="text-center">
-    {{ event.visitor.crest_image|safe }}
+    {{ event.visitor|render_image_markup }}
   </td>
   <td class="text-start">
     <a href="{% url "team-events" event.visitor.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ event.visitor.name }}">{{ event.visitor.name }}</a>

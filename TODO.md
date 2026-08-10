@@ -16,99 +16,68 @@ Empty: nothing outstanding currently threatens the live site or the request path
 
 ### Medium
 
-1. **Restrict the `env` template filter to an allowlist.** `{{ "DJANGO_SECRET_KEY"|env }}`
-   renders the secret today; only `DJANGO_DEBUG` is actually used. A footgun rather than
-   an open hole — it needs someone to write that in a template — which is why it did not
-   rank alongside the transport security work.
-
-2. **Decide the intended `ChannelLink` ordering, then simplify it.** The current
+1. **Decide the intended `ChannelLink` ordering, then simplify it.** The current
    `["-date_updated__date", "date_updated__time", "-verified", "-id"]` means "newest day
-   first, oldest first within that day" and casts the timestamp instead of using an
-   index, exactly like the `Event` ordering that was just fixed. Collapsing it to
-   `["-date_updated", "-verified", "-id"]` is a behaviour change, not just an
-   optimization — confirm the sort is intentional first.
+   first, oldest first within that day". The history shows it was introduced right after
+   `date_updated` was added, replacing `["-verified", "-id"]`, and the data suggests the
+   intent was to keep each import batch in the order the source listed it — plain
+   `-date_updated` reverses it. Note `verified` is `False` on all 377 rows, so that term
+   never fires, and `/channels/` overrides the ordering entirely, so this only affects the
+   play buttons per channel and the admin list. At this size there is no performance case
+   for changing it; the open question is whether the within-batch order is wanted.
 
-3. **Add the missing test modules.** Nothing covers `soccertime/filters.py`
-   (`LinkSchemeFilter`) or `soccertime/templatetags/soccertime_tags.py` (`env`,
-   `sort_by_list_length`, `normalize_subcategory`, `sort_categories_by_total_links`,
-   `render_image_markup`). Writing tests is a project rule, and item 1 needs them anyway.
-
-4. **Remove the unused model properties.** `Sport.competitions_with_events` /
-   `competitions_without_events` were superseded by the aggregation in the `competitions`
-   view, and `Competition.is_favorite` / `is_favorite_cached` are byte-identical
-   duplicates that no template or view uses — `competitions.html` reads the `is_fav`
-   annotation. Delete them together with the tests that only exist to keep them alive.
-
-5. **Finish decoupling presentation from the models.** The migration stopped half way:
-   `render_image_markup` in `soccertime_tags.py` is used by no template and carries a
-   second copy of `FALLBACK_SVG` duplicating `ImageMixin.FALLBACK_SVG`, while
-   `base.html`, `agenda_item.html` and `competitions.html` still call
-   `flag_image|safe` / `crest_image|safe` on the model. Pick one mechanism: either move
-   the templates onto the tag and drop `render_image` from the model, or delete the tag.
-   Whichever wins must keep reading the stored dimensions rather than the file.
-
-6. **Translate the source artifacts to English.** Docstrings and comments across
+2. **Translate the source artifacts to English.** Docstrings and comments across
    `models.py`, `views.py`, `_link_import_base.py`, `soccertime_tags.py` and the import
    commands are in Spanish, and the import commands print Spanish output
    (`"Canal no encontrado"`, `"RESUMEN"`). The project convention is English for all
    code, comments and documentation; every future edit pays this tax.
 
-7. **Fix the cache configuration.** The file-based cache path
-   `/var/tmp/soccertime_cache` is hardcoded, and when caching is disabled Django falls
-   back to `LocMemCache`, so the `cache.clear()` calls in the management commands only
-   affect the calling process. Make the location configurable and select `DummyCache`
-   explicitly when caching is off.
-
-8. **Collapse the triplicated upsert in `scrapit`.** `save_simple_event`,
-   `save_race_event` and `save_match_event` are the same get / update / dedupe algorithm
-   copy-pasted per model. Extract one `_upsert_event(model, lookup, event_datetime)`.
-
 ### Low
 
-9. **Stop using private Django API in the admin.** `AutoModelAdmin.get_list_filter`
+3. **Stop using private Django API in the admin.** `AutoModelAdmin.get_list_filter`
    filters on `field._choices`; the public `field.choices` is equivalent and will not
    break on an upgrade. `get_list_display` also mutates the shared `ModelAdmin`
    singleton with `setattr(self, ...)` per request — harmless today because the
    generated callables are equivalent, but it should build a local mapping instead.
 
-10. **Wrap the user-facing strings in `gettext_lazy`.** The `empty_state()` defaults in
-    `views.py` (`"No hay eventos a la vista :)"`, `"No hay canales disponibles :_("`) are
-    hardcoded while the templates already use `{% translate %}`.
+4. **Wrap the user-facing strings in `gettext_lazy`.** The `empty_state()` defaults in
+   `views.py` (`"No hay eventos a la vista :)"`, `"No hay canales disponibles :_("`) are
+   hardcoded while the templates already use `{% translate %}`.
 
-11. **Make the view context consistent.** `team_events` and `competition_events` rebuild
-    the context by hand instead of using `get_base_context()`, and both `team_events` and
-    `competitions` use function-level imports (`from soccertime.models import Match`,
-    `from django.db.models import Exists, OuterRef`). Move the imports to module scope and
-    reuse the shared helper.
+5. **Make the view context consistent.** `team_events` and `competition_events` rebuild
+   the context by hand instead of using `get_base_context()`, and both `team_events` and
+   `competitions` use function-level imports (`from soccertime.models import Match`,
+   `from django.db.models import Exists, OuterRef`). Move the imports to module scope and
+   reuse the shared helper.
 
-12. **Give `self.warnings` an owner.** `BaseLinkImportCommand.import_entries` reads it,
-    but only each subclass's `handle()` initialises it, so a new subclass breaks the
-    pipeline. Initialise it in the base class.
+6. **Give `self.warnings` an owner.** `BaseLinkImportCommand.import_entries` reads it,
+   but only each subclass's `handle()` initialises it, so a new subclass breaks the
+   pipeline. Initialise it in the base class.
 
-13. **Replace the dry-run exception abuse.** `import_entries` triggers its rollback by
-    raising `transaction.TransactionManagementError` and catching it. Use
-    `transaction.set_rollback(True)` or a dedicated private exception.
+7. **Replace the dry-run exception abuse.** `import_entries` triggers its rollback by
+   raising `transaction.TransactionManagementError` and catching it. Use
+   `transaction.set_rollback(True)` or a dedicated private exception.
 
-14. **Deduplicate `is_favorite_event`.** `Race` and `SimpleEvent` both define it
-    returning `False`. Move the default to `Event` and override only in `Match`.
+8. **Deduplicate `is_favorite_event`.** `Race` and `SimpleEvent` both define it
+   returning `False`. Move the default to `Event` and override only in `Match`.
 
-15. **`LinkSchemeFilter` reads every link URL.** It iterates the whole `ChannelLink`
-    table on each admin list render to build the scheme dropdown. Negligible at today's
-    377 rows and admin-only, hence the low rank; persist the scheme or cache a
-    `values_list(...).distinct()` if the table grows.
+9. **`LinkSchemeFilter` reads every link URL.** It iterates the whole `ChannelLink`
+   table on each admin list render to build the scheme dropdown. Negligible at today's
+   377 rows and admin-only, hence the low rank; persist the scheme or cache a
+   `values_list(...).distinct()` if the table grows.
 
-16. **`match_channels` runs many queries per imported entry.** Several chained
+10. **`match_channels` runs many queries per imported entry.** Several chained
     `.exists()` probes plus a per-channel `channel.links.filter(...).exists()` inside the
     import loop. Offline cost only. Preload the channel names and match in Python if
     large playlists become slow.
 
-17. **Centralize the `event_type` logic.** Set it in the base `Event.save()` or a
+11. **Centralize the `event_type` logic.** Set it in the base `Event.save()` or a
     `pre_save` signal instead of repeating the assignment in every subclass.
 
-18. **Add type hints** to models, managers and querysets for IDE support and earlier
+12. **Add type hints** to models, managers and querysets for IDE support and earlier
     error detection.
 
-19. **Revisit MTI performance only if measured.** Originally filed as high priority, but
+13. **Revisit MTI performance only if measured.** Originally filed as high priority, but
     a query-count check on the real database showed `with_related()` already works:
     reaching `child_event` and then its `competition`, `sport`, `channels` and `links`
     across 25 events costs **0 extra queries**, because the MTI child fetched via
@@ -116,6 +85,13 @@ Empty: nothing outstanding currently threatens the live site or the request path
     `InheritanceManager` only if profiling later shows JOIN overhead.
 
 ## Done
+
+### Medium blocks A, B and C — 2026-08-10
+- [x] **Restricted the `env` template filter to an allowlist** and **added the missing test modules**. The filter reaches every template, so `{{ "DJANGO_SECRET_KEY"|env }}` would have rendered the secret; only `DJANGO_DEBUG` is readable now. `filters.py` and the template filters had no tests at all and now do.
+- [x] **Removed the dead model properties** — `Sport.competitions_with_events`, `competitions_without_events`, `Competition.is_favorite` and `is_favorite_cached` — together with the tests that existed only to keep them alive.
+- [x] **Finished decoupling presentation from the models.** The markup moved to `soccertime/rendering.py`, used by the `render_image_markup` filter and by the admin, so there is one implementation instead of a model method plus an unused tag with its own copy of the fallback SVG. Templates lost their `|safe`. Verified the rendered HTML is byte-identical.
+- [x] **Fixed the cache configuration**: the file cache path is configurable via `DJANGO_CACHE_LOCATION`, and with caching off the backend is explicitly `DummyCache` rather than a per-process `LocMemCache` that made `cache.clear()` look effective.
+- [x] **Collapsed the triplicated upsert in `scrapit`** into one `upsert_event`, cutting the command by a third.
 
 ### Production hardening and incidents — 2026-08-10
 - [x] **Acted on the media-loss findings.** Deleted `migrate_crests`: a one-off path migration from early 2026 whose "missing or empty file" branch erased crest references instead of leaving them for the scraper to repair, which is how 1357 teams lost theirs. Added `backup-remote-media`, kept on the host rather than inside the volume it protects, since losing that volume is the failure it guards against — 2 MB compressed, so worth keeping even though flags can be re-fetched from their stored URL and crests, which cannot, are exactly what a backup preserves. Both snapshots now rotate to `KEEP_BACKUPS` (2): the database copies had reached 150 MB, six of them taken by a single afternoon of deploys. `redownload_images` reports broken crest references alongside the flags it can restore; the pages themselves keep rendering the fallback icon, so a missing image never breaks the site.

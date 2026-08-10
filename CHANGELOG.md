@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `soccertime/rendering.py`, the single source of image markup for both the templates and the admin, exposed to templates as the `render_image_markup` filter. Models keep the image and its dimensions; the HTML lives outside them, so templates no longer need `|safe`.
+- Test modules for `filters.py` and the template filters, which had none.
+- `DJANGO_CACHE_LOCATION` to configure the file cache path.
 - `redownload_images` management command (with `--dry-run`) to restore flag images whose file is missing from storage, re-fetching them from the URL each `Flag` keeps in its `name`.
 - Shared `_image_download` module so `scrapit` and `redownload_images` use one guarded implementation of the image download.
 - `EventQuerySet.chronological()` for the listing order (start time, then sport order, then competition name), now that the model default no longer carries it.
@@ -41,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
 
 ### Changed
+- The `env` template filter only reads allowlisted variables. It reaches every template, so `{{ "DJANGO_SECRET_KEY"|env }}` would otherwise render the secret into a page.
+- `scrapit` upserts every event type through one `upsert_event`, replacing the same get / realign / dedupe algorithm copy-pasted three times.
+- With caching disabled the cache backend is now explicitly `DummyCache`. Django's default is a per-process `LocMemCache`, which made the `cache.clear()` in the management commands appear to work while clearing only that process.
 - `Event.Meta.ordering` reduced to `["date"]`. Ordering by competition and sport joined both tables and cast the timestamp on every query, including counts, lookups and admin lists; `Event` queries went from 2 joins to 0 and `Match` from 3 to 1.
 - `ChannelLink.link` is unique again, restoring the constraint lost in migration `0029` and making the `update_or_create` upsert in `import_entries` safe. Existing duplicates are merged into the oldest row, which inherits its sources, channels and `verified` flag.
 - Empty-state notices travel in the view context instead of the `messages` framework, which also removes one `.exists()` query per view. `AGENTS.md` updated accordingly.
@@ -54,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
 
 ### Removed
+- `Sport.competitions_with_events`, `Sport.competitions_without_events`, `Competition.is_favorite` and `Competition.is_favorite_cached`: superseded or byte-identical duplicates, used by nothing but the tests that kept them alive.
+- `render_image`, `flag_image` and `crest_image` from the models, along with the duplicated fallback SVG. The markup moved to `soccertime/rendering.py`.
 - `migrate_crests` management command. A one-off path migration from early 2026 whose "missing or empty file" branch cleared the crest reference of any team whose file was absent, turning a dangling reference the scraper repairs by itself into permanent loss: 1357 teams lost their crest that way.
 - Legacy and redundant template files: `events.html`, `match_item.html`, `simple_event_item.html`, and `event_header.html`.
 

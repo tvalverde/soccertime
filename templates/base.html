@@ -130,7 +130,7 @@
       {% if competitions %}
       <div class="container mb-2 py-2 text-center text-light bg-primary">
         {% for competition in competitions %}
-        <span class="me-3 d-inline-block text-nowrap">{{ competition.flag.flag_image|safe }} <a href="{% url "competition-events" competition.pk %}" class="link-light link-styled" aria-label="{% translate "Ver eventos de" %} {{ competition.name }}">{{ competition.name }}</a></span>
+        <span class="me-3 d-inline-block text-nowrap">{{ competition.flag|render_image_markup }} <a href="{% url "competition-events" competition.pk %}" class="link-light link-styled" aria-label="{% translate "Ver eventos de" %} {{ competition.name }}">{{ competition.name }}</a></span>
         {% endfor %}
       </div>
       {% endif %}
@@ -140,7 +140,7 @@
           <div id="teams-container" class="flex-grow-1 overflow-hidden" style="max-height: 44px; transition: max-height 0.3s ease;">
             <div class="d-flex flex-wrap justify-content-center gap-3">
               {% for team in teams %}
-              <span><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team.crest_image|safe }}</a></span>
+              <span><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team|render_image_markup }}</a></span>
               {% endfor %}
             </div>
           </div>

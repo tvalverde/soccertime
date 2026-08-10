@@ -40,28 +40,12 @@ class TestSport:
         ordered = Sport.objects.all()
         assert list(ordered) == sorted(sports, key=lambda s: s.order)
 
-    def test_competitions_with_events(self, sport, competition, match):
-        """Should return competitions that have upcoming events."""
-        comps = sport.competitions_with_events
-        assert competition in comps
-
-    def test_competitions_without_events(self, sport, competition):
-        """Should return competitions without upcoming events."""
-        comps = sport.competitions_without_events
-        assert competition in comps
-
 
 class TestFlag:
     """Tests for Flag model."""
 
     def test_str(self, flag):
         assert str(flag) == "spain"
-
-    def test_flag_image_without_image(self, flag):
-        """Should return fallback SVG when no image."""
-        result = flag.flag_image()
-        assert "<svg" in result
-        assert "bi-emoji-dizzy" in result
 
 
 class TestCompetition:
@@ -75,12 +59,6 @@ class TestCompetition:
         Competition.objects.create(name="Test League", sport=sport, flag=flag)
         with pytest.raises(IntegrityError):
             Competition.objects.create(name="Test League", sport=sport, flag=flag)
-
-    def test_is_favorite_false(self, competition):
-        assert competition.is_favorite is False
-
-    def test_is_favorite_true(self, competition, favorite_competition):
-        assert competition.is_favorite is True
 
     def test_has_events_false(self, competition):
         assert competition.has_events is False
@@ -117,11 +95,6 @@ class TestTeam:
         Team.objects.create(name="Team 1", futbolenlatv_slug="slug")
         with pytest.raises(IntegrityError):
             Team.objects.create(name="Team 2", futbolenlatv_slug="slug")
-
-    def test_crest_image_without_crest(self, team_home):
-        """Should return fallback SVG when no crest."""
-        result = team_home.crest_image()
-        assert "<svg" in result
 
 
 class TestChannel:
@@ -187,25 +160,18 @@ class TestImageMixinDimensions:
         team_with_crest.refresh_from_db()
         assert (team_with_crest.crest_width, team_with_crest.crest_height) == (48, 24)
 
-    def test_render_image_does_not_read_the_file(self, team_with_crest):
+    def test_dimensions_come_from_the_database(self, team_with_crest):
         """Opening each image to measure it is what made this slow; the DB now knows."""
         team = Team.objects.get(pk=team_with_crest.pk)
 
         with patch.object(ImageFile, "_get_image_dimensions", side_effect=AssertionError("read the file")):
-            markup = team.render_image()
+            assert team.image_dimensions == (48, 24)
 
-        assert 'width="48.0" height="24.0"' in markup
-
-    def test_render_image_falls_back_to_the_file_when_dimensions_are_missing(self, team_with_crest):
-        """Rows saved before the dimension fields existed must still render."""
+    def test_falls_back_to_the_file_when_dimensions_are_missing(self, team_with_crest):
+        """Rows saved before the dimension fields existed must still work."""
         Team.objects.filter(pk=team_with_crest.pk).update(crest_width=None, crest_height=None)
-        team = Team.objects.get(pk=team_with_crest.pk)
 
-        assert 'width="48.0" height="24.0"' in team.render_image()
-
-    def test_render_image_falls_back_to_svg_when_the_file_is_gone(self, team_with_crest, tmp_path):
-        (tmp_path / team_with_crest.crest.name).unlink()
-        assert "<svg" in Team.objects.get(pk=team_with_crest.pk).render_image()
+        assert Team.objects.get(pk=team_with_crest.pk).image_dimensions == (48, 24)
 
     def test_loading_a_row_with_unknown_dimensions_and_no_file_does_not_raise(self, team_with_crest, tmp_path):
         """Production state that broke the site: null dimensions plus missing media.
@@ -218,7 +184,7 @@ class TestImageMixinDimensions:
 
         team = Team.objects.get(pk=team_with_crest.pk)
 
-        assert "<svg" in team.render_image()
+        assert team.image_file.name and not team.image_file.storage.exists(team.image_file.name)
 
 
 class TestChannelLinkOrphanCleanup:
@@ -364,21 +330,6 @@ class TestSimpleEvent:
         assert simple_event.event_type == Event.EventType.SIMPLE
 
 
-class TestImageMixin:
-    """Tests for ImageMixin functionality."""
-
-    def test_render_image_fallback(self, team_home):
-        """Should render fallback SVG when image doesn't exist."""
-        result = team_home.render_image()
-        assert "<svg" in result
-        assert "bi-emoji-dizzy" in result
-
-    def test_flag_render_image_fallback(self, flag):
-        """Flag should also use the mixin correctly."""
-        result = flag.render_image()
-        assert "<svg" in result
-
-
 class TestCodeReviewRegressions:
     """Regression tests for Code Review Points 1 and 4."""
 
@@ -408,7 +359,6 @@ class TestCodeReviewRegressions:
 
         # Access properties and ensure they don't hit the DB
         with django_assert_max_num_queries(0):
-            _ = comp.is_favorite
             _ = comp.has_events
             _ = comp.events_count
 

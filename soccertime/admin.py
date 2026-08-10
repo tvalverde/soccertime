@@ -21,6 +21,7 @@ from .models import (
     Sport,
     Team,
 )
+from .rendering import image_markup
 
 
 def escape_braces(s):
@@ -120,8 +121,7 @@ class CompetitionAdmin(AutoModelAdmin):
 
     @admin.display(description="flag")
     def flag_image(self, obj):
-        if obj.flag:
-            return mark_safe(obj.flag.flag_image())
+        return image_markup(obj.flag)
 
 
 @admin.register(Team)
@@ -135,7 +135,7 @@ class TeamAdmin(AutoModelAdmin):
 
     @admin.display(description="crest")
     def crest_image(self, obj):
-        return mark_safe(obj.crest_image())
+        return image_markup(obj)
 
 
 class EventModelAdmin(AutoModelAdmin):
@@ -267,8 +267,7 @@ class FavoriteAdmin(SortableAdminMixin, AutoModelAdmin):
 
     @admin.display(description="crest")
     def crest_image(self, obj):
-        if obj.team:
-            return mark_safe(obj.team.crest_image())
+        return image_markup(obj.team)
 
 
 @admin.register(Flag)
@@ -280,4 +279,4 @@ class FlagAdmin(AutoModelAdmin):
 
     @admin.display(description="image")
     def flag_image(self, obj):
-        return mark_safe(obj.flag_image())
+        return image_markup(obj)

@@ -155,10 +155,15 @@ if _caching_enabled:
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
-            "LOCATION": "/var/tmp/soccertime_cache",
+            "LOCATION": os.environ.get("DJANGO_CACHE_LOCATION") or "/var/tmp/soccertime_cache",
             "TIMEOUT": 3600,
         }
     }
+else:
+    # Explicitly nothing, rather than Django's default per-process LocMemCache: with
+    # that, the `cache.clear()` the management commands run would appear to succeed
+    # while only ever clearing the calling process's own memory.
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
 
 CACHE_PAGE_TIMEOUT = 3600 if _caching_enabled else 0
 

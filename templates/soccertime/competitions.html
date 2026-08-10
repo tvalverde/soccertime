@@ -9,7 +9,7 @@ Soccertime :: {% translate "Competiciones" %}
         <h3 class="pt-3">{{ item.sport.name }}</h3>
         {% for competition in item.with_events %}
             <div class="d-inline-block me-3 mb-2">
-            <a href="{% url "competition-events" competition.pk %}" class="link-styled{% if competition.is_fav %} text-bg-warning px-1 rounded{% endif %}" aria-label="{% translate "Ver eventos de" %} {{ competition.name }}">{{ competition.flag.flag_image|safe }} {{ competition.name }}</a>
+            <a href="{% url "competition-events" competition.pk %}" class="link-styled{% if competition.is_fav %} text-bg-warning px-1 rounded{% endif %}" aria-label="{% translate "Ver eventos de" %} {{ competition.name }}">{{ competition.flag|render_image_markup }} {{ competition.name }}</a>
  <span class="badge rounded-pill text-bg-primary">{{ competition.num_events }}</span>
             </div>
         {% empty %}
@@ -23,7 +23,7 @@ Soccertime :: {% translate "Competiciones" %}
             <div class="collapse mt-2" id="collapse-{{ item.sport.pk }}">
                 {% for competition in item.without_events %}
                     <div class="d-inline-block me-3 mb-2">
-                    <span class="text-secondary">{{ competition.flag.flag_image|safe }} {{ competition.name }}</span>
+                    <span class="text-secondary">{{ competition.flag|render_image_markup }} {{ competition.name }}</span>
                     </div>
                 {% endfor %}
             </div>

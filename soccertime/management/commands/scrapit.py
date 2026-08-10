@@ -33,6 +33,10 @@ from .scraping.base import (
     list_source_names,
 )
 
+# Sources shift an announced event by hours or a day; within this window it is the same
+# event rather than a new one.
+DUPLICATE_WINDOW_DAYS = 2
+
 
 class Command(BaseCommand):
     help = "Scrape sporting events from configured sources"
@@ -254,71 +258,53 @@ class Command(BaseCommand):
         channel_objs = [self.get_or_create_channel(c) for c in channels]
         event.channels.set(channel_objs)
 
-    def save_simple_event(self, competition, event_datetime, event):
-        try:
-            simple_event = SimpleEvent.objects.get(
-                competition=competition,
-                name=event.details.name,
-                details=event.details.details,
-                date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-            )
-            if simple_event.date != event_datetime:
-                simple_event.date = event_datetime
-                simple_event.save()
-        except SimpleEvent.DoesNotExist:
-            simple_event, _ = SimpleEvent.objects.get_or_create(
-                competition=competition,
-                name=event.details.name,
-                details=event.details.details,
-                date=event_datetime,
-            )
-        except SimpleEvent.MultipleObjectsReturned:
-            simple_events = SimpleEvent.objects.filter(
-                competition=competition,
-                name=event.details.name,
-                details=event.details.details,
-                date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-            )
-            simple_event = simple_events.order_by("-last_updated_at").first()
-            simple_events.exclude(id=simple_event.id).delete()
-            if simple_event.date != event_datetime:
-                simple_event.date = event_datetime
-                simple_event.save()
+    def upsert_event(self, model, lookup, event_datetime, defaults=None):
+        """Find the event around this datetime and realign it, or create it.
 
-        return simple_event
+        Sources shift a fixed event by a few hours or a day rather than announcing a new
+        one, so a match within a two-day window counts as the same event. Where a shift
+        has already produced duplicates, the most recently updated row wins and the rest
+        are removed.
+        """
+        window = (
+            event_datetime - datetime.timedelta(days=DUPLICATE_WINDOW_DAYS),
+            event_datetime + datetime.timedelta(days=DUPLICATE_WINDOW_DAYS),
+        )
+        candidates = model.objects.filter(**lookup, date__range=window)
+        event = candidates.order_by("-last_updated_at").first()
+
+        if event is None:
+            event, _ = model.objects.get_or_create(**lookup, date=event_datetime, defaults=defaults or {})
+            return event
+
+        candidates.exclude(pk=event.pk).delete()
+
+        changed = []
+        if event.date != event_datetime:
+            event.date = event_datetime
+            changed.append("date")
+        for field, value in (defaults or {}).items():
+            if getattr(event, field) != value:
+                setattr(event, field, value)
+                changed.append(field)
+        if changed:
+            event.save(update_fields=[*changed, "last_updated_at"])
+
+        return event
+
+    def save_simple_event(self, competition, event_datetime, event):
+        return self.upsert_event(
+            SimpleEvent,
+            {"competition": competition, "name": event.details.name, "details": event.details.details},
+            event_datetime,
+        )
 
     def save_race_event(self, competition, event_datetime, event):
-        try:
-            race = Race.objects.get(
-                competition=competition,
-                name=event.details.name,
-                details=event.details.details,
-                date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-            )
-            if race.date != event_datetime:
-                race.date = event_datetime
-                race.save()
-        except Race.DoesNotExist:
-            race, _ = Race.objects.get_or_create(
-                competition=competition,
-                name=event.details.name,
-                details=event.details.details,
-                date=event_datetime,
-            )
-        except Race.MultipleObjectsReturned:
-            races = Race.objects.filter(
-                competition=competition,
-                name=event.details.name,
-                details=event.details.details,
-                date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-            )
-            race = races.order_by("-last_updated_at").first()
-            races.exclude(id=race.id).delete()
-            if race.date != event_datetime:
-                race.date = event_datetime
-                race.save()
-
-        return race
+        return self.upsert_event(
+            Race,
+            {"competition": competition, "name": event.details.name, "details": event.details.details},
+            event_datetime,
+        )
 
     def save_match_event(self, competition, event_datetime, event):
         local = self.get_or_create_team(event.details.local)
@@ -330,35 +316,9 @@ class Command(BaseCommand):
         self.update_team_slug(local, getattr(event.details, "local_slug", None))
         self.update_team_slug(visitor, getattr(event.details, "visitor_slug", None))
 
-        try:
-            match = Match.objects.get(
-                competition=competition,
-                local=local,
-                visitor=visitor,
-                date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-            )
-            if match.date != event_datetime:
-                match.date = event_datetime
-                match.save()
-        except Match.DoesNotExist:
-            match, created = Match.objects.get_or_create(
-                competition=competition,
-                local=local,
-                visitor=visitor,
-                date=event_datetime,
-                defaults={"details": event.details.details},
-            )
-            if not created:
-                match.details = event.details.details
-                match.save()
-        except Match.MultipleObjectsReturned:
-            matches = Match.objects.filter(
-                competition=competition,
-                local=local,
-                visitor=visitor,
-                date__range=(event_datetime - datetime.timedelta(days=2), event_datetime + datetime.timedelta(days=2)),
-            )
-            match = matches.order_by("-last_updated_at").first()
-            matches.exclude(id=match.id).delete()
-
-        return match
+        return self.upsert_event(
+            Match,
+            {"competition": competition, "local": local, "visitor": visitor},
+            event_datetime,
+            defaults={"details": event.details.details},
+        )

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load soccertime_tags %}
 {% load django_bootstrap5 %}
 {% load static %}
 {% load i18n %}
@@ -22,7 +23,7 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
     <div id="teams-container" class="flex-grow-1 overflow-hidden" style="max-height: 44px; transition: max-height 0.3s ease;">
       <div class="d-flex flex-wrap justify-content-center gap-3">
         {% for team in competition_teams %}
-        <span><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team.crest_image|safe }}</a></span>
+        <span><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team|render_image_markup }}</a></span>
         {% endfor %}
       </div>
     </div>
