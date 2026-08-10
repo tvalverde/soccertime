@@ -5,6 +5,7 @@ from django.db.models import Count, Max, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.decorators.cache import cache_page
 
 from soccertime.models import Channel, ChannelLink, Competition, Event, Sport, Team
@@ -42,6 +43,16 @@ def get_base_context():
     }
 
 
+def parse_requested_date(value):
+    """Parse a user supplied date, returning None when it is missing or malformed."""
+    if not value:
+        return None
+    try:
+        return parse_date(value)
+    except ValueError:
+        return None
+
+
 def paginate_queryset(queryset, request, per_page=25):
     """Paginate a queryset consistently across views."""
     paginator = Paginator(queryset, per_page)
@@ -77,8 +88,9 @@ def agenda(request):
     max_date_result = Event.objects.aggregate(Max("date"))["date__max"]
     max_date = max_date_result.strftime("%Y-%m-%d") if max_date_result else None
 
-    if request.GET.get("events-date"):
-        queryset = Event.objects.for_date(request.GET.get("events-date")).with_related()
+    requested_date = parse_requested_date(request.GET.get("events-date"))
+    if requested_date:
+        queryset = Event.objects.for_date(requested_date).with_related()
     else:
         queryset = Event.objects.today_onwards().with_related()
 

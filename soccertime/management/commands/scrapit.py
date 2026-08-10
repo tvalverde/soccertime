@@ -33,6 +33,8 @@ from .scraping.base import (
     list_source_names,
 )
 
+IMAGE_DOWNLOAD_TIMEOUT = 10
+
 
 class Command(BaseCommand):
     help = "Scrape sporting events from configured sources"
@@ -224,6 +226,19 @@ class Command(BaseCommand):
 
         self.update_channels(event, agenda_event.channels)
 
+    def download_image(self, url):
+        """Download an image, returning None when the URL is missing or unreachable."""
+        if not url:
+            return None
+        try:
+            response = requests.get(url, stream=True, timeout=IMAGE_DOWNLOAD_TIMEOUT)
+        except requests.RequestException as error:
+            self.stderr.write(f"Could not download image from {url}: {error}")
+            return None
+        if response.status_code != 200:
+            return None
+        return io.BytesIO(response.content)
+
     def get_or_create_flag(self, flag_url):
         """Get or create a flag from URL."""
         if not flag_url:
@@ -236,11 +251,19 @@ class Command(BaseCommand):
             self._flags_cache[flag_url] = flag
 
         if not flag.image or not flag.image.storage.exists(flag.image.name):
-            response = requests.get(flag_url, stream=True, timeout=10)
-            if response.status_code == 200:
-                flag.save_flag(io.BytesIO(response.content), flag_url)
+            image = self.download_image(flag_url)
+            if image:
+                flag.save_flag(image, flag_url)
 
         return flag
+
+    def ensure_crest(self, team, crest_url):
+        """Download the team crest when it is not stored yet."""
+        if team.crest and team.crest.storage.exists(team.crest.name):
+            return
+        image = self.download_image(crest_url)
+        if image:
+            team.save_crest(image, crest_url)
 
     def update_channels(self, event, channels):
         channel_objs = [self.get_or_create_channel(c) for c in channels]
@@ -314,16 +337,10 @@ class Command(BaseCommand):
 
     def save_match_event(self, competition, event_datetime, event):
         local = self.get_or_create_team(event.details.local)
-        if not local.crest or not local.crest.storage.exists(local.crest.name):
-            response = requests.get(event.details.local_crest, stream=True, timeout=10)
-            if response.status_code == 200:
-                local.save_crest(io.BytesIO(response.content), event.details.local_crest)
         visitor = self.get_or_create_team(event.details.visitor)
 
-        if not visitor.crest or not visitor.crest.storage.exists(visitor.crest.name):
-            response = requests.get(event.details.visitor_crest, stream=True, timeout=10)
-            if response.status_code == 200:
-                visitor.save_crest(io.BytesIO(response.content), event.details.visitor_crest)
+        self.ensure_crest(local, event.details.local_crest)
+        self.ensure_crest(visitor, event.details.visitor_crest)
 
         self.update_team_slug(local, getattr(event.details, "local_slug", None))
         self.update_team_slug(visitor, getattr(event.details, "visitor_slug", None))

@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import models
 from django.db.models import Count, Prefetch, Q
-from django.db.models.signals import m2m_changed, post_delete
+from django.db.models.signals import m2m_changed, post_delete, pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -352,7 +352,7 @@ class EventQuerySet(models.QuerySet):
             | Q(match__visitor__favorite__isnull=False)
             | Q(race__competition__favorite__isnull=False)
             | Q(simpleevent__competition__favorite__isnull=False)
-        )
+        ).distinct()
 
     def for_team(self, team_id):
         """Events where team plays (home or away)."""
@@ -417,18 +417,42 @@ class EventQuerySet(models.QuerySet):
         return qs
 
 
+def delete_orphan_channel_links(link_pks):
+    """Delete the given links only if they no longer belong to any source."""
+    if not link_pks:
+        return
+    ChannelLink.objects.filter(pk__in=link_pks).annotate(source_count=Count("sources")).filter(source_count=0).delete()
+
+
+@receiver(pre_delete, sender=ChannelLinkSource)
+def remember_links_of_deleted_source(sender, instance, **kwargs):
+    # The through rows are gone by post_delete, so the candidates must be read now.
+    instance._orphan_candidate_pks = list(instance.links.values_list("pk", flat=True))
+
+
 @receiver(post_delete, sender=ChannelLinkSource)
 def delete_orphan_channel_links_on_source_delete(sender, instance, **kwargs):
-    orphan_links = ChannelLink.objects.annotate(source_count=Count("sources")).filter(source_count=0)
-    if orphan_links.exists():
-        orphan_links.delete()
+    delete_orphan_channel_links(getattr(instance, "_orphan_candidate_pks", []))
 
 
 @receiver(m2m_changed, sender=ChannelLink.sources.through)
-def delete_orphan_channel_links_on_m2m(sender, instance, action, **kwargs):
-    if action in {"post_remove", "post_clear"}:
-        if instance.sources.count() == 0:
-            instance.delete()
+def delete_orphan_channel_links_on_m2m(sender, instance, action, reverse, pk_set, **kwargs):
+    if action == "pre_clear" and reverse:
+        # post_clear does not report which links were detached, so capture them first.
+        instance._orphan_candidate_pks = list(instance.links.values_list("pk", flat=True))
+        return
+
+    if action not in {"post_remove", "post_clear"}:
+        return
+
+    if not reverse:
+        candidate_pks = [instance.pk]
+    elif action == "post_clear":
+        candidate_pks = getattr(instance, "_orphan_candidate_pks", [])
+    else:
+        candidate_pks = list(pk_set or [])
+
+    delete_orphan_channel_links(candidate_pks)
 
 
 class Event(models.Model):

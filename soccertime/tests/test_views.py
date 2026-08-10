@@ -142,6 +142,13 @@ class TestAgendaView:
         response = client.get(reverse("agenda"), {"events-date": str(future_date)})
         assert match.pk in get_event_pks(response.context["events"])
 
+    @pytest.mark.parametrize("invalid_date", ["not-a-date", "2026-02-31", "31/12/2026"])
+    def test_invalid_date_falls_back_to_default_agenda(self, client, match, invalid_date):
+        """A malformed date parameter should be ignored, not raise a server error."""
+        response = client.get(reverse("agenda"), {"events-date": invalid_date})
+        assert response.status_code == 200
+        assert match.pk in get_event_pks(response.context["events"])
+
     def test_search_filter(self, client, match):
         """Should filter events by search query."""
         response = client.get(reverse("agenda"), {"search": "Real Madrid"})

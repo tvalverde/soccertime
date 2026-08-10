@@ -154,6 +154,61 @@ class TestChannelLink:
             assert link.quality == quality
 
 
+class TestChannelLinkOrphanCleanup:
+    """Tests for the signals that remove links left without any source."""
+
+    @pytest.fixture
+    def manual_link(self, db):
+        """A link created by hand (in the admin), which never gets a source."""
+        return ChannelLink.objects.create(name="Manual", link="https://example.com/manual")
+
+    def test_deleting_source_keeps_manual_links(self, channel_link_source, manual_link):
+        """Links that never had a source belong to nobody and must survive."""
+        channel_link_source.delete()
+        assert ChannelLink.objects.filter(pk=manual_link.pk).exists()
+
+    def test_deleting_source_deletes_its_orphan_links(self, channel_link, channel_link_source):
+        channel_link_source.delete()
+        assert not ChannelLink.objects.filter(pk=channel_link.pk).exists()
+
+    def test_deleting_source_keeps_links_with_another_source(self, channel_link, channel_link_source):
+        other_source = ChannelLinkSource.objects.create(name="other")
+        channel_link.sources.add(other_source)
+
+        channel_link_source.delete()
+
+        assert ChannelLink.objects.filter(pk=channel_link.pk).exists()
+
+    def test_removing_last_source_deletes_link(self, channel_link, channel_link_source):
+        channel_link.sources.remove(channel_link_source)
+        assert not ChannelLink.objects.filter(pk=channel_link.pk).exists()
+
+    def test_clearing_sources_deletes_link(self, channel_link):
+        channel_link.sources.clear()
+        assert not ChannelLink.objects.filter(pk=channel_link.pk).exists()
+
+    def test_removing_link_from_source_side_deletes_orphan(self, channel_link, channel_link_source):
+        """The reverse direction is what the admin form uses."""
+        channel_link_source.links.remove(channel_link)
+        assert not ChannelLink.objects.filter(pk=channel_link.pk).exists()
+
+    def test_clearing_links_from_source_side_deletes_orphans(self, channel_link, channel_link_source):
+        channel_link_source.links.clear()
+        assert not ChannelLink.objects.filter(pk=channel_link.pk).exists()
+
+    def test_removing_link_from_source_side_keeps_link_with_another_source(self, channel_link, channel_link_source):
+        other_source = ChannelLinkSource.objects.create(name="other")
+        channel_link.sources.add(other_source)
+
+        channel_link_source.links.remove(channel_link)
+
+        assert ChannelLink.objects.filter(pk=channel_link.pk).exists()
+
+    def test_removing_link_from_source_side_keeps_manual_links(self, channel_link, channel_link_source, manual_link):
+        channel_link_source.links.remove(channel_link)
+        assert ChannelLink.objects.filter(pk=manual_link.pk).exists()
+
+
 class TestFavorite:
     """Tests for Favorite model."""
 

@@ -9,6 +9,7 @@ from io import StringIO
 from unittest.mock import patch
 
 import pytest
+import requests
 from django.core.management import call_command
 
 from soccertime.management.commands.scraping.base import (
@@ -337,6 +338,30 @@ class TestScrapitCommandProcessing:
         # Verify visitor team (non-favorite) didn't get the slug
         visitor = Team.objects.get(name="Test Away Team")
         assert visitor.futbolenlatv_slug is None
+
+    def test_match_without_crest_urls_is_saved(self, db, mock_match_event):
+        """A match with no crest URLs must be saved without attempting any download."""
+        with patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get:
+            mock_get.return_value = iter([mock_match_event])
+            call_command("scrapit", "--source=example", "--include-disabled")
+
+        assert Match.objects.filter(local__name="Test Home Team", visitor__name="Test Away Team").exists()
+
+    def test_crest_download_failure_does_not_abort_scraping(self, db, mock_match_event):
+        """A network error while downloading a crest must not kill the run."""
+        mock_match_event.details.local_crest = "https://example.com/home.png"
+        mock_match_event.details.visitor_crest = "https://example.com/away.png"
+
+        with (
+            patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
+            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+        ):
+            mock_get.return_value = iter([mock_match_event])
+            mock_requests.side_effect = requests.ConnectionError("boom")
+            call_command("scrapit", "--source=example", "--include-disabled", stderr=StringIO())
+
+        match = Match.objects.get(local__name="Test Home Team", visitor__name="Test Away Team")
+        assert not match.local.crest
 
 
 class TestScrapingSourceBase:

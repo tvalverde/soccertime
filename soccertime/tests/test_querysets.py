@@ -8,7 +8,7 @@ import datetime
 
 from django.utils import timezone
 
-from soccertime.models import Event, Match, SimpleEvent
+from soccertime.models import Event, Favorite, Match, SimpleEvent
 
 
 def event_pks(queryset):
@@ -295,6 +295,19 @@ class TestEventQuerySetFavorites:
         )
         events = Event.objects.favorites()
         assert event.pk in event_pks(events)
+
+    def test_favorites_no_duplicates_when_team_has_several_favorite_rows(self, match, team_home, competition):
+        """A team listed in two Favorite rows must not duplicate its events."""
+        Favorite.objects.create(team=team_home)
+        Favorite.objects.create(team=team_home, competition=competition)
+
+        assert event_pks(Event.objects.favorites()).count(match.pk) == 1
+
+    def test_favorites_no_duplicates_when_both_teams_are_favorites(self, match, team_home, team_away):
+        Favorite.objects.create(team=team_home)
+        Favorite.objects.create(team=team_away)
+
+        assert event_pks(Event.objects.favorites()).count(match.pk) == 1
 
 
 class TestEventQuerySetChaining:
