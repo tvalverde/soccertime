@@ -35,15 +35,11 @@ Nothing here is worth doing on its own account; each entry says why it is still 
    models and querysets or the views and commands too, and whether a checker runs in CI —
    hints nobody verifies drift out of date and mislead.
 
-3. **Revisit MTI performance only if measured.** Not work: a note so it is not reopened
-   without profiling. A query count on the real database showed `with_related()` already
-   works — reaching `child_event` and then its `competition`, `sport`, `channels` and
-   `links` across 25 events costs **0 extra queries**, because the MTI child fetched via
-   `select_related` shares the parent's caches.
 
 ## Done
 
 ### Blocks E and F — 2026-08-10
+- [x] **Moved the MTI note where it can actually stop someone.** It was never work: `Match`, `Race` and `SimpleEvent` each have their own table joined to `soccertime_event`, and that join is the price of listing every kind of event together, which the agenda depends on. The measurement — 0 extra queries across 25 events, because `with_related()` lets the child share the parent's caches — now lives in the `Event` docstring and in `AGENTS.md`, next to the code someone would be tempted to "optimise", rather than in a backlog they would not be reading.
 - [x] **Rewrote `LinkSchemeFilter` to resolve the schemes in the database.** It read every link into Python to parse it, and returned the options from a set, so the dropdown order changed between processes. Now one `DISTINCT` query, ordered, covered by a query-count test.
 - [x] **Stopped using private Django API in the admin.** `field._choices` becomes the public `field.choices`, and the generated relation columns are attached once in `__init__`, at registration, instead of being rewritten on the shared `ModelAdmin` instance by every request. The names stay, because five subclasses look them up with `list_display.index(...)`.
 - [x] **Gave `self.warnings` an owner.** `import_entries` reads it, so the base command creates it; a subclass that forgot used to break the shared pipeline rather than its own.

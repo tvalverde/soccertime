@@ -55,6 +55,7 @@ This document provides the necessary context for understanding and working on th
     -   In templates, use `{% with %}` blocks to cache expensive property calls or methods that are used multiple times (e.g., `channel.enabled_links`).
 -   **Model Architecture:**
     -   **Polymorphism:** Use the `Event.child_event` property to access specific event instances (`Match`, `Race`, `SimpleEvent`) instead of using complex `if/elif` chains in templates.
+    -   **Multi-table inheritance:** `Match`, `Race` and `SimpleEvent` each have their own table joined to `soccertime_event`, so reading one always costs a join. Do not try to remove it without profiling first: `with_related()` already makes the child share the parent's caches, measured at **0 extra queries** across 25 events on the production database.
     -   **In-Memory Filtering:** Properties that filter related sets (like `Channel.enabled_links`) should use list comprehensions over `self.links.all()` to leverage Django's prefetch cache instead of hitting the DB with `.filter()`.
 -   **Template & UI Standardization:**
     -   **Unified Rendering:** `agenda.html` is the reference template for all event listings. Do not create new listing templates unless strictly necessary.

@@ -457,6 +457,21 @@ def delete_orphan_channel_links_on_m2m(sender, instance, action, reverse, pk_set
 
 
 class Event(models.Model):
+    """Base of the multi-table inheritance used by Match, Race and SimpleEvent.
+
+    Each subclass gets its own table holding only its extra fields, joined to this one
+    by `event_ptr_id`, so reading a Match always costs one join. That is the price of
+    being able to list every kind of event together, ordered by time, which is what the
+    agenda does; an abstract base would remove the join and the shared listing with it.
+
+    Before reaching for `django-model-utils`' `InheritanceManager` to avoid that join,
+    profile: measured on the production database, walking `child_event` and then its
+    `competition`, `sport`, `channels` and `links` across 25 events costs **0 extra
+    queries**, because the child fetched through `with_related()`'s `select_related`
+    shares the parent's caches. `event_type` exists so the kind of an event can be read
+    without touching the three child tables at all.
+    """
+
     class EventType(models.TextChoices):
         MATCH = "match", _("Match")
         RACE = "race", _("Race")
