@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-11
+
+A security audit of the dependencies and the codebase, and the three findings that were
+serious enough to fix the same day. Two were versions left behind — one of them in the
+library that parses images fetched from the internet — and the third was a validator that
+had been written for exactly this purpose and never ran, because Django does not invoke
+field validators from `save()`. Nothing here is known to have been exploited, and the
+production data was audited before each fix: no dangerous link was ever stored.
+
 ### Security
 - A channel link whose scheme is not on the allowlist can no longer be stored, nor rendered if it is already stored. `ChannelLink.link` declared `validators=[validate_channel_link]`, but Django only runs field validators from `full_clean()`, which `Model.save()` does not call and which nothing in this project called — so the validator was dead code outside the admin form, while the importer, the one path fed by third-party channel lists, writes through `update_or_create`. A `javascript:` or `data:text/html` URI therefore reached the page's `href` intact, where escaping is no defence because the URL itself is the payload, and it would execute in the site's own origin on click. Reproduced end to end before fixing. `ChannelLink.save()` now applies the validator to that single field, which cannot fail on an unrelated one and keeps `full_clean()`'s unique query out of every save; the importer catches the rejection, reports it and carries on rather than abandoning the run over one bad entry; and `link_button.html` renders no anchor at all for a scheme that is not allowed, which is the only layer that covers a row already in the table. The scheme is read through `urlparse`, matching what the browser does — it lower-cases the scheme and strips tabs and newlines — so `JavaScript:` and `java&#9;script:` are caught too. All 381 links in production were audited beforehand: every one is `acestream`, so nothing legitimate stops rendering.
 - Pillow upgraded from 12.1.0 to 12.3.0. The old version is in range for `CVE-2026-25990` (out-of-bounds write) and `CVE-2026-42311` (integer overflow), both of which can lead to arbitrary code execution when a crafted PSD file is parsed, and for `CVE-2026-59203`, an infinite loop in the EPS parser. This project feeds Pillow image bytes downloaded from URLs found in scraped HTML, and Pillow selects its decoder by sniffing the content rather than trusting the extension, so a URL ending in `.webp` that serves a PSD reaches the vulnerable decoder.
