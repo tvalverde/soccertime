@@ -185,11 +185,9 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env_flag("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS
 SECURE_HSTS_PRELOAD = env_flag("DJANGO_SECURE_HSTS_PRELOAD")
 
 SILENCED_SYSTEM_CHECKS = [
-    # The reverse proxy already answers http:// with a 301, so redirecting again in
-    # Django would only duplicate work on every request.
-    "security.W008",
     # HSTS deliberately covers this host only: the domain may serve unrelated
     # subdomains, and neither includeSubDomains nor preload can be taken back quickly.
+    # These two are policy decisions rather than defects, so they stay silenced.
     "security.W005",
     "security.W021",
 ]
