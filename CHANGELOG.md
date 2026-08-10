@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- `match_channels` matches against the channel list in memory instead of querying per candidate: one query for a whole import run rather than three per entry, measured at 1236 queries and 638 ms down to 1 query and 11 ms for 200 names. Verified identical on all 87 production channel names and their variants — no case loses a match — beyond the accent fix noted below.
+## [0.2.1] - 2026-08-10
+
+Two silent faults in the logic that decides which channel a scraped link belongs to,
+found by pinning its behaviour down with tests before touching it, and the rewrite those
+tests then made safe.
 
 ### Added
-- Characterization tests for `match_channels`, the logic deciding which channel a scraped link attaches to: 37 cases covering exact and parenthesised matches, the short-name guard, the DAZN variants, numeric suffixes, the token fallback and malformed input. It had no direct tests at all.
+- Characterization tests for `match_channels`, the logic deciding which channel a scraped link attaches to: 41 cases covering exact and parenthesised matches, the short-name guard, the DAZN variants, numeric suffixes, the token fallback and malformed input. It had no direct tests at all.
+
+### Changed
+- `match_channels` matches against the channel list in memory instead of querying per candidate: one query for a whole import run rather than three per entry, measured at 1236 queries and 638 ms down to 1 query and 11 ms for 200 names. Verified identical on all 87 production channel names and their variants — no case loses a match — beyond the accent fix noted below.
 
 ### Fixed
 - Channel names in upper case with accented characters now match. SQLite only case-folds ASCII, so `iexact` never saw "ARAGÓN TV" as "Aragón TV"; matching in Python does. Twelve of the eighty-seven channels are affected, and playlists commonly shout their names, so those links were reported as belonging to no channel and dropped.
