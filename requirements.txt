@@ -16,5 +16,10 @@ pytest-cov==6.0.0
 # Linting & Formatting
 ruff==0.9.6
 
+# Type checking
+mypy==2.3.0
+django-stubs==6.0.9
+types-requests==2.32.4.20250913
+
 
 lxml

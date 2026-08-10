@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Type annotations across the application code, checked by mypy with django-stubs through a new `make typecheck`, and ruff's ANN rules inside `make lint` so unannotated code cannot land. `mypy`, `django-stubs` and `types-requests` added to the requirements.
 - `soccertime/rendering.py`, the single source of image markup for both the templates and the admin, exposed to templates as the `render_image_markup` filter. Models keep the image and its dimensions; the HTML lives outside them, so templates no longer need `|safe`.
 - Test modules for `filters.py` and the template filters, which had none.
 - `DJANGO_CACHE_LOCATION` to configure the file cache path.
@@ -67,12 +68,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
 
 ### Removed
+- `channel_matchers.py`: 320 lines imported by nothing, advertised by Django as a command it could not run.
 - `Sport.competitions_with_events`, `Sport.competitions_without_events`, `Competition.is_favorite` and `Competition.is_favorite_cached`: superseded or byte-identical duplicates, used by nothing but the tests that kept them alive.
 - `render_image`, `flag_image` and `crest_image` from the models, along with the duplicated fallback SVG. The markup moved to `soccertime/rendering.py`.
 - `migrate_crests` management command. A one-off path migration from early 2026 whose "missing or empty file" branch cleared the crest reference of any team whose file was absent, turning a dangling reference the scraper repairs by itself into permanent loss: 1357 teams lost their crest that way.
 - Legacy and redundant template files: `events.html`, `match_item.html`, `simple_event_item.html`, and `event_header.html`.
 
 ### Fixed
+- The scraping dataclasses declared every field optional though `parse_iter` only yields complete events, and `Event.details` was typed `EventDetails` while the code passes `MatchDetails` and `RaceDetails`, which do not inherit from it; it is now a declared union narrowed by the existing `isinstance` dispatch.
+- `team_events` sorted opponents with `opponent_dates.get(team.id)`, which would have raised `TypeError` inside `sorted` had the lookup ever missed.
+- The link importer indexed `channel_link.link`, a nullable field, when reporting a duplicate.
 - The channels page orders the links inside each card the same way the rest of the site does. It sorted only by the grouping keys, so the rows of a single card — which share all three — came back in whatever order the database chose, and the same play buttons appeared in one order there and another in the agenda. `CHANNEL_LINK_ORDERING` is now the single definition, used by the model and by the view.
 - `upload-only` now extracts the uploaded archive. It left it packed, so a following `remote-restart` rebuilt the image from the previous version while reporting success.
 - Deleting a `ChannelLinkSource` no longer destroys every source-less `ChannelLink`, including links created by hand in the admin. Only the links that belonged to the deleted source are considered.

@@ -1,13 +1,18 @@
+from typing import Any
+
 from django.contrib import admin
-from django.db.models import Value
+from django.db.models import QuerySet, Value
 from django.db.models.functions import StrIndex, Substr
+from django.http import HttpRequest
+
+from soccertime.models import ChannelLink
 
 
 class LinkSchemeFilter(admin.SimpleListFilter):
     title = "Scheme"
     parameter_name = "link_scheme"
 
-    def lookups(self, request, model_admin):
+    def lookups(self, request: HttpRequest | None, model_admin: admin.ModelAdmin[Any]) -> list[tuple[str, str]]:
         """The distinct schemes in use, resolved by the database.
 
         This used to read every link into Python to parse it, and returned the results
@@ -26,7 +31,7 @@ class LinkSchemeFilter(admin.SimpleListFilter):
         )
         return [(scheme, scheme) for scheme in schemes]
 
-    def queryset(self, request, queryset):
+    def queryset(self, request: HttpRequest | None, queryset: QuerySet[ChannelLink]) -> QuerySet[ChannelLink]:
         if self.value():
             return queryset.filter(link__startswith=f"{self.value()}://")
         return queryset

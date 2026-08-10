@@ -1,3 +1,6 @@
+from argparse import ArgumentParser
+from typing import Any
+
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
@@ -6,7 +9,7 @@ from soccertime.models import Flag, Team
 from ._image_download import download_image
 
 
-def missing_files(queryset, field_name):
+def missing_files(queryset: Any, field_name: str) -> list[Any]:
     """Rows whose image field points at a file that is not in storage."""
     return [
         instance
@@ -18,18 +21,18 @@ def missing_files(queryset, field_name):
 class Command(BaseCommand):
     help = "Report broken image references and restore the flag files that can be re-fetched"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Report what is missing without downloading anything",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         self.report_crests()
         self.restore_flags(dry_run=options["dry_run"])
 
-    def report_crests(self):
+    def report_crests(self) -> None:
         """Crests are reported, never restored: `Team` keeps no source URL.
 
         A missing crest only comes back when the team appears in a scrape again, which
@@ -44,7 +47,7 @@ class Command(BaseCommand):
         if broken or without_crest:
             self.stdout.write("  (recovered automatically the next time those teams are scraped)")
 
-    def restore_flags(self, dry_run):
+    def restore_flags(self, dry_run: bool) -> None:
         broken = missing_files(Flag.objects, "image")
 
         self.stdout.write("Flags:")

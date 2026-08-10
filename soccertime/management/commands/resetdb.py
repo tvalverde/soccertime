@@ -4,6 +4,8 @@ This is useful for development and testing.
 """
 
 import os
+from argparse import ArgumentParser
+from typing import Any
 
 from django.conf import settings
 from django.core.management import call_command
@@ -13,14 +15,14 @@ from django.core.management.base import BaseCommand
 class Command(BaseCommand):
     help = "Reset the database by deleting it and running migrations again"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--noinput",
             action="store_true",
             help="Skip confirmation prompt",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         db_path = settings.DATABASES["default"]["NAME"]
 
         if not options["noinput"]:

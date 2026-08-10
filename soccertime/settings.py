@@ -19,7 +19,7 @@ from django.core.exceptions import ImproperlyConfigured
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-def env_flag(name):
+def env_flag(name: str) -> bool:
     """Read a boolean setting from the environment, defaulting to off."""
     return os.environ.get(name, "").lower() == "true"
 

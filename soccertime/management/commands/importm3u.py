@@ -1,7 +1,10 @@
 import re
+from argparse import ArgumentParser
 from pathlib import Path
+from typing import Any, TypedDict
 
 from soccertime.management.commands._link_import_base import BaseLinkImportCommand
+from soccertime.models import ChannelLink
 
 EXTINF_RE = re.compile(
     r"^#EXTINF:\s*-?\d+(?:\.\d+)?"  # duration: -1, 0, 10.5
@@ -13,10 +16,17 @@ MIRROR_SUFFIX_RE = re.compile(r"\s*\[\d+\]\s*$")  # "DAZN Mundial 1 [2]" -> "DAZ
 ACESTREAM_HASH_RE = re.compile(r"[0-9a-fA-F]{40}")
 
 
+class PendingEntry(TypedDict):
+    """An #EXTINF directive waiting for the URL line that follows it."""
+
+    name: str
+    group_title: str | None
+
+
 class Command(BaseLinkImportCommand):
     help = "Import acestream channel links from an M3U playlist file"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument("--file", "-f", required=True, help="Input M3U file path")
         parser.add_argument("--source", "-s", help="Source name (default: uppercased file name stem)")
         parser.add_argument("--dry", action="store_true", help="Dry run without saving")
@@ -24,7 +34,7 @@ class Command(BaseLinkImportCommand):
     # ------------------------------------------------------------------
     # Parsing
     # ------------------------------------------------------------------
-    def parse_m3u(self, filepath):
+    def parse_m3u(self, filepath: str) -> list[tuple[str, str | None, ChannelLink.Quality, str]]:
         """Parse an M3U playlist into (channel_name, subcategory, quality, link) tuples.
 
         Pairs each #EXTINF directive with the following URL line, tolerating blank
@@ -36,7 +46,7 @@ class Command(BaseLinkImportCommand):
             lines = [line.strip() for line in f]
 
         entries = []
-        pending = None
+        pending: PendingEntry | None = None
 
         for line in lines:
             if not line:
@@ -90,7 +100,7 @@ class Command(BaseLinkImportCommand):
     # ------------------------------------------------------------------
     # Main
     # ------------------------------------------------------------------
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         source_name = (options["source"] or Path(options["file"]).stem).upper()
         dry_run = options["dry"]
 

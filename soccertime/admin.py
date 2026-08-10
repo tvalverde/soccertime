@@ -1,11 +1,15 @@
+from collections.abc import Iterator
+from typing import Any, cast
+
 from adminsortable2.admin import SortableAdminMixin
 from django.contrib import admin
 from django.contrib.admin.templatetags.admin_urls import admin_urlname
 from django.db import models
-from django.db.models import Count
+from django.db.models import Count, Field, QuerySet
+from django.http import HttpRequest
 from django.shortcuts import resolve_url
 from django.utils.html import format_html, format_html_join
-from django.utils.safestring import mark_safe
+from django.utils.safestring import SafeString, mark_safe
 
 from .filters import LinkSchemeFilter
 from .models import (
@@ -24,25 +28,26 @@ from .models import (
 from .rendering import image_markup
 
 
-def escape_braces(s):
+def escape_braces(s: str) -> str:
     return s.replace("{", "{{").replace("}", "}}")
 
 
-def make_related_field(field):
-    def display_method(obj):
+def make_related_field(field: Field[Any, Any]) -> Any:
+    @admin.display(description=field.name, ordering=field.name)
+    def display_method(obj: Any) -> str:
         item = getattr(obj, field.name, None)
         if item is None:
             return ""
-        related_model = (
+        # Only relation fields reach here, so the related model is always resolved.
+        related_model = cast(
+            type[models.Model],
             field.model
             if isinstance(field, models.OneToOneField) and field.remote_field.parent_link
-            else field.related_model
+            else field.related_model,
         )
-        url = resolve_url(admin_urlname(related_model._meta, "change"), item.id)
+        url = resolve_url(admin_urlname(related_model._meta, SafeString("change")), item.id)
         return format_html('<a href="{}">{}</a>', url, item)
 
-    display_method.short_description = f"{field.name}"
-    display_method.admin_order_field = f"{field.name}"
     return display_method
 
 
@@ -52,7 +57,7 @@ class AutoModelAdmin(admin.ModelAdmin):
     search_fields = []
     list_per_page = 20
 
-    def __init__(self, model, admin_site):
+    def __init__(self, model: type[Any], admin_site: admin.AdminSite) -> None:
         super().__init__(model, admin_site)
         # Subclasses refer to these columns by name, so they have to be real attributes.
         # They are attached once here, at registration, rather than on every request:
@@ -62,7 +67,7 @@ class AutoModelAdmin(admin.ModelAdmin):
             if field.is_relation:
                 setattr(self, f"{field.name}_link", make_related_field(field))
 
-    def _displayable_fields(self):
+    def _displayable_fields(self) -> Iterator[Field[Any, Any]]:
         """Concrete fields worth a column: no passwords, no parent links."""
         for field in self.model._meta.concrete_fields:
             if field.name == "password":
@@ -71,8 +76,8 @@ class AutoModelAdmin(admin.ModelAdmin):
                 continue
             yield field
 
-    def get_list_display(self, request):
-        list_display = [
+    def get_list_display(self, request: HttpRequest) -> list[Any]:
+        list_display: list[Any] = [
             f"{field.name}_link" if field.is_relation else field.name for field in self._displayable_fields()
         ]
         for field in self.list_display or []:
@@ -80,8 +85,8 @@ class AutoModelAdmin(admin.ModelAdmin):
                 list_display.append(field)
         return list_display
 
-    def get_list_filter(self, request):
-        list_filter = [field.name for field in self.model._meta.concrete_fields if field.choices]
+    def get_list_filter(self, request: HttpRequest) -> list[Any]:
+        list_filter: list[Any] = [field.name for field in self.model._meta.concrete_fields if field.choices]
         list_filter += [
             field.name
             for field in self.model._meta.concrete_fields
@@ -92,8 +97,8 @@ class AutoModelAdmin(admin.ModelAdmin):
                 list_filter.append(field)
         return list_filter
 
-    def get_search_fields(self, request):
-        search_fields = [
+    def get_search_fields(self, request: HttpRequest) -> list[str]:
+        search_fields: list[Any] = [
             field.name
             for field in self.model._meta.concrete_fields
             if isinstance(field, models.CharField | models.TextField)
@@ -118,20 +123,20 @@ class SportAdmin(SortableAdminMixin, AutoModelAdmin):
 class CompetitionAdmin(AutoModelAdmin):
     search_fields = ["name"]
 
-    def get_list_filter(self, request):
+    def get_list_filter(self, request: HttpRequest) -> list[Any]:
         list_filter = super().get_list_filter(request)
         list_filter += [
             ("sport", admin.RelatedOnlyFieldListFilter),
         ]
         return list_filter
 
-    def get_list_display(self, request):
+    def get_list_display(self, request: HttpRequest) -> list[Any]:
         list_display = super().get_list_display(request)
         list_display[list_display.index("flag_link")] = "flag_image"
         return list_display
 
     @admin.display(description="flag")
-    def flag_image(self, obj):
+    def flag_image(self, obj: Any) -> SafeString:
         return image_markup(obj.flag)
 
 
@@ -139,44 +144,42 @@ class CompetitionAdmin(AutoModelAdmin):
 class TeamAdmin(AutoModelAdmin):
     search_fields = ["name"]
 
-    def get_list_display(self, request):
+    def get_list_display(self, request: HttpRequest) -> list[Any]:
         list_display = super().get_list_display(request)
         list_display[list_display.index("crest")] = "crest_image"
         return list_display
 
     @admin.display(description="crest")
-    def crest_image(self, obj):
+    def crest_image(self, obj: Any) -> SafeString:
         return image_markup(obj)
 
 
 class EventModelAdmin(AutoModelAdmin):
-    def get_queryset(self, request):
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
         return super().get_queryset(request).prefetch_related("channels")
 
-    def get_list_display(self, request):
+    def get_list_display(self, request: HttpRequest) -> list[Any]:
         list_display = super().get_list_display(request)
         list_display.insert(list_display.index("competition_link"), "competition_sport")
         list_display.append("channels_names")
         return list_display
 
-    def get_list_filter(self, request):
+    def get_list_filter(self, request: HttpRequest) -> list[Any]:
         list_filter = super().get_list_filter(request)
         list_filter += [
             ("competition__sport", admin.RelatedOnlyFieldListFilter),
         ]
         return list_filter
 
-    def competition_sport(self, obj):
+    @admin.display(description="sport", ordering="competition__sport")
+    def competition_sport(self, obj: Any) -> Any:
         return obj.competition.sport
 
-    competition_sport.short_description = "sport"
-    competition_sport.admin_order_field = "competition__sport"
-
-    def channels_names(self, obj):
+    def channels_names(self, obj: Any) -> SafeString:
         return format_html_join(
             mark_safe("<br>"),
             '<a href="{}">{}</a>',
-            ((resolve_url(admin_urlname(c._meta, "change"), c.pk), c.name) for c in obj.channels.all()),
+            ((resolve_url(admin_urlname(c._meta, SafeString("change")), c.pk), c.name) for c in obj.channels.all()),
         )
 
 
@@ -199,13 +202,13 @@ class HasChannelsFilter(admin.SimpleListFilter):
     title = "Has channels"
     parameter_name = "has_channels"
 
-    def lookups(self, request, model_admin):
+    def lookups(self, request: HttpRequest | None, model_admin: admin.ModelAdmin[Any]) -> list[tuple[str, str]]:
         return [
             ("no", "No"),
             ("yes", "Yes"),
         ]
 
-    def queryset(self, request, queryset):
+    def queryset(self, request: HttpRequest | None, queryset: QuerySet[Any]) -> QuerySet[Any]:
         queryset = queryset.annotate(link_count=Count("channels__links"))
         if self.value() == "no":
             return queryset.filter(link_count=0)
@@ -224,13 +227,13 @@ class ChannelHasLinksFilter(admin.SimpleListFilter):
     title = "Has links"
     parameter_name = "has_links"
 
-    def lookups(self, request, model_admin):
+    def lookups(self, request: HttpRequest | None, model_admin: admin.ModelAdmin[Any]) -> list[tuple[str, str]]:
         return [
             ("no", "No"),
             ("yes", "Yes"),
         ]
 
-    def queryset(self, request, queryset):
+    def queryset(self, request: HttpRequest | None, queryset: QuerySet[Any]) -> QuerySet[Any]:
         queryset = queryset.annotate(link_count=Count("links", distinct=True))
         if self.value() == "no":
             return queryset.filter(link_count=0)
@@ -245,15 +248,15 @@ class ChannelAdmin(AutoModelAdmin):
     filter_horizontal = ["links"]
     list_filter = [ChannelHasLinksFilter]
 
-    def get_queryset(self, request):
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Any]:
         qs = super().get_queryset(request)
         return qs.annotate(link_count=Count("links", distinct=True))
 
     @admin.display(ordering="link_count", description="links")
-    def links_count(self, obj):
+    def links_count(self, obj: Any) -> int:
         return obj.link_count
 
-    def get_list_display(self, request):
+    def get_list_display(self, request: HttpRequest) -> list[Any]:
         list_display = super().get_list_display(request)
         if "links_count" not in list_display:
             list_display.append("links_count")
@@ -271,23 +274,23 @@ class ChannelLinkAdmin(AutoModelAdmin):
 class FavoriteAdmin(SortableAdminMixin, AutoModelAdmin):
     autocomplete_fields = ["competition", "team"]
 
-    def get_list_display(self, request):
+    def get_list_display(self, request: HttpRequest) -> list[Any]:
         list_display = super().get_list_display(request)
         list_display.insert(list_display.index("_reorder_"), "crest_image")
         return list_display
 
     @admin.display(description="crest")
-    def crest_image(self, obj):
+    def crest_image(self, obj: Any) -> SafeString:
         return image_markup(obj.team)
 
 
 @admin.register(Flag)
 class FlagAdmin(AutoModelAdmin):
-    def get_list_display(self, request):
+    def get_list_display(self, request: HttpRequest) -> list[Any]:
         list_display = super().get_list_display(request)
         list_display[list_display.index("image")] = "flag_image"
         return list_display
 
     @admin.display(description="image")
-    def flag_image(self, obj):
+    def flag_image(self, obj: Any) -> SafeString:
         return image_markup(obj)

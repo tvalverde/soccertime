@@ -1,4 +1,4 @@
-.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -14,6 +14,7 @@ help:
 	@echo "  test-integration     Run integration tests (real HTTP requests)"
 	@echo "  test-cov             Run tests with coverage report"
 	@echo "  lint                 Check code for linting errors"
+	@echo "  typecheck            Check type annotations with mypy"
 	@echo "  lint-fix             Fix auto-fixable linting errors"
 	@echo "  format               Format code with ruff"
 	@echo ""
@@ -111,6 +112,11 @@ test-integration:
 # Run tests with coverage report
 test-cov:
 	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest -m "not integration" --cov --cov-report=term-missing
+
+# Check type annotations. Runs in the container because the django-stubs plugin imports
+# the settings module, which needs the environment the container already provides.
+typecheck:
+	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web mypy soccertime/
 
 # Check code for linting errors
 lint:

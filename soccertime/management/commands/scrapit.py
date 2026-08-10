@@ -1,4 +1,6 @@
 import datetime
+from argparse import ArgumentParser
+from typing import Any
 
 from django.core.cache import cache
 from django.core.management.base import BaseCommand, CommandError
@@ -41,7 +43,7 @@ DUPLICATE_WINDOW_DAYS = 2
 class Command(BaseCommand):
     help = "Scrape sporting events from configured sources"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--source",
             type=str,
@@ -64,7 +66,7 @@ class Command(BaseCommand):
             help="Include disabled sources when using --source=all or --list-sources",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         self.dry_run = options["dry_run"]
         include_disabled = options["include_disabled"]
 
@@ -86,10 +88,10 @@ class Command(BaseCommand):
                 source_class() for source_class in get_available_sources(include_disabled=include_disabled).values()
             ]
         else:
-            source_class = get_source(source_name)
-            if source_class is None:
+            found = get_source(source_name)
+            if found is None:
                 raise CommandError(f"Unknown source '{source_name}'. Available sources: {list_source_names()}")
-            source = source_class()
+            source = found()
             # Allow running disabled sources explicitly by name
             if not source.enabled and not include_disabled:
                 self.stdout.write(
@@ -118,7 +120,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.SUCCESS("Dry run completed"))
 
-    def init_caches(self):
+    def init_caches(self) -> None:
         """Initialize in-memory caches for reference objects to avoid DB hits in loops."""
         self._sports_cache = {s.name: s for s in Sport.objects.all()}
         self._flags_cache = {f.name: f for f in Flag.objects.all()}
@@ -128,14 +130,14 @@ class Command(BaseCommand):
         self._teams_cache = {t.name: t for t in Team.objects.prefetch_related("favorite")}
         self._channels_cache = {c.name: c for c in Channel.objects.all()}
 
-    def get_or_create_sport(self, name):
+    def get_or_create_sport(self, name: str) -> Sport:
         if name in self._sports_cache:
             return self._sports_cache[name]
         sport, _ = Sport.objects.get_or_create(name=name)
         self._sports_cache[name] = sport
         return sport
 
-    def get_or_create_competition(self, name, sport, flag):
+    def get_or_create_competition(self, name: str, sport: Sport, flag: Flag | None) -> Competition:
         key = (name, sport.id)
         if key in self._competitions_cache:
             comp = self._competitions_cache[key]
@@ -147,14 +149,14 @@ class Command(BaseCommand):
         self._competitions_cache[key] = comp
         return comp
 
-    def get_or_create_team(self, name):
+    def get_or_create_team(self, name: str) -> Team:
         if name in self._teams_cache:
             return self._teams_cache[name]
         team, _ = Team.objects.get_or_create(name=name)
         self._teams_cache[name] = team
         return team
 
-    def update_team_slug(self, team, slug):
+    def update_team_slug(self, team: Team, slug: str | None) -> None:
         """Update a team's futbolenlatv_slug if it's a favorite and the slug is new."""
         if not slug or team.futbolenlatv_slug:
             return
@@ -165,14 +167,14 @@ class Command(BaseCommand):
         self._teams_cache[team.name] = team
         self.stdout.write(self.style.SUCCESS(f"  Auto-discovered slug for '{team.name}': {slug}"))
 
-    def get_or_create_channel(self, name):
+    def get_or_create_channel(self, name: str) -> Channel:
         if name in self._channels_cache:
             return self._channels_cache[name]
         channel, _ = Channel.objects.get_or_create(name=name)
         self._channels_cache[name] = channel
         return channel
 
-    def process_source(self, source: EventSource):
+    def process_source(self, source: EventSource) -> None:
         """Process events from a single source."""
         event_count = 0
         for agenda_event in source.get_events():
@@ -181,7 +183,7 @@ class Command(BaseCommand):
         if self.dry_run:
             self.stdout.write(f"  Total events: {event_count}")
 
-    def display_event(self, event: Event):
+    def display_event(self, event: Event) -> None:
         """Display an event without saving it (for dry-run mode)."""
         details = event.details
 
@@ -200,7 +202,7 @@ class Command(BaseCommand):
             f"{event_desc} | Channels: {channels}"
         )
 
-    def process_event(self, agenda_event: Event):
+    def process_event(self, agenda_event: Event) -> None:
         """Process a single event."""
         # In dry-run mode, just display the event
         if self.dry_run:
@@ -213,12 +215,13 @@ class Command(BaseCommand):
 
         event_datetime = timezone.make_aware(agenda_event.datetime, timezone=timezone.get_current_timezone())
 
+        event: Match | Race | SimpleEvent
         if isinstance(agenda_event.details, MatchDetails):
-            event = self.save_match_event(competition, event_datetime, agenda_event)
+            event = self.save_match_event(competition, event_datetime, agenda_event.details)
         elif isinstance(agenda_event.details, RaceDetails):
-            event = self.save_race_event(competition, event_datetime, agenda_event)
+            event = self.save_race_event(competition, event_datetime, agenda_event.details)
         elif isinstance(agenda_event.details, EventDetails):
-            event = self.save_simple_event(competition, event_datetime, agenda_event)
+            event = self.save_simple_event(competition, event_datetime, agenda_event.details)
         else:
             self.stderr.write(f"Unhandled event type: {agenda_event}")
             return
@@ -228,7 +231,7 @@ class Command(BaseCommand):
 
         self.update_channels(event, agenda_event.channels)
 
-    def get_or_create_flag(self, flag_url):
+    def get_or_create_flag(self, flag_url: str | None) -> Flag | None:
         """Get or create a flag from URL."""
         if not flag_url:
             return None
@@ -239,26 +242,32 @@ class Command(BaseCommand):
             flag, _ = Flag.objects.get_or_create(name=flag_url, defaults={"display_name": flag_url})
             self._flags_cache[flag_url] = flag
 
-        if not flag.image or not flag.image.storage.exists(flag.image.name):
+        if not flag.image or not flag.image.name or not flag.image.storage.exists(flag.image.name):
             image = download_image(flag_url, on_error=self.stderr.write)
             if image:
                 flag.save_flag(image, flag_url)
 
         return flag
 
-    def ensure_crest(self, team, crest_url):
+    def ensure_crest(self, team: Team, crest_url: str | None) -> None:
         """Download the team crest when it is not stored yet."""
-        if team.crest and team.crest.storage.exists(team.crest.name):
+        if team.crest and team.crest.name and team.crest.storage.exists(team.crest.name):
             return
         image = download_image(crest_url, on_error=self.stderr.write)
-        if image:
+        if image and crest_url:
             team.save_crest(image, crest_url)
 
-    def update_channels(self, event, channels):
+    def update_channels(self, event: Match | Race | SimpleEvent, channels: list[str]) -> None:
         channel_objs = [self.get_or_create_channel(c) for c in channels]
         event.channels.set(channel_objs)
 
-    def upsert_event(self, model, lookup, event_datetime, defaults=None):
+    def upsert_event(
+        self,
+        model: type[Any],
+        lookup: dict[str, Any],
+        event_datetime: datetime.datetime,
+        defaults: dict[str, Any] | None = None,
+    ) -> Any:
         """Find the event around this datetime and realign it, or create it.
 
         Sources shift a fixed event by a few hours or a day rather than announcing a new
@@ -292,33 +301,39 @@ class Command(BaseCommand):
 
         return event
 
-    def save_simple_event(self, competition, event_datetime, event):
+    def save_simple_event(
+        self, competition: Competition, event_datetime: datetime.datetime, details: EventDetails
+    ) -> SimpleEvent:
         return self.upsert_event(
             SimpleEvent,
-            {"competition": competition, "name": event.details.name, "details": event.details.details},
+            {"competition": competition, "name": details.name, "details": details.details},
             event_datetime,
         )
 
-    def save_race_event(self, competition, event_datetime, event):
+    def save_race_event(
+        self, competition: Competition, event_datetime: datetime.datetime, details: RaceDetails
+    ) -> Race:
         return self.upsert_event(
             Race,
-            {"competition": competition, "name": event.details.name, "details": event.details.details},
+            {"competition": competition, "name": details.name, "details": details.details},
             event_datetime,
         )
 
-    def save_match_event(self, competition, event_datetime, event):
-        local = self.get_or_create_team(event.details.local)
-        visitor = self.get_or_create_team(event.details.visitor)
+    def save_match_event(
+        self, competition: Competition, event_datetime: datetime.datetime, details: MatchDetails
+    ) -> Match:
+        local = self.get_or_create_team(details.local)
+        visitor = self.get_or_create_team(details.visitor)
 
-        self.ensure_crest(local, event.details.local_crest)
-        self.ensure_crest(visitor, event.details.visitor_crest)
+        self.ensure_crest(local, details.local_crest)
+        self.ensure_crest(visitor, details.visitor_crest)
 
-        self.update_team_slug(local, getattr(event.details, "local_slug", None))
-        self.update_team_slug(visitor, getattr(event.details, "visitor_slug", None))
+        self.update_team_slug(local, details.local_slug)
+        self.update_team_slug(visitor, details.visitor_slug)
 
         return self.upsert_event(
             Match,
             {"competition": competition, "local": local, "visitor": visitor},
             event_datetime,
-            defaults={"details": event.details.details},
+            defaults={"details": details.details},
         )

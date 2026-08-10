@@ -1,7 +1,10 @@
 import logging
 import os
 from collections.abc import Iterator
+from datetime import date as date_type
 from datetime import datetime, timedelta
+from datetime import time as time_type
+from typing import Any
 from urllib.parse import urljoin
 
 import requests
@@ -57,33 +60,37 @@ retry_strategy = Retry(
 class ScrapingStats:
     """Track scraping statistics."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.processed = 0
         self.skipped = 0
         self.errors = 0
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"processed={self.processed}, skipped={self.skipped}, errors={self.errors}"
 
 
-def clean_text(text):
+def clean_text(text: str) -> str:
     """Clean and normalize text by removing extra whitespace."""
     if text:
         return " ".join(text.split()).strip()
     return text
 
 
-def extract_image_url(tag, base_url):
+def extract_image_url(tag: Any, base_url: str) -> str | None:
     """Safely extract image URL from a tag."""
     if not tag:
         return None
     img = tag.find("img") if not (isinstance(tag, Tag) and tag.name == "img") else tag
-    if img and isinstance(img, Tag) and img.get("src"):
-        return urljoin(base_url, img["src"])
+    if not img or not isinstance(img, Tag):
+        return None
+    # An attribute can be multi-valued in HTML; src never is, but the parser cannot say so.
+    src = img.get("src")
+    if isinstance(src, str):
+        return urljoin(base_url, src)
     return None
 
 
-def is_valid_date(date, max_future_days=MAX_FUTURE_DAYS):
+def is_valid_date(date: date_type | None, max_future_days: int = MAX_FUTURE_DAYS) -> bool:
     """Check if date is reasonable (not too far in the future)."""
     if not date:
         return False
@@ -92,7 +99,7 @@ def is_valid_date(date, max_future_days=MAX_FUTURE_DAYS):
     return min_date <= date <= max_date
 
 
-def parse_date_row(row, sport, url):
+def parse_date_row(row: Any, sport: str, url: str) -> date_type | None:
     """Parse date from a header row."""
     date_text = row.get_text(strip=True)
     try:
@@ -106,7 +113,7 @@ def parse_date_row(row, sport, url):
         return None
 
 
-def parse_competition_row(row, base_url):
+def parse_competition_row(row: Any, base_url: str) -> tuple[str | None, str | None]:
     """Parse competition name and crest from a competition header row."""
     try:
         anchor = row.find("a")
@@ -123,7 +130,7 @@ def parse_competition_row(row, base_url):
     return competition, competition_crest
 
 
-def parse_time(time_text, sport, row_text, url):
+def parse_time(time_text: str, sport: str, row_text: str, url: str) -> time_type | None:
     """Parse time from text."""
     try:
         return datetime.strptime(time_text, TIME_FORMAT).time()
@@ -132,7 +139,9 @@ def parse_time(time_text, sport, row_text, url):
         return None
 
 
-def parse_competition_from_col(col, base_url, current_competition, current_crest):
+def parse_competition_from_col(
+    col: Any, base_url: str, current_competition: str | None, current_crest: str | None
+) -> tuple[str | None, str | None, str]:
     """Parse competition info from column 1 when it contains images/labels."""
     competition = current_competition
     competition_crest = current_crest
@@ -159,7 +168,7 @@ def parse_competition_from_col(col, base_url, current_competition, current_crest
     return competition, competition_crest, details
 
 
-def parse_simple_event(cols, sport, details):
+def parse_simple_event(cols: Any, sport: str, details: str) -> tuple[str, str | None, list[str]]:
     """Parse a simple event (4 columns - no teams)."""
     event_name = ""
     event_details = details
@@ -181,7 +190,7 @@ def parse_simple_event(cols, sport, details):
     return event_name, event_details, channels
 
 
-def extract_team_slug(col):
+def extract_team_slug(col: Any) -> str | None:
     """Extract the futbolenlatv team slug from an <a> link in a team column."""
     anchor = col.find("a", class_="internalLink")
     if anchor and anchor.get("href", "").startswith("/equipo/"):
@@ -189,7 +198,9 @@ def extract_team_slug(col):
     return None
 
 
-def parse_match_event(cols, base_url, details):
+def parse_match_event(
+    cols: Any, base_url: str, details: str
+) -> tuple[str | None, str | None, str | None, str | None, str | None, str | None, list[str]]:
     """Parse a match event (5+ columns - with teams)."""
     # Home team
     home_team_span = cols[2].find("span")
@@ -211,7 +222,7 @@ def parse_match_event(cols, base_url, details):
     return home_team, home_crest, home_slug, away_team, away_crest, away_slug, channels
 
 
-def parse_iter(soup, sport, base_url, stats=None):
+def parse_iter(soup: Any, sport: str, base_url: str, stats: ScrapingStats | None = None) -> Iterator[Event]:
     """Parse events from soup for a given sport."""
     if stats is None:
         stats = ScrapingStats()
@@ -230,7 +241,8 @@ def parse_iter(soup, sport, base_url, stats=None):
             if not isinstance(row, Tag):
                 continue
 
-            row_classes = row.get("class") or []
+            # get_attribute_list always returns a list, unlike get() on a multi-valued attribute
+            row_classes = row.get_attribute_list("class")
 
             # Date header row
             if "cabeceraTabla" in row_classes:
@@ -287,6 +299,7 @@ def parse_iter(soup, sport, base_url, stats=None):
                     stats.skipped += 1
                     continue
 
+                event_details_obj: RaceDetails | EventDetails
                 if sport in RACE_SPORTS:
                     event_details_obj = RaceDetails(name=event_name, details=event_details)
                 else:
@@ -345,7 +358,7 @@ EVENTS_PAGES = [
 ]
 
 
-def create_session():
+def create_session() -> requests.Session:
     """Create a requests session with retry strategy."""
     session = requests.Session()
     adapter = HTTPAdapter(max_retries=retry_strategy)
@@ -358,10 +371,10 @@ TEAM_PAGE_BASE_URL = "https://www.futbolenlatv.es/equipo/"
 TEAM_PAGE_SPORT = "Fútbol"
 
 
-def get_favorite_team_slugs():
+def get_favorite_team_slugs() -> list[str]:
     from soccertime.models import Team
 
-    return list(
+    slugs = (
         Team.objects.filter(
             favorite__isnull=False,
             futbolenlatv_slug__isnull=False,
@@ -370,6 +383,7 @@ def get_favorite_team_slugs():
         .values_list("futbolenlatv_slug", flat=True)
         .distinct()
     )
+    return [slug for slug in slugs if slug]
 
 
 def get_events() -> Iterator[Event]:

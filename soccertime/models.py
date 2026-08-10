@@ -1,6 +1,8 @@
 import datetime
 import hashlib
+import io
 import os
+from typing import Any, ClassVar, Self, cast
 from urllib.parse import urlparse
 
 from django.core.exceptions import ValidationError
@@ -17,7 +19,7 @@ ALLOWED_LINK_SCHEMES = ["http", "https", "ftp", "ftps", "acestream", "sop", "int
 standard_url_validator = URLValidator(schemes=["http", "https", "ftp", "ftps"])
 
 
-def validate_channel_link(value):
+def validate_channel_link(value: str | None) -> None:
     if not value:
         return
     parsed = urlparse(value)
@@ -26,8 +28,8 @@ def validate_channel_link(value):
     standard_url_validator(value)
 
 
-class SportManager(models.Manager):
-    def with_events(self):
+class SportManager(models.Manager["Sport"]):
+    def with_events(self) -> models.QuerySet["Sport"]:
         return self.filter(competitions__events__date__date__gte=timezone.now().date()).distinct()
 
 
@@ -40,11 +42,11 @@ class Sport(models.Model):
     class Meta:
         ordering = ["order"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
-def gen_upload_to(instance, filename):
+def gen_upload_to(instance: "ImageMixin", filename: str) -> str:
     return f"{instance.IMG_PARENT_DIR}/{filename[:2]}/{filename[2:4]}/{filename}"
 
 
@@ -55,18 +57,18 @@ class ImageMixin(models.Model):
 
     IMG_PARENT_DIR = ""  # Override in subclass
     IMG_FIELD_NAME = "image"  # Override if field has different name
-    IMG_WIDTH_DIVISOR = 1  # For scaling in HTML output
+    IMG_WIDTH_DIVISOR: float = 1  # For scaling in HTML output
 
     class Meta:
         abstract = True
 
     @property
-    def image_file(self):
+    def image_file(self) -> models.fields.files.ImageFieldFile:
         """The image field itself, whatever the concrete model calls it."""
         return getattr(self, self.IMG_FIELD_NAME)
 
     @property
-    def image_dimensions(self):
+    def image_dimensions(self) -> tuple[int, int]:
         """Dimensions read from the database rather than from the file.
 
         `image.width` opens and parses the file on every access, which costs roughly an
@@ -86,7 +88,7 @@ class ImageMixin(models.Model):
             return width, height
         return image.width, image.height
 
-    def save_image(self, image_bytes, original_filename):
+    def save_image(self, image_bytes: io.BytesIO, original_filename: str) -> None:
         """Save image from bytes, using content hash as filename.
 
         The dimensions are measured here, from the buffer already in memory, so that
@@ -116,10 +118,10 @@ class Flag(ImageMixin, models.Model):
     class Meta:
         ordering = ["name"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
-    def save_flag(self, image, flag_filename):
+    def save_flag(self, image: io.BytesIO, flag_filename: str) -> None:
         """Alias for backward compatibility."""
         self.save_image(image, flag_filename)
 
@@ -138,16 +140,16 @@ class Competition(models.Model):
         )
         ordering = ["name"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name}"
 
     @property
-    def has_events(self):
+    def has_events(self) -> bool:
         today = timezone.now().date()
         return any(event.date.date() >= today for event in self.events.all())
 
     @property
-    def events_count(self):
+    def events_count(self) -> int:
         today = timezone.now().date()
         return len({event for event in self.events.all() if event.date.date() >= today})
 
@@ -166,14 +168,14 @@ class Team(ImageMixin, models.Model):
     class Meta:
         ordering = ["name"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
     @property
-    def is_favorite_cached(self):
+    def is_favorite_cached(self) -> bool:
         return bool(self.favorite.all())
 
-    def save_crest(self, crest, crest_filename):
+    def save_crest(self, crest: io.BytesIO, crest_filename: str) -> None:
         """Alias for backward compatibility."""
         self.save_image(crest, crest_filename)
 
@@ -200,7 +202,7 @@ class Favorite(models.Model):
             ),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.team and self.competition:
             return f"{self.team} @ {self.competition}"
         if self.team:
@@ -209,13 +211,17 @@ class Favorite(models.Model):
             return self.competition.name
         return "Favorite"
 
-    def clean(self):
+    def clean(self) -> None:
         super().clean()
         if not self.competition and not self.team:
             raise ValidationError(_("At least one of competition or team must be set."))
 
 
 class ChannelLinkSource(models.Model):
+    # Handed from the pre_delete receiver to post_delete, which can no longer see the
+    # links: declared rather than sprung on the instance out of nowhere.
+    _orphan_candidate_pks: list[int]
+
     name = models.CharField(max_length=255, unique=True)
     display_name = models.CharField(max_length=255, null=True, blank=True)
     enabled = models.BooleanField(default=True)
@@ -223,31 +229,33 @@ class ChannelLinkSource(models.Model):
     class Meta:
         ordering = ["name"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.display_name or self.name
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         if not self.display_name:
             self.display_name = self.name
         super().save(*args, **kwargs)
 
     @classmethod
-    def get_or_create_by_name(cls, name):
+    def get_or_create_by_name(cls, name: str) -> tuple["ChannelLinkSource", bool]:
         return cls.objects.get_or_create(name=name, defaults={"display_name": name})
 
 
 class Channel(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    links = models.ManyToManyField("ChannelLink", related_name="channels", blank=True)
+    links: models.ManyToManyField["ChannelLink", Any] = models.ManyToManyField(
+        "ChannelLink", related_name="channels", blank=True
+    )
 
     class Meta:
         ordering = ["name"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
     @property
-    def enabled_links(self):
+    def enabled_links(self) -> list["ChannelLink"]:
         return [link for link in self.links.all() if link.enabled]
 
 
@@ -273,7 +281,9 @@ class ChannelLink(models.Model):
     name = models.CharField(max_length=255)
     quality = models.CharField(max_length=255, choices=Quality, default=Quality.ANY)
     link = models.CharField(max_length=1000, null=True, blank=True, unique=True, validators=[validate_channel_link])
-    sources = models.ManyToManyField("ChannelLinkSource", related_name="links", blank=True)
+    # Referenced by class, not by name: that is what lets the reverse accessor
+    # ChannelLinkSource.links be resolved.
+    sources = models.ManyToManyField(ChannelLinkSource, related_name="links", blank=True)
     date_added = models.DateTimeField(auto_now_add=True)
     date_updated = models.DateTimeField(auto_now=True)
     enabled = models.BooleanField(default=True)
@@ -283,23 +293,22 @@ class ChannelLink(models.Model):
         verbose_name_plural = "channels links"
         ordering = CHANNEL_LINK_ORDERING
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} [{self.quality}]"
 
     @property
-    def scheme(self):
-        parsed_url = urlparse(self.link)
-        return parsed_url.scheme
+    def scheme(self) -> str:
+        return urlparse(self.link or "").scheme
 
 
 class EventQuerySet(models.QuerySet):
     """Custom QuerySet for Event model with chainable methods."""
 
-    def in_progress_or_upcoming(self, hours_before=3):
+    def in_progress_or_upcoming(self, hours_before: int = 3) -> Self:
         """Events that are in progress (started within hours_before) or upcoming."""
         return self.filter(date__gte=timezone.now() - datetime.timedelta(hours=hours_before))
 
-    def in_window(self, hours_before=3, days_ahead=3):
+    def in_window(self, hours_before: int = 3, days_ahead: int = 3) -> Self:
         """Events within a time window: from hours_before ago to days_ahead in future."""
         now = timezone.now()
         return self.filter(
@@ -307,26 +316,26 @@ class EventQuerySet(models.QuerySet):
             date__lte=now + datetime.timedelta(days=days_ahead),
         )
 
-    def today_onwards(self):
+    def today_onwards(self) -> Self:
         """Events from the start of today onwards."""
         today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
         return self.filter(date__gte=today_start)
 
-    def for_date(self, date):
+    def for_date(self, date: datetime.date) -> Self:
         """Events on a specific date."""
         return self.filter(date__date=date)
 
-    def for_date_range(self, start_date, end_date):
+    def for_date_range(self, start_date: datetime.date, end_date: datetime.date) -> Self:
         """Events within a date range."""
         return self.filter(date__date__gte=start_date, date__date__lte=end_date)
 
-    def upcoming_days(self, days=7):
+    def upcoming_days(self, days: int = 7) -> Self:
         """Events in the next N days."""
         now = timezone.now()
         end_date = now + datetime.timedelta(days=days)
         return self.filter(date__gte=now, date__lte=end_date)
 
-    def search(self, query):
+    def search(self, query: str | None) -> Self:
         """Search events by team names, race name, or event name."""
         if not query:
             return self
@@ -337,7 +346,7 @@ class EventQuerySet(models.QuerySet):
             | Q(simpleevent__name__icontains=query)
         )
 
-    def favorites(self):
+    def favorites(self) -> Self:
         """Events involving favorite teams or favorite competitions (for non-match events)."""
         return self.filter(
             Q(match__local__favorite__isnull=False)
@@ -346,39 +355,39 @@ class EventQuerySet(models.QuerySet):
             | Q(simpleevent__competition__favorite__isnull=False)
         ).distinct()
 
-    def for_team(self, team_id):
+    def for_team(self, team_id: int | str) -> Self:
         """Events where team plays (home or away)."""
         return self.filter(Q(match__local__pk=team_id) | Q(match__visitor__pk=team_id))
 
-    def for_competition(self, competition_id):
+    def for_competition(self, competition_id: int | str) -> Self:
         """Events for a specific competition."""
         return self.filter(competition__pk=competition_id)
 
-    def for_sport(self, sport_id):
+    def for_sport(self, sport_id: int | str) -> Self:
         """Events for a specific sport."""
         return self.filter(competition__sport__pk=sport_id)
 
-    def for_channel(self, channel_id):
+    def for_channel(self, channel_id: int | str) -> Self:
         """Events broadcast on a specific channel."""
         return self.filter(channels__pk=channel_id)
 
-    def by_type(self, event_type):
+    def by_type(self, event_type: str) -> Self:
         """Filter by event type (match, race, simple)."""
         return self.filter(event_type=event_type)
 
-    def matches(self):
+    def matches(self) -> Self:
         """Only match events."""
         return self.by_type("match")
 
-    def races(self):
+    def races(self) -> Self:
         """Only race events."""
         return self.by_type("race")
 
-    def simple_events(self):
+    def simple_events(self) -> Self:
         """Only simple events."""
         return self.by_type("simple")
 
-    def chronological(self):
+    def chronological(self) -> Self:
         """Order by start time, then by sport and competition for events sharing a slot.
 
         The model default is a bare `date` so that counts, lookups and admin queries do
@@ -386,7 +395,7 @@ class EventQuerySet(models.QuerySet):
         """
         return self.order_by("date", "competition__sport__order", "competition__name")
 
-    def with_related(self):
+    def with_related(self) -> Self:
         """Preload the relations every listing walks.
 
         The subtype relations only exist on `Event` itself, so they are added only
@@ -418,7 +427,7 @@ class EventQuerySet(models.QuerySet):
         return qs
 
 
-def delete_orphan_channel_links(link_pks):
+def delete_orphan_channel_links(link_pks: list[int]) -> None:
     """Delete the given links only if they no longer belong to any source."""
     if not link_pks:
         return
@@ -426,21 +435,33 @@ def delete_orphan_channel_links(link_pks):
 
 
 @receiver(pre_delete, sender=ChannelLinkSource)
-def remember_links_of_deleted_source(sender, instance, **kwargs):
+def remember_links_of_deleted_source(
+    sender: type[ChannelLinkSource], instance: ChannelLinkSource, **kwargs: Any
+) -> None:
     # The through rows are gone by post_delete, so the candidates must be read now.
     instance._orphan_candidate_pks = list(instance.links.values_list("pk", flat=True))
 
 
 @receiver(post_delete, sender=ChannelLinkSource)
-def delete_orphan_channel_links_on_source_delete(sender, instance, **kwargs):
+def delete_orphan_channel_links_on_source_delete(
+    sender: type[ChannelLinkSource], instance: ChannelLinkSource, **kwargs: Any
+) -> None:
     delete_orphan_channel_links(getattr(instance, "_orphan_candidate_pks", []))
 
 
 @receiver(m2m_changed, sender=ChannelLink.sources.through)
-def delete_orphan_channel_links_on_m2m(sender, instance, action, reverse, pk_set, **kwargs):
+def delete_orphan_channel_links_on_m2m(
+    sender: type[models.Model],
+    instance: "ChannelLink | ChannelLinkSource",
+    action: str,
+    reverse: bool,
+    pk_set: set[int] | None,
+    **kwargs: Any,
+) -> None:
     if action == "pre_clear" and reverse:
         # post_clear does not report which links were detached, so capture them first.
-        instance._orphan_candidate_pks = list(instance.links.values_list("pk", flat=True))
+        source = cast("ChannelLinkSource", instance)
+        source._orphan_candidate_pks = list(source.links.values_list("pk", flat=True))
         return
 
     if action not in {"post_remove", "post_clear"}:
@@ -449,7 +470,7 @@ def delete_orphan_channel_links_on_m2m(sender, instance, action, reverse, pk_set
     if not reverse:
         candidate_pks = [instance.pk]
     elif action == "post_clear":
-        candidate_pks = getattr(instance, "_orphan_candidate_pks", [])
+        candidate_pks = getattr(instance, "_orphan_candidate_pks", [])  # set by the pre_clear branch
     else:
         candidate_pks = list(pk_set or [])
 
@@ -478,7 +499,7 @@ class Event(models.Model):
         SIMPLE = "simple", _("Simple Event")
 
     # Set by each concrete subclass, applied on save so no subclass has to remember.
-    EVENT_TYPE = None
+    EVENT_TYPE: ClassVar["Event.EventType | None"] = None
 
     event_type = models.CharField(
         max_length=10,
@@ -503,7 +524,7 @@ class Event(models.Model):
         ordering = ["date"]
 
     @property
-    def child_event(self):
+    def child_event(self) -> "Match | Race | SimpleEvent | None":
         """Returns the specific child instance of this event (Match, Race, or SimpleEvent)."""
         if self.event_type == self.EventType.MATCH and hasattr(self, "match"):
             return self.match
@@ -513,7 +534,7 @@ class Event(models.Model):
             return self.simpleevent
         return None
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.event_type == self.EventType.MATCH:
             return f"{self.match} @ {self.competition} on {self.date}"
         if self.event_type == self.EventType.RACE:
@@ -521,15 +542,15 @@ class Event(models.Model):
         return f"{self.simpleevent} @ {self.competition} on {self.date}"
 
     @property
-    def date_end(self):
+    def date_end(self) -> datetime.datetime:
         return self.date + (self.duration or datetime.timedelta(hours=2))
 
     @property
-    def is_favorite_event(self):
+    def is_favorite_event(self) -> bool:
         """Only matches can involve a favourite team; the rest override nothing."""
         return False
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         if self.EVENT_TYPE:
             self.event_type = self.EVENT_TYPE
         super().save(*args, **kwargs)
@@ -544,11 +565,11 @@ class Match(Event):
     class Meta:
         verbose_name_plural = "matches"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.local} - {self.visitor}"
 
     @property
-    def is_favorite_event(self):
+    def is_favorite_event(self) -> bool:
         return self.local.is_favorite_cached or self.visitor.is_favorite_cached
 
 
@@ -557,7 +578,7 @@ class Race(Event):
 
     name = models.CharField(max_length=255)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name}"
 
 
@@ -566,5 +587,5 @@ class SimpleEvent(Event):
 
     name = models.CharField(max_length=255)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name}"

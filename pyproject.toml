@@ -23,6 +23,22 @@ filterwarnings = [
     "ignore:DateTimeField ChannelLink.date_added received a naive datetime:RuntimeWarning",
 ]
 
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main"]
+exclude = ["soccertime/migrations/", "soccertime/tests/"]
+disallow_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# Ships no type information of its own.
+module = ["adminsortable2.*"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "soccertime.settings"
+
 [tool.coverage.run]
 source = ["soccertime"]
 omit = [
@@ -55,10 +71,22 @@ select = [
     "B",      # flake8-bugbear
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
+    "ANN",    # flake8-annotations
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
+    # Requiring annotations is the point; forbidding `Any` in them is not achievable
+    # here without lying. The admin display callables genuinely receive any model,
+    # since AutoModelAdmin reuses them across all of them, and `*args`/`**kwargs` on
+    # save() and the signal receivers follow signatures Django dictates.
+    "ANN401",  # any-type
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Test functions are almost all fixtures and `-> None`; annotating them adds diameter
+# without telling a caller anything. Migrations are generated.
+"soccertime/tests/*" = ["ANN"]
+"soccertime/migrations/*" = ["ANN"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["soccertime"]

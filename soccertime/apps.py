@@ -1,10 +1,11 @@
 import sys
+from typing import Any
 
 from django.apps import AppConfig
 from django.db.models.signals import post_migrate
 
 
-def load_initial_fixtures(sender, **kwargs):
+def load_initial_fixtures(sender: type[AppConfig], **kwargs: Any) -> None:
     """Load initial fixtures after migrations on a fresh database.
 
     Skipped during test runs to avoid collisions with test fixtures.
@@ -26,6 +27,6 @@ class SoccertimeConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "soccertime"
 
-    def ready(self):
+    def ready(self) -> None:
         # Connect the signal to load fixtures after migrations
         post_migrate.connect(load_initial_fixtures, sender=self)

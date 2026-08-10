@@ -20,7 +20,7 @@ import os
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path
+from django.urls import URLPattern, URLResolver, path
 from django.views.generic.base import RedirectView
 
 from soccertime.views import (
@@ -35,7 +35,7 @@ from soccertime.views import (
     team_events,
 )
 
-urlpatterns = []
+urlpatterns: list[URLPattern | URLResolver] = []
 
 if os.environ.get("DJANGO_ADMIN_ENABLED", "").lower() == "true":
     urlpatterns.append(path("admin/", admin.site.urls))

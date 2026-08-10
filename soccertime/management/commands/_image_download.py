@@ -1,13 +1,14 @@
 """Image fetching shared by the commands that populate flags and crests."""
 
 import io
+from collections.abc import Callable
 
 import requests
 
 IMAGE_DOWNLOAD_TIMEOUT = 10
 
 
-def download_image(url, on_error=None):
+def download_image(url: str | None, on_error: Callable[[str], object] | None = None) -> io.BytesIO | None:
     """Download an image, returning None when the URL is missing or unreachable.
 
     A failure is reported through `on_error` and skipped rather than raised: one bad

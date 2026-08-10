@@ -1,9 +1,11 @@
 import re
+from collections.abc import Iterable
+from typing import Any
 
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 
 from soccertime.models import Channel, ChannelLink, ChannelLinkSource
 
@@ -15,16 +17,16 @@ class BaseLinkImportCommand(BaseCommand):
     quality, link) tuples and delegate persistence to import_entries().
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # Owned here because import_entries() reads it: leaving each subclass to create
         # it means a new one that forgets breaks the shared pipeline instead of its own.
-        self.warnings = []
+        self.warnings: list[str] = []
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-    def fix_name(self, name):
+    def fix_name(self, name: str) -> str:
         name = name.lower()
         # Strip trailing server/mirror markers: *, **, (*), (**), etc.
         name = re.sub(r"\s*\(\*+\)\s*$", "", name).strip()
@@ -91,7 +93,7 @@ class BaseLinkImportCommand(BaseCommand):
             name = "dazn"
         return name
 
-    def extract_quality(self, name):
+    def extract_quality(self, name: str) -> tuple[str, "ChannelLink.Quality"]:
         """Extract quality tag from name (HD, FHD, 1080p, etc.) and return cleaned name + quality enum."""
         quality = ChannelLink.Quality.ANY
 
@@ -121,7 +123,7 @@ class BaseLinkImportCommand(BaseCommand):
 
         return name, quality
 
-    def extract_name_parts(self, raw_name):
+    def extract_name_parts(self, raw_name: str) -> tuple[str, "ChannelLink.Quality"]:
         # Normalise known aliases before anything else
         name_fixed = self.fix_name(raw_name)
         # Lower and normalize spaces
@@ -130,7 +132,7 @@ class BaseLinkImportCommand(BaseCommand):
 
         return name_norm, quality
 
-    def match_channels(self, channel_name):
+    def match_channels(self, channel_name: str) -> QuerySet["Channel"]:
         """Match channels, preferring a numeric suffix and falling back to tokens.
 
         A very short name with no numeric suffix only tries an exact or contains match:
@@ -239,7 +241,9 @@ class BaseLinkImportCommand(BaseCommand):
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
-    def import_entries(self, entries, source_name, dry_run):
+    def import_entries(
+        self, entries: Iterable[tuple[str, str | None, "ChannelLink.Quality", str]], source_name: str, dry_run: bool
+    ) -> None:
         """Persist (channel_name, subcategory, quality, link) tuples."""
         source_obj, _ = ChannelLinkSource.get_or_create_by_name(source_name)
 
@@ -297,7 +301,7 @@ class BaseLinkImportCommand(BaseCommand):
                         continue
 
                     if channel.links.filter(link=channel_link.link).exists():
-                        self.warnings.append(f"Already present in {channel.name}: {channel_link.link[:40]}...")
+                        self.warnings.append(f"Already present in {channel.name}: {link[:40]}...")
                         continue
                     if not dry_run:
                         channel.links.add(channel_link)

@@ -15,7 +15,7 @@ from datetime import datetime
 class EventDetails:
     """Details for a simple/generic event."""
 
-    name: str | None = None
+    name: str
     details: str | None = None
 
 
@@ -23,7 +23,7 @@ class EventDetails:
 class RaceDetails:
     """Details for a race event (motorsports, cycling, etc.)."""
 
-    name: str | None = None
+    name: str
     details: str | None = None
 
 
@@ -31,29 +31,35 @@ class RaceDetails:
 class MatchDetails:
     """Details for a match event (two teams competing)."""
 
-    local: str | None = None
+    local: str
+    visitor: str
     local_crest: str | None = None
     local_slug: str | None = None
-    visitor: str | None = None
     visitor_crest: str | None = None
     visitor_slug: str | None = None
     details: str | None = None
 
 
+# The three are separate shapes rather than a hierarchy: a match has teams, a race has a
+# name. Declaring the union is what lets a caller narrow with isinstance and be believed.
+AnyDetails = EventDetails | RaceDetails | MatchDetails
+
+
 @dataclass
 class Event:
-    """Represents a sporting event from any source."""
+    """Represents a sporting event from any source.
 
-    datetime: datetime | None = None
-    details: EventDetails = field(default_factory=EventDetails)
-    sport: str | None = None
-    competition: str | None = None
+    The required fields are required in fact as well as in name: `parse_iter` drops any
+    row it cannot read a date, a competition or the team names from, so nothing without
+    them is ever yielded.
+    """
+
+    datetime: datetime
+    sport: str
+    competition: str
+    details: AnyDetails
     competition_crest: str | None = None
-    channels: list[str] | None = None
-
-    def __post_init__(self):
-        if self.channels is None:
-            self.channels = []
+    channels: list[str] = field(default_factory=list)
 
 
 class EventSource(ABC):

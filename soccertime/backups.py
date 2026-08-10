@@ -17,6 +17,7 @@ import gzip
 import re
 import shutil
 import sqlite3
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -24,7 +25,7 @@ SNAPSHOT_PATTERN = re.compile(r"^(?P<group>[a-z-]+)\.(?P<timestamp>\d{8}_\d{6})\
 TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
 
 
-def parse_snapshot(name):
+def parse_snapshot(name: str) -> tuple[str, datetime] | None:
     """Return (group, datetime) for a snapshot filename, or None if it is not one."""
     match = SNAPSHOT_PATTERN.match(name)
     if not match:
@@ -35,7 +36,7 @@ def parse_snapshot(name):
         return None
 
 
-def select_kept(names, keep_last, keep_daily, keep_monthly):
+def select_kept(names: Iterable[str], keep_last: int, keep_daily: int, keep_monthly: int) -> set[str]:
     """Names to preserve: the newest few, plus one per recent day and per recent month.
 
     Each tier is computed over the snapshots that exist, so a quiet week simply has no
@@ -47,7 +48,7 @@ def select_kept(names, keep_last, keep_daily, keep_monthly):
     kept = {name for name, _ in snapshots[:keep_last]}
 
     for attribute, limit in (("%Y%m%d", keep_daily), ("%Y%m", keep_monthly)):
-        newest_per_period = {}
+        newest_per_period: dict[str, str] = {}
         for name, moment in snapshots:
             newest_per_period.setdefault(moment.strftime(attribute), name)
         for period in sorted(newest_per_period, reverse=True)[:limit]:
@@ -56,16 +57,18 @@ def select_kept(names, keep_last, keep_daily, keep_monthly):
     return kept
 
 
-def prune(directory, keep_last, keep_daily, keep_monthly, dry_run=False):
+def prune(
+    directory: Path | str, keep_last: int, keep_daily: int, keep_monthly: int, dry_run: bool = False
+) -> list[str]:
     """Delete expired snapshots, keeping each group (db, media, ...) independently."""
     directory = Path(directory)
-    groups = {}
+    groups: dict[str, list[str]] = {}
     for path in directory.iterdir():
         parsed = parse_snapshot(path.name)
         if parsed:
             groups.setdefault(parsed[0], []).append(path.name)
 
-    removed = []
+    removed: list[str] = []
     for group, names in sorted(groups.items()):
         kept = select_kept(names, keep_last, keep_daily, keep_monthly)
         for name in sorted(set(names) - kept):
@@ -75,7 +78,7 @@ def prune(directory, keep_last, keep_daily, keep_monthly, dry_run=False):
     return removed
 
 
-def snapshot_database(source, destination):
+def snapshot_database(source: Path | str, destination: Path | str) -> Path:
     """Write a consistent, compressed copy of a live SQLite database.
 
     Copying the file byte by byte can capture a half-written transaction; the backup API
@@ -98,7 +101,7 @@ def snapshot_database(source, destination):
     return destination
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 

@@ -1,14 +1,17 @@
 import re
+from argparse import ArgumentParser
+from typing import Any
 
 from django.core.management.base import CommandError
 
 from soccertime.management.commands._link_import_base import BaseLinkImportCommand
+from soccertime.models import ChannelLink
 
 
 class Command(BaseLinkImportCommand):
     help = "Import channel links from different sources"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument("--source", "-s", required=True, choices=["newera", "elcano"], help="Source parser")
         parser.add_argument("--file", "-f", required=True, help="Input file path")
         parser.add_argument("--dry", action="store_true", help="Dry run without saving")
@@ -16,7 +19,7 @@ class Command(BaseLinkImportCommand):
     # ------------------------------------------------------------------
     # Parsing
     # ------------------------------------------------------------------
-    def parse_newera(self, filepath):
+    def parse_newera(self, filepath: str) -> list[tuple[str, str | None, ChannelLink.Quality, str]]:
         """Parse the newera format: alternating NAME --> SUBCATEGORY and HASH lines.
 
         The right-hand side is the subcategory, usually the feed aggregated inside
@@ -58,7 +61,7 @@ class Command(BaseLinkImportCommand):
             entries.append((name_norm, subcategory, quality, link))
         return entries
 
-    def parse_elcano(self, filepath):
+    def parse_elcano(self, filepath: str) -> list[tuple[str, str | None, ChannelLink.Quality, str]]:
         """Parse elcano custom text format.
 
         Format:
@@ -128,7 +131,7 @@ class Command(BaseLinkImportCommand):
     # ------------------------------------------------------------------
     # Main
     # ------------------------------------------------------------------
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         source = options["source"].upper()
         filepath = options["file"]
         dry_run = options["dry"]

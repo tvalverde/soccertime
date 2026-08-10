@@ -30,13 +30,12 @@ Nothing here is worth doing on its own account; each entry says why it is still 
    which link attaches to which channel, which is the riskiest code in the importer. Not
    worth it for one second.
 
-2. **Add type hints.** `models.py` has none. **Parked pending a decision on scope:** the
-   diff touches every module, so it is worth agreeing first whether it covers only the
-   models and querysets or the views and commands too, and whether a checker runs in CI —
-   hints nobody verifies drift out of date and mislead.
-
-
 ## Done
+
+### Type hints — 2026-08-10
+- [x] **Annotated the application code and put a checker behind it.** 188 functions across 19 modules; mypy with django-stubs went from 200 errors to none, and `make typecheck` keeps it there. Ruff's ANN rules run inside `make lint`, so a function that arrives unannotated now fails the lint that is already part of the workflow — verified by feeding it one. `ANN401` is off, with the reason recorded: the admin display callables genuinely receive any model, and `*args`/`**kwargs` follow signatures Django dictates, so forbidding `Any` would only buy false precision. Tests stay out of scope by agreement.
+- [x] **Deleted `channel_matchers.py`.** 320 lines nothing imported, Django advertised it in `manage.py help`, and running it failed for want of a `Command` class.
+- [x] **Fixed what the checker found**, which was the point of having one: the scraping dataclasses declared every field optional while `parse_iter` only ever yields complete events, and `Event.details` claimed to be an `EventDetails` when the code passes `MatchDetails` and `RaceDetails`, which do not inherit from it — now a declared union, narrowed by the `isinstance` dispatch that was already there. `sorted(key=lambda t: opponent_dates.get(t.id))` would have raised `TypeError` had the lookup ever missed. `channel_link.link[:40]` indexed a nullable field. `IMG_WIDTH_DIVISOR` was typed `int` but is `1.5` on `Flag`. Two `storage.exists(name)` calls passed a possibly-null name.
 
 ### Blocks E and F — 2026-08-10
 - [x] **Moved the MTI note where it can actually stop someone.** It was never work: `Match`, `Race` and `SimpleEvent` each have their own table joined to `soccertime_event`, and that join is the price of listing every kind of event together, which the agenda depends on. The measurement — 0 extra queries across 25 events, because `with_related()` lets the child share the parent's caches — now lives in the `Event` docstring and in `AGENTS.md`, next to the code someone would be tempted to "optimise", rather than in a backlog they would not be reading.

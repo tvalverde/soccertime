@@ -4,8 +4,13 @@ Both the templates and the admin need this markup, so it lives in one importable
 rather than on the model, which has no business emitting `<img>` tags.
 """
 
+from typing import TYPE_CHECKING
+
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
+from django.utils.safestring import SafeString, mark_safe
+
+if TYPE_CHECKING:
+    from soccertime.models import ImageMixin
 
 FALLBACK_SVG = mark_safe(  # noqa: S308 - a constant, no interpolation
     """
@@ -17,7 +22,7 @@ FALLBACK_SVG = mark_safe(  # noqa: S308 - a constant, no interpolation
 )
 
 
-def image_markup(instance):
+def image_markup(instance: "ImageMixin | None") -> SafeString:
     """Render an instance's image, the placeholder when its file is missing, or nothing.
 
     Accepts None so callers can pass an optional relation — a competition without a flag,
@@ -30,7 +35,7 @@ def image_markup(instance):
         return mark_safe("")
 
     image = instance.image_file
-    if not image or not image.storage.exists(image.name):
+    if not image or not image.name or not image.storage.exists(image.name):
         return FALLBACK_SVG
 
     width, height = instance.image_dimensions
