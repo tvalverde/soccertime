@@ -90,3 +90,4 @@ db
 # .claude/settings.json, which stays tracked so it can be shared.
 .claude/settings.local.json
 .claude/.cc-writes/
+backups/

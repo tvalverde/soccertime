@@ -1,4 +1,4 @@
-.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images backup-remote-db backup-remote-media list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -29,9 +29,10 @@ help:
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
 	@echo ""
 	@echo "DATABASE (SQLite in Docker volume):"
-	@echo "  backup-remote-db     Snapshot the production database inside its volume"
+	@echo "  backup-remote-db     Snapshot the database to the host, compressed (~5.5 MB)"
 	@echo "  backup-remote-media  Snapshot the media volume to the host (~2 MB)"
-	@echo "  list-remote-backups  List the database and media snapshots kept"
+	@echo "  pull-remote-backups  Copy the remote snapshots to $(LOCAL_BACKUP_PATH)"
+	@echo "  list-remote-backups  List the snapshots kept on the remote host"
 	@echo "  restore-remote-db    Restore a snapshot (BACKUP=<file>) and restart the service"
 	@echo "  download-db          Download database from remote volume"
 	@echo "  upload-db            Upload database to remote volume"
@@ -82,13 +83,20 @@ PRODUCTION_URL ?= https://www.mojon.es/soccertime
 SMOKE_PATHS ?= /healthz/ /favorites/ /agenda/ /competitions/ /channels/
 HEALTH_TIMEOUT ?= 90
 
-# How many snapshots to keep. Every deploy takes one, so without pruning they pile up:
-# eight database copies had reached 150 MB before this was added.
-KEEP_BACKUPS ?= 2
+# Generational retention. A plain count measures history in deploys rather than in time:
+# six deploys in one afternoon once evicted a five-month-old restore point, and the data
+# problem it was needed for had gone unnoticed since March. Each tier keeps the newest
+# snapshot of its period, so ~22 copies at ~7.5 MB each is the ceiling.
+KEEP_LAST ?= 3
+KEEP_DAILY ?= 7
+KEEP_MONTHLY ?= 12
 
-# Media snapshots live on the host, not inside the media volume: the failure they guard
-# against is losing that volume, which would take the backup with it.
+# Snapshots live on the host, not inside the volumes they protect: losing a volume is the
+# failure they guard against, and it would take the backup with it.
 REMOTE_BACKUP_PATH ?= ~/soccertime-backups
+LOCAL_BACKUP_PATH ?= ./backups
+REMOTE_IMAGE ?= $(APP_NAME):latest
+BACKUP_TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 
 # === Development Commands ===
 
@@ -221,85 +229,78 @@ LOCAL_MEDIA_PATH = ./media
 BACKUP_SUFFIX := .backup.$(shell date +%Y%m%d_%H%M%S)
 
 # Snapshot the production database inside its own volume. Kept on the server so a bad
-# migration can be undone without downloading 17 MB first; deploy-production runs it
-# automatically before applying migrations.
+# Snapshot the database to the host, compressed and consistent. Copying the file byte by
+# byte can capture a half-written transaction; the SQLite backup API cannot.
 backup-remote-db:
 	@echo "--- Backing up remote database ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
-		docker run --rm -v $(REMOTE_DB_VOLUME):/data alpine sh -c " \
-			if [ ! -f /data/$(REMOTE_DB_FILE_IN_VOLUME) ]; then \
-				echo No database in the volume yet, nothing to back up; \
-				exit 0; \
-			fi; \
-			cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX); \
-			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX); \
-			echo Backup created: $(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX); \
-			total=\$$(ls -1 /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.* 2>/dev/null | wc -l); \
-			extra=\$$((total - $(KEEP_BACKUPS))); \
-			if [ \$$extra -gt 0 ]; then \
-				ls -1 /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.* | sort | head -n \$$extra | while read old; do \
-					echo Pruning \$$old; rm -f \$$old; \
-				done; \
-			fi \
-		" \
+		mkdir -p $(REMOTE_BACKUP_PATH); \
+		docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+			-v $(REMOTE_DB_VOLUME):/db:ro -v $(REMOTE_BACKUP_PATH):/backups $(REMOTE_IMAGE) \
+			python -m soccertime.backups snapshot-db /db/$(REMOTE_DB_FILE_IN_VOLUME) \
+				/backups/db.$(BACKUP_TIMESTAMP).sqlite3.gz \
 	'
+	@$(MAKE) --no-print-directory prune-remote-backups
 
-# Snapshot the media volume to the host. Around 2 MB compressed, which is worth keeping
-# even though most images can be re-fetched: flags carry their source URL, but a team
-# crest has none, so it only comes back if that team happens to play again.
+# Snapshot the media volume. Around 2 MB compressed, worth keeping even though most
+# images can be re-fetched: a flag carries its source URL, but a team crest does not, so
+# it only comes back if that team happens to play again.
 backup-remote-media:
 	@echo "--- Backing up remote media ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
 		mkdir -p $(REMOTE_BACKUP_PATH); \
-		docker run --rm -v $(REMOTE_MEDIA_VOLUME):/data -v $(REMOTE_BACKUP_PATH):/backups alpine \
-			tar czf /backups/media$(BACKUP_SUFFIX).tgz -C /data .; \
-		total=$$(ls -1 $(REMOTE_BACKUP_PATH)/media.backup.*.tgz 2>/dev/null | wc -l); \
-		extra=$$((total - $(KEEP_BACKUPS))); \
-		if [ $$extra -gt 0 ]; then \
-			ls -1 $(REMOTE_BACKUP_PATH)/media.backup.*.tgz | sort | head -n $$extra | while read old; do \
-				echo "Pruning $$old"; rm -f "$$old"; \
-			done; \
-		fi; \
-		ls -lh $(REMOTE_BACKUP_PATH)/media.backup.*.tgz | awk "{print \"  \" \$$5, \$$9}" \
+		docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+			-v $(REMOTE_MEDIA_VOLUME):/data:ro -v $(REMOTE_BACKUP_PATH):/backups alpine \
+			tar czf /backups/media.$(BACKUP_TIMESTAMP).tgz -C /data . \
+	'
+	@$(MAKE) --no-print-directory prune-remote-backups
+
+# Apply the generational retention policy to every snapshot group
+prune-remote-backups:
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+			-v $(REMOTE_BACKUP_PATH):/backups $(REMOTE_IMAGE) \
+			python -m soccertime.backups prune /backups \
+				--keep-last $(KEEP_LAST) --keep-daily $(KEEP_DAILY) --keep-monthly $(KEEP_MONTHLY) \
 	'
 
-# List the database and media snapshots currently kept
+# Copy the remote snapshots here, so losing the server does not take the backups with it
+pull-remote-backups:
+	@echo "--- Pulling remote snapshots into $(LOCAL_BACKUP_PATH) ---"
+	@mkdir -p $(LOCAL_BACKUP_PATH)
+	@scp -P$(REMOTE_PORT) "$(REMOTE_HOST):$(REMOTE_BACKUP_PATH)/*" $(LOCAL_BACKUP_PATH)/
+	@du -sh $(LOCAL_BACKUP_PATH)
+
+# List the snapshots currently kept on the remote host
 list-remote-backups:
-	@echo "--- Database snapshots (in the volume) ---"
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		docker run --rm -v $(REMOTE_DB_VOLUME):/data alpine sh -c " \
-			ls -lh /data | grep backup || echo \"  none\" \
-		" \
-	'
-	@echo "--- Media snapshots (on the host) ---"
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		ls -lh $(REMOTE_BACKUP_PATH)/media.backup.*.tgz 2>/dev/null || echo "  none" \
-	'
+	@echo "--- Snapshots on the remote host ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'ls -lh $(REMOTE_BACKUP_PATH) 2>/dev/null | tail -n +2 || echo "  none"'
 
-# Restore the production database from one of those snapshots.
-# Usage: make restore-remote-db BACKUP=db.sqlite3.backup.20260810_170000
+# Restore the production database from one of the snapshots.
+# Usage: make restore-remote-db BACKUP=db.20260810_203027.sqlite3.gz
 restore-remote-db:
 	@if [ -z "$(BACKUP)" ]; then \
 		echo "Set BACKUP to the snapshot to restore, e.g."; \
-		echo "  make restore-remote-db BACKUP=db.sqlite3.backup.20260810_170000"; \
+		echo "  make restore-remote-db BACKUP=db.20260810_203027.sqlite3.gz"; \
 		echo "Run 'make list-remote-backups' to see the available ones."; \
 		exit 1; \
 	fi
 	@echo "--- Restoring remote database from $(BACKUP) ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
-		docker run --rm -v $(REMOTE_DB_VOLUME):/data alpine sh -c " \
-			test -f /data/$(BACKUP) || { echo Snapshot $(BACKUP) not found; exit 1; }; \
-			cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX).pre-restore; \
-			cp /data/$(BACKUP) /data/$(REMOTE_DB_FILE_IN_VOLUME); \
-			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME) \
+		docker run --rm -v $(REMOTE_DB_VOLUME):/db -v $(REMOTE_BACKUP_PATH):/backups:ro alpine sh -c " \
+			test -f /backups/$(BACKUP) || { echo Snapshot $(BACKUP) not found; exit 1; }; \
+			cp /db/$(REMOTE_DB_FILE_IN_VOLUME) /db/$(REMOTE_DB_FILE_IN_VOLUME).pre-restore; \
+			gunzip -c /backups/$(BACKUP) > /db/$(REMOTE_DB_FILE_IN_VOLUME); \
+			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /db/$(REMOTE_DB_FILE_IN_VOLUME) \
 		"; \
 		cd $(REMOTE_DOCKER_PATH); \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) restart $(REMOTE_SOCCERTIME_SERVICE) \
 	'
 	@echo "Database restored and service restarted."
+
 
 # Restore flag images whose file went missing from the media volume, re-fetching them
 # from the URL each Flag row keeps in its name.

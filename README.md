@@ -304,20 +304,32 @@ make help
 
 | Command | Description |
 |---------|-------------|
-| `make backup-remote-db` | Snapshot the production database inside its volume |
+| `make backup-remote-db` | Snapshot the database to the host, compressed (~5.5 MB) |
 | `make backup-remote-media` | Snapshot the media volume to the host (~2 MB compressed) |
+| `make pull-remote-backups` | Copy the remote snapshots into `./backups` |
 | `make list-remote-backups` | List the database and media snapshots kept |
 | `make restore-remote-db BACKUP=<file>` | Restore a snapshot and restart the service |
 | `make download-db` | Download database from server |
 | `make upload-db` | Upload database to server |
 
 > **Note:** `deploy-production` snapshots the database and the media automatically
-> before applying migrations, so there is always a rollback point. Both rotate to
-> `KEEP_BACKUPS` copies (2 by default). Media snapshots are kept on the host rather
-> than inside the volume they protect. Flags can always be re-fetched with
-> `make remote-redownload-images`, since each one stores its source URL, but a team
-> crest does not: it only returns when that team is scraped again, which is what the
-> media snapshot preserves.
+> before applying migrations, so there is always a rollback point.
+>
+> Snapshots are kept **on the host**, not inside the volumes they protect, and are
+> retained generationally: the last `KEEP_LAST` (3), one per day for `KEEP_DAILY`
+> days (7) and one per month for `KEEP_MONTHLY` months (12). A plain count would
+> measure history in deploys instead of in time — a busy afternoon once evicted a
+> five-month-old restore point, which is exactly what was needed to investigate a
+> data problem that had gone unnoticed for months. The ceiling is around 22 copies
+> at ~7.5 MB each.
+>
+> The database snapshot uses SQLite's backup API rather than copying the file, since
+> a byte-for-byte copy of a live database can capture a half-written transaction.
+>
+> Everything still lives on one machine, so `make pull-remote-backups` copies the
+> snapshots here. Flags can also be re-fetched with `make remote-redownload-images`,
+> since each stores its source URL, but a team crest does not: it only returns when
+> that team is scraped again, which is what the media snapshot preserves.
 
 #### Requests cache
 
