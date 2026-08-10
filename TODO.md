@@ -13,35 +13,8 @@ public path.
 Everything below came out of the security audit of 2026-08-11, ordered by criticality.
 Findings marked *(verified)* were reproduced against the running system; the rest are
 from reading the code and the deployed configuration. Nothing here is known to have been
-exploited — the two critical items are outdated dependencies, not defects introduced
-here.
-
-### Critical
-
-- [ ] **Pillow 12.1.0 is exposed to two remote-code-execution CVEs, and it parses images
-  downloaded from the internet.** `CVE-2026-25990` (out-of-bounds write, affects 10.3.0
-  through 12.1.0) and `CVE-2026-42311` (integer overflow, fixed in 12.2.0) both trigger
-  on a crafted PSD file and can lead to arbitrary code execution; `CVE-2026-59203` (EPS
-  parser infinite loop, fixed in 12.3.0) hangs the process. This is not theoretical here:
-  `scrapit` and `redownload_images` fetch image URLs taken from scraped HTML and hand the
-  bytes to Pillow through `ImageFile`, and **Pillow picks its decoder by sniffing the
-  content, not the extension** — a URL ending in `.webp` that serves a PSD is parsed by
-  the PSD decoder. The chain is: hostile or compromised image host → crafted file →
-  memory corruption inside the container. Fix: pin `Pillow>=12.3.0`. Verified 12.1.0 is
-  what runs in production. *(verified: version in production)*
-
-- [ ] **Django 6.0.1 is five security releases behind.** 6.0.2, 6.0.3, 6.0.4, 6.0.6 and
-  6.0.8 have shipped since, three of them carrying "high" severity fixes. Several land
-  directly on code this project uses, which is why this is not a routine bump:
-  `CVE-2025-14550` is a denial of service in `ASGIRequest` via repeated headers, and the
-  site is served by uvicorn over ASGI; `CVE-2026-25674` is about the file-based cache and
-  file-system storage backends creating objects with unintended permissions through a
-  umask race, and this project uses both; `CVE-2026-35193`, `CVE-2026-8404` and
-  `CVE-2026-48587` are all private-data exposure through `cache_page` and `Vary`
-  handling, and **every public view here is wrapped in `@cache_page`**; `CVE-2026-15920`
-  is cross-site scripting via `URLField` values rendered as links in the admin, which is
-  the same class of bug as the stored-XSS item below and reaches the same data. Fix:
-  upgrade to 6.0.8 and re-run the suite. *(verified: version in production)*
+exploited. The two critical findings — both outdated dependencies — were fixed and
+deployed the same day; see Done.
 
 ### High
 
@@ -155,6 +128,16 @@ the git history. Kept here as an index of what has been through this file.
   Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.
 - **Scraper reporting** (0.3.0, 2026-08-10) — events whose time is not yet announced are
   counted and named instead of being silently folded into `skipped`.
+- **Security audit, critical findings** (2026-08-11) — Pillow 12.1.0 was in range for two
+  CVEs that can reach arbitrary code execution through a crafted PSD, and this project
+  hands Pillow bytes fetched from scraped URLs, where the extension is no protection
+  because Pillow sniffs the content to choose its decoder; upgraded to 12.3.0. Django
+  6.0.1 was five security releases behind, with fixes landing on ASGI request handling,
+  the file-based cache and storage backends, `Vary` handling behind `cache_page` and
+  `URLField` rendering in the admin — all in use here; upgraded to 6.0.8, staying on the
+  6.0 series so it remained a security fix rather than a feature move. Verified in
+  production afterwards: Pillow decodes the real stored images, `redownload_images`
+  reports 0 missing files as before, checks and logs clean.
 - **UI fixes** (0.3.1, 2026-08-11) — competition crest strip fits one row; the expander
   hides when there is nothing to expand.
 - **Low-priority blocks D, E and F** (2026-08-10) — `LinkSchemeFilter` resolved in the
