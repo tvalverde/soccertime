@@ -45,9 +45,17 @@ class TestImageMarkup:
 
         assert "bi-emoji-dizzy" in image_markup(Team.objects.get(pk=team_with_crest.pk))
 
-    def test_accepts_none_so_callers_need_no_guard(self):
-        """Competitions may have no flag and favourites no team."""
-        assert "bi-emoji-dizzy" in image_markup(None)
+    def test_renders_nothing_for_a_missing_relation(self):
+        """A competition that was never given a flag has none: it is not a broken image.
+
+        Rendering the placeholder here put a dizzy-face icon next to all 65 flagless
+        competitions, where the previous template silently resolved None to nothing.
+        """
+        assert image_markup(None) == ""
+
+    def test_placeholder_is_for_a_missing_file_not_a_missing_relation(self, team_home):
+        """A team row that has no crest at all still shows it: the crest is expected."""
+        assert "bi-emoji-dizzy" in image_markup(team_home)
 
     def test_escapes_the_values_it_interpolates(self, team_with_crest):
         markup = image_markup(Team.objects.get(pk=team_with_crest.pk))

@@ -451,19 +451,3 @@ class TestAsManagerForwarding:
         assert simple_event.pk in simple_pks
         assert Event.objects.today_onwards().exists()
         assert Event.objects.search("Madrid").exists()
-
-
-class TestSoccertimeTemplateTags:
-    """Tests for custom template tags/filters."""
-
-    def test_render_image_markup_with_none(self):
-        from soccertime.templatetags.soccertime_tags import render_image_markup
-
-        result = render_image_markup(None)
-        assert "<svg" in result
-
-    def test_render_image_markup_with_obj(self, team_home):
-        from soccertime.templatetags.soccertime_tags import render_image_markup
-
-        result = render_image_markup(team_home)
-        assert "<svg" in result

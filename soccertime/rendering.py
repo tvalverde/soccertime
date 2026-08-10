@@ -18,13 +18,16 @@ FALLBACK_SVG = mark_safe(  # noqa: S308 - a constant, no interpolation
 
 
 def image_markup(instance):
-    """Render an instance's image, or the placeholder when there is nothing to show.
+    """Render an instance's image, the placeholder when its file is missing, or nothing.
 
     Accepts None so callers can pass an optional relation — a competition without a flag,
-    a favourite without a team — without guarding first.
+    a favourite without a team — without guarding first. That case renders empty: the
+    placeholder means "this should have had an image", and a competition that was never
+    given a flag simply has none. Showing it there would put a broken-image icon next to
+    every flagless competition.
     """
     if instance is None:
-        return FALLBACK_SVG
+        return mark_safe("")
 
     image = instance.image_file
     if not image or not image.storage.exists(image.name):
