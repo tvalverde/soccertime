@@ -10,11 +10,12 @@ public path.
 
 ## Pending
 
-Everything below came out of the security audit of 2026-08-11, ordered by criticality.
-Findings marked *(verified)* were reproduced against the running system; the rest are
-from reading the code and the deployed configuration. Nothing here is known to have been
-exploited. The two critical findings — both outdated dependencies — were fixed and
-deployed the same day; see Done.
+The graded sections below came out of the security audit of 2026-08-11, ordered by
+criticality. Findings marked *(verified)* were reproduced against the running system; the
+rest are from reading the code and the deployed configuration. Nothing here is known to
+have been exploited. The two critical findings and the stored XSS were fixed and deployed
+the same day; see Done. Maintenance work that is not a security finding is kept in its
+own section at the end.
 
 ### High
 
@@ -97,6 +98,20 @@ deployed the same day; see Done.
 - [ ] **`.env.production.local` carries a 20-character secret key** (~114 bits) against
   the 52 characters used in production. It is a local staging file, so the impact is
   limited, but it costs nothing to generate a proper one.
+
+### Maintenance
+
+- [ ] **Move to Django 6.1.** The 0.3.2 upgrade deliberately stopped at 6.0.8: the point
+  that day was to get off the known CVEs, and taking a feature release at the same time
+  would have mixed a security fix with a change that needs its own review. 6.1 is already
+  out. It is not urgent — 6.0.8 carries every current security fix — but it should not be
+  left indefinitely either, since 6.0 is not an LTS and a non-LTS series stops receiving
+  security fixes once the release after next arrives, so the window is worth checking
+  rather than assuming. Worth doing in one sitting: read the 6.1 release notes for
+  deprecations and backwards-incompatible changes, confirm `django-stubs` has a release
+  that targets 6.1 (it is pinned to 6.0.9 today and `make typecheck` will say so plainly),
+  then run the suite, `make lint`, `make typecheck` and `check --deploy`. The native CSP
+  support noted in the Medium section is in 6.0 already, so it does not depend on this.
 
 ## Done
 
