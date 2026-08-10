@@ -4,6 +4,7 @@ import os
 from urllib.parse import urlparse
 
 from django.core.exceptions import ValidationError
+from django.core.files.images import ImageFile
 from django.core.validators import URLValidator
 from django.db import models
 from django.db.models import Count, Prefetch, Q
@@ -90,20 +91,42 @@ class ImageMixin(models.Model):
         """Get the image field instance."""
         return getattr(self, self.IMG_FIELD_NAME)
 
+    def _get_image_dimensions(self):
+        """Dimensions of the image, read from the database rather than from the file.
+
+        `image.width` opens and parses the file on every access, which costs roughly an
+        order of magnitude more than the storage lookup. The dimensions are stored by the
+        `width_field` / `height_field` of the image field; rows saved before those fields
+        existed fall back to reading the file.
+        """
+        image = self._get_image_field()
+        width = getattr(self, f"{self.IMG_FIELD_NAME}_width", None)
+        height = getattr(self, f"{self.IMG_FIELD_NAME}_height", None)
+        if width and height:
+            return width, height
+        return image.width, image.height
+
     def render_image(self):
         """Render HTML for the image with fallback SVG."""
         image = self._get_image_field()
         if not image or not image.storage.exists(image.name):
             return self.FALLBACK_SVG
-        width = image.width / self.IMG_WIDTH_DIVISOR
-        height = image.height / self.IMG_WIDTH_DIVISOR
+        image_width, image_height = self._get_image_dimensions()
+        width = image_width / self.IMG_WIDTH_DIVISOR
+        height = image_height / self.IMG_WIDTH_DIVISOR
         return f'<img src="{image.url}" width="{width}" height="{height}" />'
 
     def save_image(self, image_bytes, original_filename):
-        """Save image from bytes, using content hash as filename."""
+        """Save image from bytes, using content hash as filename.
+
+        The bytes are wrapped in a *named* `ImageFile` so the field can measure them and
+        fill its `width_field` / `height_field`: a bare buffer has no dimensions to read,
+        and an unnamed one is treated as empty, which stores null dimensions instead.
+        """
         filename = hashlib.sha1(image_bytes.getvalue()).hexdigest()
         ext = os.path.splitext(original_filename)[1]
-        self._get_image_field().save(f"{filename}{ext}", image_bytes)
+        name = f"{filename}{ext}"
+        self._get_image_field().save(name, ImageFile(image_bytes, name=name))
         self.save()
 
 
@@ -114,7 +137,14 @@ class Flag(ImageMixin, models.Model):
 
     name = models.CharField(max_length=255)
     display_name = models.CharField(max_length=255)
-    image = models.ImageField(upload_to=gen_upload_to, null=True)
+    image = models.ImageField(
+        upload_to=gen_upload_to,
+        null=True,
+        width_field="image_width",
+        height_field="image_height",
+    )
+    image_width = models.PositiveIntegerField(null=True, blank=True, editable=False)
+    image_height = models.PositiveIntegerField(null=True, blank=True, editable=False)
 
     class Meta:
         ordering = ["name"]
@@ -173,7 +203,14 @@ class Team(ImageMixin, models.Model):
     IMG_WIDTH_DIVISOR = 1
 
     name = models.CharField(max_length=255, unique=True)
-    crest = models.ImageField(upload_to=gen_upload_to, null=True)
+    crest = models.ImageField(
+        upload_to=gen_upload_to,
+        null=True,
+        width_field="crest_width",
+        height_field="crest_height",
+    )
+    crest_width = models.PositiveIntegerField(null=True, blank=True, editable=False)
+    crest_height = models.PositiveIntegerField(null=True, blank=True, editable=False)
     futbolenlatv_slug = models.SlugField(max_length=255, null=True, blank=True, unique=True)
 
     class Meta:
@@ -386,6 +423,14 @@ class EventQuerySet(models.QuerySet):
         """Only simple events."""
         return self.by_type("simple")
 
+    def chronological(self):
+        """Order by start time, then by sport and competition for events sharing a slot.
+
+        The model default is a bare `date` so that counts, lookups and admin queries do
+        not pay for the competition and sport JOINs; listings opt into the full order.
+        """
+        return self.order_by("date", "competition__sport__order", "competition__name")
+
     def with_related(self):
         """Optimiza queries precargando relaciones comunes.
 
@@ -481,7 +526,7 @@ class Event(models.Model):
     objects = EventQuerySet.as_manager()
 
     class Meta:
-        ordering = ["date__date", "date", "competition__sport", "competition"]
+        ordering = ["date"]
 
     @property
     def child_event(self):

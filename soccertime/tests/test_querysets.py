@@ -310,6 +310,50 @@ class TestEventQuerySetFavorites:
         assert event_pks(Event.objects.favorites()).count(match.pk) == 1
 
 
+class TestEventQuerySetOrdering:
+    """Tests for the default ordering and the explicit chronological() order."""
+
+    def test_default_ordering_is_the_bare_timestamp(self):
+        assert Event._meta.ordering == ["date"]
+
+    def test_default_ordering_costs_no_joins(self, db):
+        """Ordering by related fields made every count, lookup and update join twice."""
+        sql = str(Event.objects.all().query)
+        assert "JOIN" not in sql
+        assert "django_datetime_cast_date" not in sql
+
+    def test_chronological_breaks_ties_by_sport_order(
+        self, db, competition, competition_tour, competition_roland_garros, team_home, team_away
+    ):
+        """Sport order is 1 for football, 2 for cycling and 3 for tennis."""
+        slot = timezone.now() + datetime.timedelta(hours=2)
+        tennis = SimpleEvent.objects.create(competition=competition_roland_garros, name="Final", date=slot)
+        cycling = SimpleEvent.objects.create(competition=competition_tour, name="Etapa", date=slot)
+        football = Match.objects.create(competition=competition, local=team_home, visitor=team_away, date=slot)
+
+        ordered = event_pks(Event.objects.chronological().filter(date=slot))
+
+        assert ordered == [football.pk, cycling.pk, tennis.pk]
+
+    def test_chronological_breaks_remaining_ties_by_competition_name(
+        self, db, competition, competition_champions, team_home, team_away, team_third
+    ):
+        """Same sport and same slot: "La Liga" sorts before "UEFA Champions League"."""
+        slot = timezone.now() + datetime.timedelta(hours=3)
+        champions = Match.objects.create(
+            competition=competition_champions, local=team_home, visitor=team_third, date=slot
+        )
+        liga = Match.objects.create(competition=competition, local=team_home, visitor=team_away, date=slot)
+
+        ordered = event_pks(Event.objects.chronological().filter(date=slot))
+
+        assert ordered == [liga.pk, champions.pk]
+
+    def test_chronological_sorts_by_date_first(self, match, match_future):
+        ordered = event_pks(Event.objects.chronological().filter(pk__in=[match_future.pk, match.pk]))
+        assert ordered == [match.pk, match_future.pk]
+
+
 class TestEventQuerySetChaining:
     """Tests for method chaining."""
 

@@ -9,9 +9,14 @@ Tests cover:
 - Auto-set fields (event_type)
 """
 
+import io
+from unittest.mock import patch
+
 import pytest
 from django.core.exceptions import ValidationError
+from django.core.files.images import ImageFile
 from django.db import IntegrityError, transaction
+from PIL import Image
 
 from soccertime.models import (
     ChannelLink,
@@ -164,6 +169,43 @@ class TestChannelLink:
             )
             link.sources.add(source)
             assert link.quality == quality
+
+
+class TestImageMixinDimensions:
+    """Tests for the image dimensions cached on the model."""
+
+    @pytest.fixture
+    def team_with_crest(self, db, settings, tmp_path):
+        settings.MEDIA_ROOT = tmp_path
+        team = Team.objects.create(name="Con escudo")
+        buffer = io.BytesIO()
+        Image.new("RGB", (48, 24)).save(buffer, format="PNG")
+        team.save_crest(buffer, "crest.png")
+        return team
+
+    def test_dimensions_are_stored_on_save(self, team_with_crest):
+        team_with_crest.refresh_from_db()
+        assert (team_with_crest.crest_width, team_with_crest.crest_height) == (48, 24)
+
+    def test_render_image_does_not_read_the_file(self, team_with_crest):
+        """Opening each image to measure it is what made this slow; the DB now knows."""
+        team = Team.objects.get(pk=team_with_crest.pk)
+
+        with patch.object(ImageFile, "_get_image_dimensions", side_effect=AssertionError("read the file")):
+            markup = team.render_image()
+
+        assert 'width="48.0" height="24.0"' in markup
+
+    def test_render_image_falls_back_to_the_file_when_dimensions_are_missing(self, team_with_crest):
+        """Rows saved before the dimension fields existed must still render."""
+        Team.objects.filter(pk=team_with_crest.pk).update(crest_width=None, crest_height=None)
+        team = Team.objects.get(pk=team_with_crest.pk)
+
+        assert 'width="48.0" height="24.0"' in team.render_image()
+
+    def test_render_image_falls_back_to_svg_when_the_file_is_gone(self, team_with_crest, tmp_path):
+        (tmp_path / team_with_crest.crest.name).unlink()
+        assert "<svg" in Team.objects.get(pk=team_with_crest.pk).render_image()
 
 
 class TestChannelLinkOrphanCleanup:

@@ -77,7 +77,7 @@ def healthz(request):
 
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def favorites(request):
-    queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3).with_related()
+    queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3).with_related().chronological()
 
     context = get_base_context()
     context.pop("teams", None)
@@ -97,7 +97,7 @@ def agenda(request):
     else:
         queryset = Event.objects.today_onwards().with_related()
 
-    queryset = queryset.search(request.GET.get("search")).order_by("date")
+    queryset = queryset.search(request.GET.get("search")).chronological()
 
     context = get_base_context()
     context.update(
@@ -113,7 +113,7 @@ def agenda(request):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def team_events(request, team):
     team_obj = get_object_or_404(Team, pk=team)
-    queryset = Event.objects.for_team(team).in_progress_or_upcoming().with_related()
+    queryset = Event.objects.for_team(team).in_progress_or_upcoming().with_related().chronological()
 
     # Obtener equipos rivales en partidos futuros, ordenados por fecha de enfrentamiento
     now = timezone.now()
@@ -161,7 +161,7 @@ def team_events(request, team):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def channel_events(request, channel):
     channel_obj = get_object_or_404(Channel, pk=channel)
-    queryset = Event.objects.for_channel(channel).in_progress_or_upcoming().with_related()
+    queryset = Event.objects.for_channel(channel).in_progress_or_upcoming().with_related().chronological()
 
     context = get_base_context()
     context.pop("teams", None)
@@ -178,7 +178,7 @@ def channel_events(request, channel):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def sport_events(request, sport):
     sport_obj = get_object_or_404(Sport, pk=sport)
-    queryset = Event.objects.for_sport(sport).in_progress_or_upcoming().with_related()
+    queryset = Event.objects.for_sport(sport).in_progress_or_upcoming().with_related().chronological()
 
     context = get_base_context()
     context.pop("teams", None)
@@ -195,7 +195,7 @@ def sport_events(request, sport):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def competition_events(request, competition):
     competition_obj = get_object_or_404(Competition, pk=competition)
-    queryset = Event.objects.for_competition(competition).in_progress_or_upcoming().with_related()
+    queryset = Event.objects.for_competition(competition).in_progress_or_upcoming().with_related().chronological()
 
     return render(
         request,
