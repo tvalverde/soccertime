@@ -16,63 +16,54 @@ Empty: nothing outstanding currently threatens the live site or the request path
 
 ### Medium
 
-1. **Decide whether the `ChannelLink` ordering is the one you want.** The current
-   `["-date_updated__date", "date_updated__time", "-verified", "-id"]` means "newest day
-   first, oldest first within that day". The history shows it was introduced right after
-   `date_updated` was added, replacing `["-verified", "-id"]`, and the data suggests the
-   intent was to keep each import batch in the order the source listed it — plain
-   `-date_updated` reverses it. Note `verified` is `False` on all 377 rows, so that term
-   never fires, and `/channels/` overrides the ordering entirely, so this only affects the
-   play buttons per channel and the admin list. At this size there is no performance case
-   for changing it; the open question is whether the within-batch order is wanted. It is
-   now defined once in `CHANNEL_LINK_ORDERING`, so whatever is decided applies everywhere.
+Empty.
 
 ### Low
 
-2. **Stop using private Django API in the admin.** `AutoModelAdmin.get_list_filter`
+1. **Stop using private Django API in the admin.** `AutoModelAdmin.get_list_filter`
    filters on `field._choices`; the public `field.choices` is equivalent and will not
    break on an upgrade. `get_list_display` also mutates the shared `ModelAdmin`
    singleton with `setattr(self, ...)` per request — harmless today because the
    generated callables are equivalent, but it should build a local mapping instead.
 
-3. **Wrap the user-facing strings in `gettext_lazy`.** The `empty_state()` defaults in
+2. **Wrap the user-facing strings in `gettext_lazy`.** The `empty_state()` defaults in
    `views.py` (`"No hay eventos a la vista :)"`, `"No hay canales disponibles :_("`) are
    hardcoded while the templates already use `{% translate %}`.
 
-4. **Make the view context consistent.** `team_events` and `competition_events` rebuild
+3. **Make the view context consistent.** `team_events` and `competition_events` rebuild
    the context by hand instead of using `get_base_context()`, and both `team_events` and
    `competitions` use function-level imports (`from soccertime.models import Match`,
    `from django.db.models import Exists, OuterRef`). Move the imports to module scope and
    reuse the shared helper.
 
-5. **Give `self.warnings` an owner.** `BaseLinkImportCommand.import_entries` reads it,
+4. **Give `self.warnings` an owner.** `BaseLinkImportCommand.import_entries` reads it,
    but only each subclass's `handle()` initialises it, so a new subclass breaks the
    pipeline. Initialise it in the base class.
 
-6. **Replace the dry-run exception abuse.** `import_entries` triggers its rollback by
+5. **Replace the dry-run exception abuse.** `import_entries` triggers its rollback by
    raising `transaction.TransactionManagementError` and catching it. Use
    `transaction.set_rollback(True)` or a dedicated private exception.
 
-7. **Deduplicate `is_favorite_event`.** `Race` and `SimpleEvent` both define it
+6. **Deduplicate `is_favorite_event`.** `Race` and `SimpleEvent` both define it
    returning `False`. Move the default to `Event` and override only in `Match`.
 
-8. **`LinkSchemeFilter` reads every link URL.** It iterates the whole `ChannelLink`
+7. **`LinkSchemeFilter` reads every link URL.** It iterates the whole `ChannelLink`
    table on each admin list render to build the scheme dropdown. Negligible at today's
    377 rows and admin-only, hence the low rank; persist the scheme or cache a
    `values_list(...).distinct()` if the table grows.
 
-9. **`match_channels` runs many queries per imported entry.** Several chained
+8. **`match_channels` runs many queries per imported entry.** Several chained
    `.exists()` probes plus a per-channel `channel.links.filter(...).exists()` inside the
    import loop. Offline cost only. Preload the channel names and match in Python if
    large playlists become slow.
 
-10. **Centralize the `event_type` logic.** Set it in the base `Event.save()` or a
-    `pre_save` signal instead of repeating the assignment in every subclass.
+9. **Centralize the `event_type` logic.** Set it in the base `Event.save()` or a
+   `pre_save` signal instead of repeating the assignment in every subclass.
 
-11. **Add type hints** to models, managers and querysets for IDE support and earlier
+10. **Add type hints** to models, managers and querysets for IDE support and earlier
     error detection.
 
-12. **Revisit MTI performance only if measured.** Originally filed as high priority, but
+11. **Revisit MTI performance only if measured.** Originally filed as high priority, but
     a query-count check on the real database showed `with_related()` already works:
     reaching `child_event` and then its `competition`, `sport`, `channels` and `links`
     across 25 events costs **0 extra queries**, because the MTI child fetched via
@@ -82,6 +73,7 @@ Empty: nothing outstanding currently threatens the live site or the request path
 ## Done
 
 ### Block D — 2026-08-10
+- [x] **Confirmed the `ChannelLink` ordering is intentional.** "Freshest day first, and within that day the order the source listed the links in" is the wanted behaviour, so it stays: collapsing it to `-date_updated` would show every imported batch reversed. Recorded in the comment on `CHANNEL_LINK_ORDERING` so it is not mistaken for an accident again. Worth knowing that `verified` is `False` on all 377 rows, so that tiebreaker never fires until links start being checked.
 - [x] **Made the channels page order links the way the rest of the site does.** It sorted only by the keys the template regroups on, so the rows of a single card — which share all three — came back in whatever order the database chose: the same play buttons appeared as `[2413, 2414, 2504, ...]` in the agenda and `[2326, 2324, 2325, ...]` on the channels page, and that order could shift on its own when the table was rebuilt. `CHANNEL_LINK_ORDERING` is now the single definition used by both.
 - [x] **Translated the source artifacts to English.** Docstrings, comments and the output of the import commands, along with the Spanish stat keys inside the importer. The web interface stays in Spanish, since that is the language of the site; only code and CLI changed. The few Spanish strings left are comments quoting real channel names from the source data (`"Canal de Tenis" -> "tennis channel"`), which have to stay literal.
 
@@ -94,11 +86,11 @@ Empty: nothing outstanding currently threatens the live site or the request path
 
 ### Production hardening and incidents — 2026-08-10
 - [x] **Acted on the media-loss findings.** Deleted `migrate_crests`: a one-off path migration from early 2026 whose "missing or empty file" branch erased crest references instead of leaving them for the scraper to repair, which is how 1357 teams lost theirs. Added `backup-remote-media`, kept on the host rather than inside the volume it protects, since losing that volume is the failure it guards against — 2 MB compressed, so worth keeping even though flags can be re-fetched from their stored URL and crests, which cannot, are exactly what a backup preserves. Both snapshots now rotate to `KEEP_BACKUPS` (2): the database copies had reached 150 MB, six of them taken by a single afternoon of deploys. `redownload_images` reports broken crest references alongside the flags it can restore; the pages themselves keep rendering the fallback icon, so a missing image never breaks the site.
-- [x] **Found out why 49 flag files were missing.** They were not deleted one by one: the directory paths never existed in the current media volume, which was created on 2026-02-02 and holds nothing older, while the database rows carrying those paths were already present on 2026-03-07. So the media was lost wholesale around the time that volume was created, and the database kept referring to files that were never copied into it. The scraper hides this, because `get_or_create_flag` re-downloads whenever the file is missing: everything that reappeared healed silently, and after six months the only survivors were the 49 belonging to competitions that never came back — one-off golf and WTA tournaments, Ligue 2 Algeria, Tour de Noruega Femenino. The same event hit crests far harder, and `migrate_crests` made it permanent instead of letting it heal; see pending items 1 to 3. Nothing is user-visible today: none of the crestless teams have upcoming matches and no favourite is affected.
+- [x] **Found out why 49 flag files were missing.** They were not deleted one by one: the directory paths never existed in the current media volume, which was created on 2026-02-02 and holds nothing older, while the database rows carrying those paths were already present on 2026-03-07. So the media was lost wholesale around the time that volume was created, and the database kept referring to files that were never copied into it. The scraper hides this, because `get_or_create_flag` re-downloads whenever the file is missing: everything that reappeared healed silently, and after six months the only survivors were the 49 belonging to competitions that never came back — one-off golf and WTA tournaments, Ligue 2 Algeria, Tour de Noruega Femenino. The same event hit crests far harder, and `migrate_crests` made it permanent instead of letting it heal, which is why that command was deleted. Nothing is user-visible today: none of the crestless teams have upcoming matches and no favourite is affected.
 - [x] **Verify the deploy automatically instead of by eye.** `deploy-production` reported "completed successfully" both times it left the site broken. It now ends with `remote-smoke-test`: wait for the container to report `healthy`, then fetch every public page **from outside the server**, which is the part that matters — when the health check failed, the application still answered 200 on localhost while the proxy served 404 to the world, so any check run inside the container would have passed. Verified against all three branches: a 404 page fails the run, an unhealthy or missing container fails on timeout, and a healthy deploy passes.
 - [x] **Enable the SSL redirect instead of silencing its check.** `security.W008` had been silenced as redundant, since Traefik already answers `http://` with a 301. It turned out to be genuinely fixable: Django only emits the HSTS header when `request.is_secure()` is true, and production does emit it, which proves `SECURE_PROXY_SSL_HEADER` works and the proxy forwards `X-Forwarded-Proto`. `check --deploy` went from 3 silenced checks to 2, and the remaining two — `includeSubDomains` and `preload` — are deliberate policy, not defects.
 - [x] **Exempt the health check from that redirect.** Enabling it took the site down: the container health check reaches the app directly over plain HTTP, got a 301, failed, and the orchestrator withdrew the route, so every page returned 404. `SECURE_REDIRECT_EXEMPT` keeps `healthz` unredirected; the regression test reproduces the 301 when the exemption is removed.
-- [x] **Restore the 49 flag images missing from the media volume.** Every `Flag` keeps the URL it was fetched from in its `name`, so all of them were recoverable. Added the `redownload_images` command (with `--dry-run`) and `make remote-redownload-images`; production now has 227/227 flags and 3313/3313 crests with both file and dimensions. The download moved to a shared `_image_download` module so `scrapit` and the command share one implementation. The cause of the loss is still unknown — see pending item 2.
+- [x] **Restore the 49 flag images missing from the media volume.** Every `Flag` keeps the URL it was fetched from in its `name`, so all of them were recoverable. Added the `redownload_images` command (with `--dry-run`) and `make remote-redownload-images`; production now has 227/227 flags and 3313/3313 crests with both file and dimensions. The download moved to a shared `_image_download` module so `scrapit` and the command share one implementation. The cause was traced afterwards; see the entry below.
 - [x] **Codify the production operations that were being done over ad-hoc SSH.** `backup-remote-db` (now run automatically by `deploy-production` before migrating), `list-remote-backups`, `restore-remote-db`, `remote-check` and `remote-clear-cache`. Also fixed `BACKUP_SUFFIX`, which re-ran `date` on every expansion and could name a different file than the one it created.
 
 ### Priority round — 2026-08-10
@@ -108,7 +100,7 @@ Empty: nothing outstanding currently threatens the live site or the request path
 
 ### Original backlog
 - [x] **Optimize QuerySet/Manager DRYness:** use `EventQuerySet.as_manager()` instead of duplicating every QuerySet method on the Manager.
-- [x] **Decouple Presentation from Models:** move the HTML rendering out of `ImageMixin` (partially — see pending item 8).
+- [x] **Decouple Presentation from Models:** move the HTML rendering out of `ImageMixin`. Finished later in block B, which put it in `soccertime/rendering.py`.
 - [x] **Improve URL Validation:** custom scheme validation for `ChannelLink.link` (`validate_channel_link`).
 - [x] **Dynamic Event Durations:** replace the hardcoded 2-hour duration in `Event.date_end` with a `DurationField`.
 - [x] **Database Schema Cleanup:** remove the redundant `event_ptr` from the `unique_together` constraints of `Match`, `Race` and `SimpleEvent`.

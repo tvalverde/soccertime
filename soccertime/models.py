@@ -251,9 +251,12 @@ class Channel(models.Model):
         return [link for link in self.links.all() if link.enabled]
 
 
-# Freshest day first, and within that day the order the source listed them in, since an
-# import stamps `date_updated` on every row it touches. Defined here rather than inline
-# so the channels page can group its cards and still order inside them the same way.
+# Freshest day first, and within that day the order the source listed them in: an import
+# stamps `date_updated` on every row it touches, so a batch keeps the sequence the
+# playlist gave it, which is usually by preference or quality. This is deliberate — do
+# not collapse it to `-date_updated`, which would show every batch reversed. Defined here
+# rather than inline so the channels page can group its cards and order inside them the
+# same way; `verified` is a tiebreaker for when links start being checked.
 CHANNEL_LINK_ORDERING = ["-date_updated__date", "date_updated__time", "-verified", "-id"]
 
 
