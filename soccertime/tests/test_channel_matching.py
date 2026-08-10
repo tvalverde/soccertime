@@ -33,6 +33,7 @@ CHANNEL_NAMES = [
     "Movistar Plus+",
     "TV",
     "Esport3 (Cataluña)",
+    "Aragón TV",
 ]
 
 
@@ -70,7 +71,7 @@ class TestExactAndParenthesised:
         assert match("  DAZN   LaLiga  ") == ["DAZN LaLiga"]
 
     def test_an_exact_hit_does_not_drag_in_the_wider_family(self, channels, match):
-        """"DAZN LaLiga" must not also bring "DAZN LaLiga 2"."""
+        """ "DAZN LaLiga" must not also bring "DAZN LaLiga 2"."""
         assert match("DAZN LaLiga") == ["DAZN LaLiga"]
 
 
@@ -88,7 +89,7 @@ class TestShortNames:
         assert match("M+") == []
 
     def test_a_short_name_does_not_reach_the_token_fallback(self, channels, match):
-        """"Sur" would otherwise pull in "Canal Sur"."""
+        """ "Sur" would otherwise pull in "Canal Sur"."""
         assert match("Sur") == []
 
     def test_a_number_lifts_the_short_name_restriction(self, channels, match):
@@ -123,7 +124,7 @@ class TestDaznVariants:
 @pytest.mark.django_db
 class TestNumericSuffix:
     def test_short_base_tokens_respect_word_boundaries(self, channels, match):
-        """"la 2" must not reach "LaLiga": the token is a word, not a prefix."""
+        """ "la 2" must not reach "LaLiga": the token is a word, not a prefix."""
         assert "LaLiga TV Bar" not in match("La 2")
 
     def test_suffix_one_falls_back_to_the_unnumbered_channel(self, channels, match):
@@ -140,7 +141,7 @@ class TestNumericSuffix:
 @pytest.mark.django_db
 class TestTokenFallback:
     def test_every_token_is_required(self, channels, match):
-        """"canal 5 mx" must not absorb every channel beginning with "Canal"."""
+        """ "canal 5 mx" must not absorb every channel beginning with "Canal"."""
         assert match("Canal 5 MX") == ["Canal 5 MX"]
 
     def test_a_partial_token_set_does_not_match(self, channels, match):
@@ -173,13 +174,29 @@ class TestMalformedInput:
     def test_accented_characters(self, channels, match):
         assert match("Esport3") == ["Esport3 (Cataluña)"]
 
-    def test_returns_a_queryset_so_callers_can_chain(self, channels):
-        """`import_entries` calls `.exists()` and iterates; a list would break it."""
+    @pytest.mark.parametrize("name", ["ARAGÓN TV", "aragón tv", "Aragón TV"])
+    def test_accents_fold_in_upper_case_too(self, channels, match, name):
+        """Playlists shout their names, and SQLite only case-folds ASCII.
+
+        Matching in Python fixes this: `iexact` never saw "ARAGÓN" as "Aragón", so those
+        links were reported as belonging to no channel and dropped.
+        """
+        assert match(name) == ["Aragón TV"]
+
+    def test_returns_channels_the_caller_can_iterate(self, channels):
+        """A list, since the matching happens in memory: `import_entries` iterates it."""
         command = BaseLinkImportCommand()
         result = command.match_channels("DAZN LaLiga")
 
-        assert hasattr(result, "exists")
-        assert result.exists()
+        assert [channel.name for channel in result] == ["DAZN LaLiga"]
+
+    def test_reads_the_channel_table_once_however_many_names_it_is_asked(self, channels, django_assert_num_queries):
+        """Three queries per entry was the cost this replaced."""
+        command = BaseLinkImportCommand()
+
+        with django_assert_num_queries(1):
+            for name in ["DAZN LaLiga", "M+ Vamos", "Canal 5 MX", "La 2", "nada de nada"]:
+                command.match_channels(name)
 
     def test_no_channels_at_all(self, db, match):
         assert match("DAZN LaLiga") == []

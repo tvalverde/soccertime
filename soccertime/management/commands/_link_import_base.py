@@ -5,9 +5,34 @@ from typing import Any
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.db.models import Q, QuerySet
 
 from soccertime.models import Channel, ChannelLink, ChannelLinkSource
+
+
+def _named_exactly_or_bracketed(channel_name: str, wanted: str) -> bool:
+    """The name itself, or the name followed by the operator's bracketed suffix."""
+    lowered = channel_name.lower()
+    return lowered == wanted or f"{wanted} (" in lowered
+
+
+def _has_every_token(channel_name: str, tokens: Iterable[str]) -> bool:
+    """All tokens present. Short ones must match as whole words: "la" is not "LaLiga"."""
+    lowered = channel_name.lower()
+    return all(
+        re.search(rf"\b{re.escape(token)}\b", channel_name, re.IGNORECASE)
+        if len(token) < 4
+        else token.lower() in lowered
+        for token in tokens
+    )
+
+
+def _carries_number(channel_name: str, number: str) -> bool:
+    lowered = channel_name.lower()
+    return f" {number}" in lowered or lowered.endswith(number) or f"{number} (" in lowered
+
+
+def _mentions_number(channel_name: str, number: str) -> bool:
+    return bool(re.search(rf"\b{number}\b", channel_name))
 
 
 class BaseLinkImportCommand(BaseCommand):
@@ -22,6 +47,7 @@ class BaseLinkImportCommand(BaseCommand):
         # Owned here because import_entries() reads it: leaving each subclass to create
         # it means a new one that forgets breaks the shared pipeline instead of its own.
         self.warnings: list[str] = []
+        self._channel_catalogue: list[Channel] | None = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -132,118 +158,90 @@ class BaseLinkImportCommand(BaseCommand):
 
         return name_norm, quality
 
-    def match_channels(self, channel_name: str) -> QuerySet["Channel"]:
+    @property
+    def channel_catalogue(self) -> list["Channel"]:
+        """Every channel, read once per run.
+
+        The importer asks about hundreds of names in a single pass and the answers cannot
+        change while it runs, so the whole table is worth one query rather than three per
+        entry. These commands are one-shot processes; the snapshot cannot go stale.
+        """
+        if self._channel_catalogue is None:
+            self._channel_catalogue = list(Channel.objects.all())
+        return self._channel_catalogue
+
+    def match_channels(self, channel_name: str) -> list["Channel"]:
         """Match channels, preferring a numeric suffix and falling back to tokens.
 
-        A very short name with no numeric suffix only tries an exact or contains match:
-        a two-letter token would otherwise pull in half the table.
+        Tried in order, each step only if the previous found nothing:
+
+        1. the name exactly, or followed by a bracketed operator suffix
+        2. for a DAZN variant without a number, the variant as a prefix
+        3. with a trailing number, channels carrying that number and every base token;
+           for the number 1, the same channels without any number, since sources write
+           "DAZN LaLiga 1" for what the database calls "DAZN LaLiga"
+        4. every token, in any position
+
+        A name under four characters with no number stops after step 2: a two-letter
+        token would otherwise pull in a large share of the table.
         """
-        channel_name_norm = re.sub(r"\s+", " ", channel_name).strip()
-        if not channel_name_norm:
-            # An empty name identifies nothing, and the parenthesised clause below would
-            # read it as "any channel with a bracketed suffix" — 34 of them in production.
-            # Reachable: `fix_name` reduces a name that is only a mirror marker, "(*)" or
-            # "(**)", to an empty string.
-            return Channel.objects.none()
+        normalised = re.sub(r"\s+", " ", channel_name).strip()
+        if not normalised:
+            # An empty name identifies nothing, and step 1 would read it as "any channel
+            # with a bracketed suffix" — 34 of them in production. Reachable: `fix_name`
+            # reduces a name that is only a mirror marker, "(*)" or "(**)", to empty.
+            return []
 
-        parts = channel_name_norm.split(" ")
-        suffix_num = parts[-1] if parts and parts[-1].isdigit() else None
-        base_tokens = parts[:-1] if suffix_num else parts
+        lowered = normalised.lower()
+        parts = normalised.split(" ")
+        suffix_num = parts[-1] if parts[-1].isdigit() else None
+        base_tokens = [token for token in (parts[:-1] if suffix_num else parts) if len(token) >= 2]
+        catalogue = self.channel_catalogue
 
-        # Short name safety: strict match only if very short AND no numeric suffix to aid specificity
-        is_short_and_unsafe = len(channel_name_norm) < 4 and not suffix_num
+        # A variant must not be absorbed by the generic DAZN channel.
+        dazn_variant = " ".join(parts[:2]).lower() if parts[0].lower() == "dazn" and len(parts) >= 2 else None
 
-        # DAZN variant safety: when variant is present (e.g. dazn 1, dazn f1, dazn laliga),
-        # don't let generic DAZN channels absorb those links.
-        dazn_variant_phrase = None
-        if parts and parts[0].lower() == "dazn" and len(parts) >= 2:
-            dazn_variant_phrase = " ".join(parts[:2]).lower()
+        matches = [channel for channel in catalogue if _named_exactly_or_bracketed(channel.name, lowered)]
 
-        # Exact or contains with parentheses
-        channels = Channel.objects.filter(
-            Q(name__iexact=channel_name_norm) | Q(name__icontains=f"{channel_name_norm} (")
-        )
+        if dazn_variant and not suffix_num and not matches:
+            matches = [channel for channel in catalogue if channel.name.lower().startswith(dazn_variant)]
 
-        # Only use the broad dazn_variant_phrase fallback when there is no numeric suffix;
-        # if there IS a suffix, let the numeric suffix logic below handle precise selection.
-        if dazn_variant_phrase and not suffix_num and not channels.exists():
-            channels = Channel.objects.filter(name__istartswith=dazn_variant_phrase)
+        if len(normalised) < 4 and not suffix_num:
+            return matches
 
-        if is_short_and_unsafe:
-            return channels
-
-        # Try numeric suffix combination
-        if not channels.exists() and suffix_num:
-            # 1. Try strict match including the number
-            channels_strict = Channel.objects.filter(
-                Q(name__icontains=f" {suffix_num}")
-                | Q(name__iendswith=suffix_num)
-                | Q(name__icontains=f"{suffix_num} (")
-            )
-            for cpart in base_tokens:
-                if len(cpart) >= 2:
-                    # Use regex word boundary for short tokens to avoid "la" matching "laliga"
-                    if len(cpart) < 4:
-                        channels_strict = channels_strict.filter(name__regex=rf"(?i)\b{re.escape(cpart)}\b")
-                    else:
-                        channels_strict = channels_strict.filter(name__icontains=cpart)
-
-            if channels_strict.exists():
-                channels = channels_strict
-
-            # 2. Special case: If suffix is '1' and strict match failed, try matching without the number
-            #    (e.g., "DAZN LaLiga 1" -> "DAZN LaLiga")
+        if not matches and suffix_num:
+            strict = [
+                channel
+                for channel in catalogue
+                if _carries_number(channel.name, suffix_num) and _has_every_token(channel.name, base_tokens)
+            ]
+            if strict:
+                matches = strict
             elif suffix_num == "1":
-                channels_no_num = Channel.objects.all()
-                for cpart in base_tokens:
-                    if len(cpart) >= 2:
-                        if len(cpart) < 4:
-                            channels_no_num = channels_no_num.filter(name__regex=rf"(?i)\b{re.escape(cpart)}\b")
-                        else:
-                            channels_no_num = channels_no_num.filter(name__icontains=cpart)
+                matches = [
+                    channel
+                    for channel in catalogue
+                    if _has_every_token(channel.name, base_tokens) and not re.search(r"\b[2-9]\b", channel.name)
+                ]
 
-                # Exclude channels that explicitly have other numbers (2, 3, etc.) to be safe
-                channels = channels_no_num.exclude(name__regex=r"\b[2-9]\b")
-
-        # Token fallback
-        if not channels.exists():
-            tokens = [c for c in base_tokens if len(c) >= 2 and not c.isnumeric()]
+        if not matches:
+            tokens = [token for token in base_tokens if not token.isnumeric()]
             if suffix_num:
                 tokens.append(suffix_num)
             if tokens:
-                channels = Channel.objects.all()
-                for cpart in tokens:
-                    # Require ALL tokens, using word boundaries for short ones, so a
-                    # generic leading token can't absorb unrelated channels
-                    # (e.g. "canal 5 mx" must not match every "Canal *" channel).
-                    if len(cpart) < 4:
-                        channels = channels.filter(name__regex=rf"(?i)\b{re.escape(cpart)}\b")
-                    else:
-                        channels = channels.filter(name__icontains=cpart)
+                matches = [channel for channel in catalogue if _has_every_token(channel.name, tokens)]
                 if suffix_num:
-                    from django.db import models
+                    # Channels naming the number outright come first; the sort is stable,
+                    # so the rest keep the catalogue's alphabetical order.
+                    matches.sort(key=lambda channel: 0 if _mentions_number(channel.name, suffix_num) else 1)
 
-                    channels = channels.order_by(
-                        models.Case(
-                            models.When(name__regex=rf"\b{suffix_num}\b", then=0),
-                            default=1,
-                            output_field=models.IntegerField(),
-                        )
-                    )
-            else:
-                channels = Channel.objects.none()
+        if dazn_variant:
+            precise = dazn_variant
+            if suffix_num and suffix_num != "1" and not dazn_variant.endswith(f" {suffix_num}"):
+                precise = f"{dazn_variant} {suffix_num}"
+            matches = [channel for channel in matches if channel.name.lower().startswith(precise)]
 
-        if dazn_variant_phrase:
-            # Build a precise startswith phrase. When suffix_num is present and > 1,
-            # include the number — but only if dazn_variant_phrase doesn't already end
-            # with it (e.g. "dazn 2" already contains the number; "dazn baloncesto" does not).
-            if suffix_num and suffix_num != "1" and not dazn_variant_phrase.endswith(f" {suffix_num}"):
-                precise_phrase = f"{dazn_variant_phrase} {suffix_num}"
-            else:
-                precise_phrase = dazn_variant_phrase
-            channels = channels.filter(name__istartswith=precise_phrase)
-
-        return channels
+        return matches
 
     # ------------------------------------------------------------------
     # Persistence
@@ -267,7 +265,7 @@ class BaseLinkImportCommand(BaseCommand):
                 stats["channels_processed"] += 1
 
                 channels = self.match_channels(channel_name)
-                if not channels.exists():
+                if not channels:
                     self.warnings.append(f"Channel not found: {channel_name}")
                     stats["channels_not_found"] += 1
                     continue

@@ -20,17 +20,13 @@ Empty.
 
 ### Low
 
-Nothing here is worth doing on its own account; each entry says why it is still open.
-
-1. **`match_channels` runs many queries per imported entry.** Several chained `.exists()`
-   probes plus a per-channel `channel.links.filter(...).exists()` inside the import loop.
-   **Parked, measured:** 3.1 queries and 2.6 ms per entry, so a 500-entry playlist costs
-   **1.3 s** in a command run by hand a few times a month. The remedy is to preload the
-   channel names and redo the matching in Python — a rewrite of the logic that decides
-   which link attaches to which channel, which is the riskiest code in the importer. Not
-   worth it for one second.
+Empty.
 
 ## Done
+
+### Channel matching — 2026-08-10
+- [x] **Pinned `match_channels` down with tests, then rewrote it.** It decides which channel a scraped link attaches to and had no direct tests, which is why it had been parked: a mistake there does not raise, it silently points a stream at the wrong channel. 41 cases now cover every branch and malformed input. The rewrite matches in memory against the channel list: **1236 queries and 638 ms down to 1 query and 11 ms** for 200 names, verified to return identical results across all 87 production channel names and their variants.
+- [x] **Two bugs the tests found.** A name that normalises to empty matched every channel with a bracketed suffix — 34 of them — and is reachable, since `fix_name` reduces a name that is only a mirror marker to nothing; production was checked and unaffected. And SQLite only case-folds ASCII, so `iexact` never saw "ARAGÓN TV" as "Aragón TV": twelve channels carry accents and playlists shout their names, so those links were being dropped as belonging to no channel.
 
 ### Type hints — 2026-08-10
 - [x] **Annotated the application code and put a checker behind it.** 188 functions across 19 modules; mypy with django-stubs went from 200 errors to none, and `make typecheck` keeps it there. Ruff's ANN rules run inside `make lint`, so a function that arrives unannotated now fails the lint that is already part of the workflow — verified by feeding it one. `ANN401` is off, with the reason recorded: the admin display callables genuinely receive any model, and `*args`/`**kwargs` follow signatures Django dictates, so forbidding `Any` would only buy false precision. Tests stay out of scope by agreement.
