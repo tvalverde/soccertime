@@ -1,4 +1,4 @@
-.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check backup-remote-db list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -23,8 +23,12 @@ help:
 	@echo "  upload-config        Upload only .env.production"
 	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
+	@echo "  remote-check         Run Django's deployment checks on production"
 	@echo ""
 	@echo "DATABASE (SQLite in Docker volume):"
+	@echo "  backup-remote-db     Snapshot the production database inside its volume"
+	@echo "  list-remote-backups  List the snapshots kept in the remote volume"
+	@echo "  restore-remote-db    Restore a snapshot (BACKUP=<file>) and restart the service"
 	@echo "  download-db          Download database from remote volume"
 	@echo "  upload-db            Upload database to remote volume"
 	@echo ""
@@ -104,8 +108,9 @@ LOCAL_ARCHIVE_PATH = /tmp/$(ARCHIVE_NAME)
 # Configuration files to upload
 ENV_PROD_FILE = .env.production
 
-# Main target for production deployment
-deploy-production: archive_app upload_files remote_deploy clean_local_archive
+# Main target for production deployment.
+# The database snapshot runs before remote_deploy, which is what applies the migrations.
+deploy-production: archive_app upload_files backup-remote-db remote_deploy clean_local_archive
 	@echo "Deployment process completed successfully."
 
 # Target to archive application files locally
@@ -193,7 +198,68 @@ remote-scrape:
 LOCAL_DB_PATH = ./db/db.sqlite3
 LOCAL_CACHE_PATH = ./soccertime_data_cache.sqlite
 LOCAL_MEDIA_PATH = ./media
-BACKUP_SUFFIX = .backup.$(shell date +%Y%m%d_%H%M%S)
+# Immediate assignment on purpose: a recursive one re-runs `date` on every expansion, so
+# a recipe naming the backup twice could straddle a second and report the wrong file.
+BACKUP_SUFFIX := .backup.$(shell date +%Y%m%d_%H%M%S)
+
+# Snapshot the production database inside its own volume. Kept on the server so a bad
+# migration can be undone without downloading 17 MB first; deploy-production runs it
+# automatically before applying migrations.
+backup-remote-db:
+	@echo "--- Backing up remote database ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		set -e; \
+		docker run --rm -v $(REMOTE_DB_VOLUME):/data alpine sh -c " \
+			if [ ! -f /data/$(REMOTE_DB_FILE_IN_VOLUME) ]; then \
+				echo No database in the volume yet, nothing to back up; \
+				exit 0; \
+			fi; \
+			cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX); \
+			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX); \
+			echo Backup created: $(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX) \
+		" \
+	'
+
+# List the database snapshots currently kept in the remote volume
+list-remote-backups:
+	@echo "--- Backups in the remote database volume ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		docker run --rm -v $(REMOTE_DB_VOLUME):/data alpine sh -c " \
+			ls -lh /data | grep backup || echo No backups found \
+		" \
+	'
+
+# Restore the production database from one of those snapshots.
+# Usage: make restore-remote-db BACKUP=db.sqlite3.backup.20260810_170000
+restore-remote-db:
+	@if [ -z "$(BACKUP)" ]; then \
+		echo "Set BACKUP to the snapshot to restore, e.g."; \
+		echo "  make restore-remote-db BACKUP=db.sqlite3.backup.20260810_170000"; \
+		echo "Run 'make list-remote-backups' to see the available ones."; \
+		exit 1; \
+	fi
+	@echo "--- Restoring remote database from $(BACKUP) ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		set -e; \
+		docker run --rm -v $(REMOTE_DB_VOLUME):/data alpine sh -c " \
+			test -f /data/$(BACKUP) || { echo Snapshot $(BACKUP) not found; exit 1; }; \
+			cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX).pre-restore; \
+			cp /data/$(BACKUP) /data/$(REMOTE_DB_FILE_IN_VOLUME); \
+			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME) \
+		"; \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) restart $(REMOTE_SOCCERTIME_SERVICE) \
+	'
+	@echo "Database restored and service restarted."
+
+# Run Django's deployment checks against the running production container
+remote-check:
+	@echo "--- Running deployment checks on production ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+			$(REMOTE_SOCCERTIME_SERVICE) python manage.py check --deploy \
+	'
 
 # Download database from remote DB volume (with local backup)
 download-db:
