@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Characterization tests for `match_channels`, the logic deciding which channel a scraped link attaches to: 37 cases covering exact and parenthesised matches, the short-name guard, the DAZN variants, numeric suffixes, the token fallback and malformed input. It had no direct tests at all.
+
+### Fixed
+- A channel name that normalises to empty no longer matches every channel with a bracketed suffix — 34 of them on the production database. Reachable, since `fix_name` reduces a name consisting only of a mirror marker, `(*)` or `(**)`, to an empty string, after which the parenthesised-variant clause read it as a wildcard. Production data was checked and is unaffected: no link is attached to more than eight channels.
+
 ## [0.2.0] - 2026-08-10
 
 A release dominated by a code review and the production work that came out of it: seven

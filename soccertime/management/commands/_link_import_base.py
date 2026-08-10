@@ -139,6 +139,13 @@ class BaseLinkImportCommand(BaseCommand):
         a two-letter token would otherwise pull in half the table.
         """
         channel_name_norm = re.sub(r"\s+", " ", channel_name).strip()
+        if not channel_name_norm:
+            # An empty name identifies nothing, and the parenthesised clause below would
+            # read it as "any channel with a bracketed suffix" — 34 of them in production.
+            # Reachable: `fix_name` reduces a name that is only a mirror marker, "(*)" or
+            # "(**)", to an empty string.
+            return Channel.objects.none()
+
         parts = channel_name_norm.split(" ")
         suffix_num = parts[-1] if parts and parts[-1].isdigit() else None
         base_tokens = parts[:-1] if suffix_num else parts
