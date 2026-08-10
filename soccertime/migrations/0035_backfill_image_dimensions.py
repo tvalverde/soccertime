@@ -1,31 +1,33 @@
 from django.db import migrations
+from PIL import Image
 
 
 def backfill(model, field_name):
     """Store the dimensions of every already uploaded image.
 
     Without this, `render_image` keeps opening and parsing each file to find out how big
-    it is. Unreadable or missing files are skipped: the renderer falls back to reading
-    them, exactly as it did before.
+    it is. Files that are missing or unreadable are skipped: the renderer falls back to
+    the SVG placeholder for them, exactly as it did before.
+
+    Rows are read with `values_list` and written with `update` so no model instance is
+    ever built. Instantiating them would fire `post_init`, and at this point in the
+    migration history the image field still declares `width_field`, whose handler reads
+    the file and raises `FileNotFoundError` for the very rows this skips.
     """
     width_field, height_field = f"{field_name}_width", f"{field_name}_height"
-    updated = []
+    storage = model._meta.get_field(field_name).storage
 
-    for instance in model.objects.exclude(**{f"{field_name}": ""}).filter(**{f"{width_field}__isnull": True}):
-        image = getattr(instance, field_name)
-        if not image:
+    rows = model.objects.exclude(**{field_name: ""}).filter(**{f"{width_field}__isnull": True})
+
+    for pk, name in rows.values_list("pk", field_name):
+        if not name or not storage.exists(name):
             continue
         try:
-            width, height = image.width, image.height
+            with storage.open(name) as handle, Image.open(handle) as image:
+                width, height = image.size
         except (OSError, ValueError):
             continue
-        setattr(instance, width_field, width)
-        setattr(instance, height_field, height)
-        updated.append(instance)
-
-    if updated:
-        model.objects.bulk_update(updated, [width_field, height_field], batch_size=500)
-    return len(updated)
+        model.objects.filter(pk=pk).update(**{width_field: width, height_field: height})
 
 
 def backfill_image_dimensions(apps, schema_editor):

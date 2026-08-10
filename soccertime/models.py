@@ -95,9 +95,14 @@ class ImageMixin(models.Model):
         """Dimensions of the image, read from the database rather than from the file.
 
         `image.width` opens and parses the file on every access, which costs roughly an
-        order of magnitude more than the storage lookup. The dimensions are stored by the
-        `width_field` / `height_field` of the image field; rows saved before those fields
-        existed fall back to reading the file.
+        order of magnitude more than the storage lookup. `save_image` records the
+        dimensions instead; rows stored before those fields existed fall back to reading
+        the file, which callers must only reach after checking the file is there.
+
+        The field deliberately does not declare `width_field` / `height_field`: that
+        hooks Django's `update_dimension_fields` to `post_init`, so merely loading a row
+        with unknown dimensions reads the file — and raises `FileNotFoundError` when the
+        media is missing, which is the very case the fallback SVG exists for.
         """
         image = self._get_image_field()
         width = getattr(self, f"{self.IMG_FIELD_NAME}_width", None)
@@ -119,14 +124,16 @@ class ImageMixin(models.Model):
     def save_image(self, image_bytes, original_filename):
         """Save image from bytes, using content hash as filename.
 
-        The bytes are wrapped in a *named* `ImageFile` so the field can measure them and
-        fill its `width_field` / `height_field`: a bare buffer has no dimensions to read,
-        and an unnamed one is treated as empty, which stores null dimensions instead.
+        The dimensions are measured here, from the buffer already in memory, so that
+        rendering never has to open the file again.
         """
         filename = hashlib.sha1(image_bytes.getvalue()).hexdigest()
         ext = os.path.splitext(original_filename)[1]
         name = f"{filename}{ext}"
-        self._get_image_field().save(name, ImageFile(image_bytes, name=name))
+        image = ImageFile(image_bytes, name=name)
+        setattr(self, f"{self.IMG_FIELD_NAME}_width", image.width)
+        setattr(self, f"{self.IMG_FIELD_NAME}_height", image.height)
+        self._get_image_field().save(name, image)
         self.save()
 
 
@@ -137,12 +144,7 @@ class Flag(ImageMixin, models.Model):
 
     name = models.CharField(max_length=255)
     display_name = models.CharField(max_length=255)
-    image = models.ImageField(
-        upload_to=gen_upload_to,
-        null=True,
-        width_field="image_width",
-        height_field="image_height",
-    )
+    image = models.ImageField(upload_to=gen_upload_to, null=True)
     image_width = models.PositiveIntegerField(null=True, blank=True, editable=False)
     image_height = models.PositiveIntegerField(null=True, blank=True, editable=False)
 
@@ -203,12 +205,7 @@ class Team(ImageMixin, models.Model):
     IMG_WIDTH_DIVISOR = 1
 
     name = models.CharField(max_length=255, unique=True)
-    crest = models.ImageField(
-        upload_to=gen_upload_to,
-        null=True,
-        width_field="crest_width",
-        height_field="crest_height",
-    )
+    crest = models.ImageField(upload_to=gen_upload_to, null=True)
     crest_width = models.PositiveIntegerField(null=True, blank=True, editable=False)
     crest_height = models.PositiveIntegerField(null=True, blank=True, editable=False)
     futbolenlatv_slug = models.SlugField(max_length=255, null=True, blank=True, unique=True)

@@ -207,6 +207,19 @@ class TestImageMixinDimensions:
         (tmp_path / team_with_crest.crest.name).unlink()
         assert "<svg" in Team.objects.get(pk=team_with_crest.pk).render_image()
 
+    def test_loading_a_row_with_unknown_dimensions_and_no_file_does_not_raise(self, team_with_crest, tmp_path):
+        """Production state that broke the site: null dimensions plus missing media.
+
+        Declaring `width_field` on the image field made Django measure the file on
+        post_init, so merely loading such a row raised FileNotFoundError.
+        """
+        Team.objects.filter(pk=team_with_crest.pk).update(crest_width=None, crest_height=None)
+        (tmp_path / team_with_crest.crest.name).unlink()
+
+        team = Team.objects.get(pk=team_with_crest.pk)
+
+        assert "<svg" in team.render_image()
+
 
 class TestChannelLinkOrphanCleanup:
     """Tests for the signals that remove links left without any source."""
