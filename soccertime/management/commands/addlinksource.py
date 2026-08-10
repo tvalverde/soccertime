@@ -17,17 +17,17 @@ class Command(BaseLinkImportCommand):
     # Parsing
     # ------------------------------------------------------------------
     def parse_newera(self, filepath):
-        """Parse newera format: alternating lines NAME --> SUBCATEGORY and HASH.
+        """Parse the newera format: alternating NAME --> SUBCATEGORY and HASH lines.
 
-        - Usa el lado derecho como subcategoría (ej: fuente agregada dentro de newera).
-        - Valida hashes de 40 hex; si no, warning y salta.
-        - Acumula warnings, no aborta salvo que no se pueda leer el archivo.
+        The right-hand side is the subcategory, usually the feed aggregated inside
+        newera. Malformed lines and hashes are collected as warnings and skipped: only an
+        unreadable file aborts the import.
         """
         with open(filepath, encoding="utf-8") as f:
             lines = [line.strip() for line in f if line.strip()]
 
         if len(lines) % 2 != 0:
-            self.warnings.append("Archivo newera con número impar de líneas: se ignora la última línea")
+            self.warnings.append("Odd number of lines in the newera file: the last one is ignored")
             lines = lines[:-1]
 
         entries = []
@@ -35,11 +35,11 @@ class Command(BaseLinkImportCommand):
             name_line = lines[i]
             link_line = lines[i + 1]
             if " --> " not in name_line:
-                self.warnings.append(f"Línea de nombre inválida: {name_line}")
+                self.warnings.append(f"Malformed name line: {name_line}")
                 continue
             raw_name, source_label = name_line.split(" --> ", 1)
 
-            # Fix specific names and normalize
+            # Normalise known aliases
             name_fixed = self.fix_name(raw_name)
             name_norm = re.sub(r"\s+", " ", name_fixed).strip()
 
@@ -52,7 +52,7 @@ class Command(BaseLinkImportCommand):
                 link = f"acestream://{link}"
             hash_part = link.replace("acestream://", "")
             if not re.fullmatch(r"[0-9a-fA-F]{40}", hash_part):
-                self.warnings.append(f"Hash inválido (se omite): {link_line}")
+                self.warnings.append(f"Invalid hash (skipped): {link_line}")
                 continue
 
             entries.append((name_norm, subcategory, quality, link))
@@ -134,7 +134,7 @@ class Command(BaseLinkImportCommand):
         dry_run = options["dry"]
 
         if dry_run:
-            self.stdout.write(self.style.WARNING("=== MODO DRY RUN ==="))
+            self.stdout.write(self.style.WARNING("=== DRY RUN ==="))
 
         self.warnings = []
 

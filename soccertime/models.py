@@ -384,13 +384,14 @@ class EventQuerySet(models.QuerySet):
         return self.order_by("date", "competition__sport__order", "competition__name")
 
     def with_related(self):
-        """Optimiza queries precargando relaciones comunes.
+        """Preload the relations every listing walks.
 
-        Solo aplica select_related para relaciones que existen en el modelo actual.
+        The subtype relations only exist on `Event` itself, so they are added only
+        there; on `Match`, `Race` or `SimpleEvent` they would not resolve.
         """
         qs = self
 
-        # Relaciones comunes a todos los eventos
+        # Shared by every event
         qs = qs.select_related(
             "competition__sport",
             "competition__flag",
@@ -398,7 +399,7 @@ class EventQuerySet(models.QuerySet):
             Prefetch("channels", queryset=Channel.objects.prefetch_related("links")),
         )
 
-        # Solo añadir relaciones de subtipos si estamos en Event (no en Match/Race/SimpleEvent)
+        # Subtype relations only make sense on the parent
         if self.model._meta.model_name == "event":
             qs = qs.select_related(
                 "match__local",

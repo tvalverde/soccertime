@@ -44,10 +44,10 @@ class Command(BaseLinkImportCommand):
 
             if line.startswith("#EXTINF"):
                 if pending:
-                    self.warnings.append(f"EXTINF sin URL (se omite): {pending['name']}")
+                    self.warnings.append(f"EXTINF with no URL (skipped): {pending['name']}")
                 match = EXTINF_RE.match(line)
                 if not match:
-                    self.warnings.append(f"EXTINF inválido (se omite): {line}")
+                    self.warnings.append(f"Malformed EXTINF (skipped): {line}")
                     pending = None
                     continue
                 attrs = dict(ATTR_RE.findall(match.group("attrs")))
@@ -58,20 +58,20 @@ class Command(BaseLinkImportCommand):
                 continue
 
             if pending is None:
-                self.warnings.append(f"URL sin EXTINF previo (se omite): {line}")
+                self.warnings.append(f"URL with no preceding EXTINF (skipped): {line}")
                 continue
 
             if line.startswith("acestream://"):
                 hash_part = line.removeprefix("acestream://")
                 if not ACESTREAM_HASH_RE.fullmatch(hash_part):
-                    self.warnings.append(f"Hash inválido (se omite): {line}")
+                    self.warnings.append(f"Invalid hash (skipped): {line}")
                     pending = None
                     continue
                 link = line
             elif ACESTREAM_HASH_RE.fullmatch(line):
                 link = f"acestream://{line}"
             else:
-                self.warnings.append(f"URL no acestream (se omite): {line}")
+                self.warnings.append(f"Non-acestream URL (skipped): {line}")
                 pending = None
                 continue
 
@@ -83,7 +83,7 @@ class Command(BaseLinkImportCommand):
             pending = None
 
         if pending:
-            self.warnings.append(f"EXTINF sin URL (se omite): {pending['name']}")
+            self.warnings.append(f"EXTINF with no URL (skipped): {pending['name']}")
 
         return entries
 
@@ -95,7 +95,7 @@ class Command(BaseLinkImportCommand):
         dry_run = options["dry"]
 
         if dry_run:
-            self.stdout.write(self.style.WARNING("=== MODO DRY RUN ==="))
+            self.stdout.write(self.style.WARNING("=== DRY RUN ==="))
 
         self.warnings = []
 

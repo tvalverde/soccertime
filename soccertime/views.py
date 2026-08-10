@@ -115,17 +115,17 @@ def team_events(request, team):
     team_obj = get_object_or_404(Team, pk=team)
     queryset = Event.objects.for_team(team).in_progress_or_upcoming().with_related().chronological()
 
-    # Obtener equipos rivales en partidos futuros, ordenados por fecha de enfrentamiento
+    # Opponents in upcoming matches, ordered by when they are played
     now = timezone.now()
 
-    # Obtener IDs de partidos futuros del equipo
+    # Upcoming matches for this team
     from soccertime.models import Match
 
     future_matches = Match.objects.select_related("local", "visitor").filter(
         Q(local=team_obj) | Q(visitor=team_obj), date__gte=now
     )
 
-    # Obtener equipos rivales con la fecha del próximo enfrentamiento
+    # Keep each opponent once, at the date of the next meeting
     opponent_ids = set()
     opponent_dates = {}
 
@@ -139,7 +139,7 @@ def team_events(request, team):
             opponent_ids.add(opponent.id)
             opponent_dates[opponent.id] = match.date
 
-    # Ordenar equipos por fecha de enfrentamiento, excluyendo los que no tienen escudo
+    # Ordered by that date, skipping the ones with no crest to show
     competition_teams = sorted(
         Team.objects.filter(id__in=opponent_ids).exclude(Q(crest__isnull=True) | Q(crest="")),
         key=lambda t: opponent_dates.get(t.id),
@@ -233,21 +233,19 @@ def channels(request):
 
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def competitions(request):
-    """
-    Exhibe deportes y sus competiciones, optimizado para evitar N+1 queries.
-    """
+    """List sports and their competitions, grouping in Python to avoid N+1 queries."""
     from django.db.models import Exists, OuterRef, Q
 
     from soccertime.models import Favorite
 
     today = timezone.now().date()
 
-    # 1. Obtener deportes activos (con eventos próximos)
+    # Sports that still have upcoming events
     active_sports = (
         Sport.objects.with_events().annotate(num_comps=Count("competitions")).order_by("-num_comps", "name").distinct()
     )
 
-    # 2. Obtener todas las competiciones de esos deportes con anotaciones
+    # Their competitions, annotated so the grouping needs no further queries
     competitions_qs = (
         Competition.objects.filter(sport__in=active_sports)
         .select_related("flag")
@@ -257,7 +255,7 @@ def competitions(request):
         )
     )
 
-    # 3. Agrupar datos en Python
+    # Group in Python rather than querying per sport
     sports_map = {sport.id: {"sport": sport, "with_events": [], "without_events": []} for sport in active_sports}
 
     for comp in competitions_qs:
@@ -268,12 +266,12 @@ def competitions(request):
             else:
                 sports_map[sport_id]["without_events"].append(comp)
 
-    # Ordenar las listas de competiciones con eventos por número de eventos (desc) y nombre
+    # Busiest competitions first, then alphabetically
     for data in sports_map.values():
         data["with_events"].sort(key=lambda x: (-x.num_events, x.name))
         data["without_events"].sort(key=lambda x: x.name)
 
-    # Preparar el contexto final manteniendo el orden de los deportes
+    # Preserve the sport ordering established above
     sports_data = [sports_map[sport.id] for sport in active_sports]
 
     return render(

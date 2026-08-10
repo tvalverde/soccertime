@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
 
 ### Changed
+- Docstrings, comments and management-command output are in English, per the project convention. The web interface stays in Spanish; only the code artifacts and the CLI changed, along with the stat keys in the link importer.
 - The `env` template filter only reads allowlisted variables. It reaches every template, so `{{ "DJANGO_SECRET_KEY"|env }}` would otherwise render the secret into a page.
 - `scrapit` upserts every event type through one `upsert_event`, replacing the same get / realign / dedupe algorithm copy-pasted three times.
 - With caching disabled the cache backend is now explicitly `DummyCache`. Django's default is a per-process `LocMemCache`, which made the `cache.clear()` in the management commands appear to work while clearing only that process.

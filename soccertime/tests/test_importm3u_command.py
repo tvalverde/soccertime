@@ -123,7 +123,7 @@ acestream://5555555555555555555555555555555555555555
         call_command("importm3u", f"--file={playlist}", stdout=out)
 
         assert ChannelLink.objects.count() == 0
-        assert "Canal no encontrado" in out.getvalue()
+        assert "Channel not found" in out.getvalue()
 
     def test_importm3u_dry_run(self, tmp_path):
         Channel.objects.create(name="DAZN Mundial 1")
@@ -139,7 +139,7 @@ acestream://6666666666666666666666666666666666666666
         call_command("importm3u", f"--file={playlist}", "--dry", stdout=out)
 
         assert ChannelLink.objects.count() == 0
-        assert "MODO DRY RUN" in out.getvalue()
+        assert "DRY RUN" in out.getvalue()
 
     def test_importm3u_invalid_hash_skipped(self, tmp_path):
         Channel.objects.create(name="DAZN Mundial 1")
@@ -158,8 +158,8 @@ acestream://xyz
         call_command("importm3u", f"--file={playlist}", stdout=out)
 
         assert ChannelLink.objects.count() == 0
-        assert "Hash inválido" in out.getvalue()
-        assert "URL no acestream" in out.getvalue()
+        assert "Invalid hash" in out.getvalue()
+        assert "Non-acestream URL" in out.getvalue()
 
     def test_importm3u_non_acestream_url_skipped(self, tmp_path):
         Channel.objects.create(name="DAZN Mundial 1")
@@ -175,7 +175,7 @@ http://example.com/stream.m3u8
         call_command("importm3u", f"--file={playlist}", stdout=out)
 
         assert ChannelLink.objects.count() == 0
-        assert "URL no acestream" in out.getvalue()
+        assert "Non-acestream URL" in out.getvalue()
 
     def test_importm3u_bare_hash_accepted(self, tmp_path):
         Channel.objects.create(name="DAZN Mundial 1")
@@ -206,7 +206,7 @@ acestream://8888888888888888888888888888888888888888
         call_command("importm3u", f"--file={playlist}", stdout=out)
 
         assert ChannelLink.objects.count() == 1
-        assert "Actualizado" in out.getvalue()
+        assert "Updated" in out.getvalue()
 
     def test_importm3u_generic_token_does_not_match_unrelated_channels(self, tmp_path):
         """Regression: "CANAL 5 MX" must not fuzzy-match every "Canal *" channel.
@@ -229,7 +229,7 @@ acestream://abcdefabcdefabcdefabcdefabcdefabcdefabcd
         call_command("importm3u", f"--file={playlist}", stdout=out)
 
         assert ChannelLink.objects.count() == 0
-        assert "Canal no encontrado" in out.getvalue()
+        assert "Channel not found" in out.getvalue()
 
     def test_importm3u_orphan_directives(self, tmp_path):
         Channel.objects.create(name="DAZN Mundial 1")
@@ -249,5 +249,5 @@ acestream://9999999999999999999999999999999999999999
 
         assert ChannelLink.objects.count() == 1
         output = out.getvalue()
-        assert "EXTINF sin URL (se omite): Orphan Without URL" in output
-        assert "EXTINF sin URL (se omite): Trailing Orphan" in output
+        assert "EXTINF with no URL (skipped): Orphan Without URL" in output
+        assert "EXTINF with no URL (skipped): Trailing Orphan" in output

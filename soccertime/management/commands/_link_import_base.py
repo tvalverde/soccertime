@@ -116,7 +116,7 @@ class BaseLinkImportCommand(BaseCommand):
         return name, quality
 
     def extract_name_parts(self, raw_name):
-        # Fix specific names first
+        # Normalise known aliases before anything else
         name_fixed = self.fix_name(raw_name)
         # Lower and normalize spaces
         name_norm = re.sub(r"\s+", " ", name_fixed).strip()
@@ -125,9 +125,10 @@ class BaseLinkImportCommand(BaseCommand):
         return name_norm, quality
 
     def match_channels(self, channel_name):
-        """Match channels with numeric suffix priority and token-based fallback.
+        """Match channels, preferring a numeric suffix and falling back to tokens.
 
-        - Si el nombre es muy corto (<=4 chars o un solo token sin sufijo), sólo intenta match exacto/contenga.
+        A very short name with no numeric suffix only tries an exact or contains match:
+        a two-letter token would otherwise pull in half the table.
         """
         channel_name_norm = re.sub(r"\s+", " ", channel_name).strip()
         parts = channel_name_norm.split(" ")
@@ -237,22 +238,22 @@ class BaseLinkImportCommand(BaseCommand):
         source_obj, _ = ChannelLinkSource.get_or_create_by_name(source_name)
 
         stats = {
-            "canales_procesados": 0,
-            "enlaces_nuevos": 0,
-            "enlaces_actualizados": 0,
-            "enlaces_asociados": 0,
-            "errores_canal_no_encontrado": 0,
+            "channels_processed": 0,
+            "new_links": 0,
+            "updated_links": 0,
+            "linked_links": 0,
+            "channels_not_found": 0,
         }
 
         try:
             with transaction.atomic():
                 for channel_name, subcategory, quality, link in entries:
-                    stats["canales_procesados"] += 1
+                    stats["channels_processed"] += 1
 
                     channels = self.match_channels(channel_name)
                     if not channels.exists():
-                        self.warnings.append(f"Canal no encontrado: {channel_name}")
-                        stats["errores_canal_no_encontrado"] += 1
+                        self.warnings.append(f"Channel not found: {channel_name}")
+                        stats["channels_not_found"] += 1
                         continue
 
                     category = re.sub(r" \d+", "", channel_name).title()
@@ -271,11 +272,11 @@ class BaseLinkImportCommand(BaseCommand):
                         channel_link.sources.add(source_obj)
 
                     if created:
-                        stats["enlaces_nuevos"] += 1
-                        self.stdout.write(self.style.SUCCESS(f"  Nuevo: {link[:50]}..."))
+                        stats["new_links"] += 1
+                        self.stdout.write(self.style.SUCCESS(f"  New: {link[:50]}..."))
                     else:
-                        stats["enlaces_actualizados"] += 1
-                        self.stdout.write(f"  Actualizado: {link[:50]}...")
+                        stats["updated_links"] += 1
+                        self.stdout.write(f"  Updated: {link[:50]}...")
 
                     # Strategy: Match multiple channels but filter out restrictive types (e.g. BAR)
                     # if the link doesn't explicitly ask for them.
@@ -291,19 +292,19 @@ class BaseLinkImportCommand(BaseCommand):
                             continue
 
                         if channel.links.filter(link=channel_link.link).exists():
-                            self.warnings.append(f"Ya existe en {channel.name}: {channel_link.link[:40]}...")
+                            self.warnings.append(f"Already present in {channel.name}: {channel_link.link[:40]}...")
                             continue
                         if not dry_run:
                             channel.links.add(channel_link)
-                        stats["enlaces_asociados"] += 1
-                        self.stdout.write(f"  Asociado a: {channel.name}")
+                        stats["linked_links"] += 1
+                        self.stdout.write(f"  Linked to: {channel.name}")
 
                 if dry_run:
                     raise transaction.TransactionManagementError("Dry run - rollback")
 
         except transaction.TransactionManagementError:
             if dry_run:
-                self.stdout.write(self.style.WARNING("\nDry run completado - no se guardaron cambios"))
+                self.stdout.write(self.style.WARNING("\nDry run finished - nothing was saved"))
             else:
                 raise
 
@@ -311,13 +312,13 @@ class BaseLinkImportCommand(BaseCommand):
             cache.clear()
 
         self.stdout.write("\n" + "=" * 50)
-        self.stdout.write(self.style.SUCCESS("RESUMEN"))
+        self.stdout.write(self.style.SUCCESS("SUMMARY"))
         self.stdout.write("=" * 50)
-        self.stdout.write(f"Canales procesados:      {stats['canales_procesados']}")
-        self.stdout.write(f"Enlaces nuevos:          {stats['enlaces_nuevos']}")
-        self.stdout.write(f"Enlaces actualizados:    {stats['enlaces_actualizados']}")
-        self.stdout.write(f"Enlaces asociados:       {stats['enlaces_asociados']}")
-        self.stdout.write(f"Canales no encontrados:  {stats['errores_canal_no_encontrado']}")
+        self.stdout.write(f"Channels processed:   {stats['channels_processed']}")
+        self.stdout.write(f"New links:            {stats['new_links']}")
+        self.stdout.write(f"Updated links:        {stats['updated_links']}")
+        self.stdout.write(f"Links linked:         {stats['linked_links']}")
+        self.stdout.write(f"Channels not found:   {stats['channels_not_found']}")
 
         if self.warnings:
             self.stdout.write("\nWARNINGS:")

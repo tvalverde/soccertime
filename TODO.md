@@ -16,7 +16,7 @@ Empty: nothing outstanding currently threatens the live site or the request path
 
 ### Medium
 
-1. **Decide the intended `ChannelLink` ordering, then simplify it.** The current
+1. **Decide whether the `ChannelLink` ordering is the one you want.** The current
    `["-date_updated__date", "date_updated__time", "-verified", "-id"]` means "newest day
    first, oldest first within that day". The history shows it was introduced right after
    `date_updated` was added, replacing `["-verified", "-id"]`, and the data suggests the
@@ -24,60 +24,55 @@ Empty: nothing outstanding currently threatens the live site or the request path
    `-date_updated` reverses it. Note `verified` is `False` on all 377 rows, so that term
    never fires, and `/channels/` overrides the ordering entirely, so this only affects the
    play buttons per channel and the admin list. At this size there is no performance case
-   for changing it; the open question is whether the within-batch order is wanted.
-
-2. **Translate the source artifacts to English.** Docstrings and comments across
-   `models.py`, `views.py`, `_link_import_base.py`, `soccertime_tags.py` and the import
-   commands are in Spanish, and the import commands print Spanish output
-   (`"Canal no encontrado"`, `"RESUMEN"`). The project convention is English for all
-   code, comments and documentation; every future edit pays this tax.
+   for changing it; the open question is whether the within-batch order is wanted. It is
+   now defined once in `CHANNEL_LINK_ORDERING`, so whatever is decided applies everywhere.
 
 ### Low
 
-3. **Stop using private Django API in the admin.** `AutoModelAdmin.get_list_filter`
+2. **Stop using private Django API in the admin.** `AutoModelAdmin.get_list_filter`
    filters on `field._choices`; the public `field.choices` is equivalent and will not
    break on an upgrade. `get_list_display` also mutates the shared `ModelAdmin`
    singleton with `setattr(self, ...)` per request — harmless today because the
    generated callables are equivalent, but it should build a local mapping instead.
 
-4. **Wrap the user-facing strings in `gettext_lazy`.** The `empty_state()` defaults in
+3. **Wrap the user-facing strings in `gettext_lazy`.** The `empty_state()` defaults in
    `views.py` (`"No hay eventos a la vista :)"`, `"No hay canales disponibles :_("`) are
    hardcoded while the templates already use `{% translate %}`.
 
-5. **Make the view context consistent.** `team_events` and `competition_events` rebuild
+4. **Make the view context consistent.** `team_events` and `competition_events` rebuild
    the context by hand instead of using `get_base_context()`, and both `team_events` and
    `competitions` use function-level imports (`from soccertime.models import Match`,
    `from django.db.models import Exists, OuterRef`). Move the imports to module scope and
    reuse the shared helper.
 
-6. **Give `self.warnings` an owner.** `BaseLinkImportCommand.import_entries` reads it,
+5. **Give `self.warnings` an owner.** `BaseLinkImportCommand.import_entries` reads it,
    but only each subclass's `handle()` initialises it, so a new subclass breaks the
    pipeline. Initialise it in the base class.
 
-7. **Replace the dry-run exception abuse.** `import_entries` triggers its rollback by
+6. **Replace the dry-run exception abuse.** `import_entries` triggers its rollback by
    raising `transaction.TransactionManagementError` and catching it. Use
    `transaction.set_rollback(True)` or a dedicated private exception.
 
-8. **Deduplicate `is_favorite_event`.** `Race` and `SimpleEvent` both define it
+7. **Deduplicate `is_favorite_event`.** `Race` and `SimpleEvent` both define it
    returning `False`. Move the default to `Event` and override only in `Match`.
 
-9. **`LinkSchemeFilter` reads every link URL.** It iterates the whole `ChannelLink`
+8. **`LinkSchemeFilter` reads every link URL.** It iterates the whole `ChannelLink`
    table on each admin list render to build the scheme dropdown. Negligible at today's
    377 rows and admin-only, hence the low rank; persist the scheme or cache a
    `values_list(...).distinct()` if the table grows.
 
-10. **`match_channels` runs many queries per imported entry.** Several chained
-    `.exists()` probes plus a per-channel `channel.links.filter(...).exists()` inside the
-    import loop. Offline cost only. Preload the channel names and match in Python if
-    large playlists become slow.
+9. **`match_channels` runs many queries per imported entry.** Several chained
+   `.exists()` probes plus a per-channel `channel.links.filter(...).exists()` inside the
+   import loop. Offline cost only. Preload the channel names and match in Python if
+   large playlists become slow.
 
-11. **Centralize the `event_type` logic.** Set it in the base `Event.save()` or a
+10. **Centralize the `event_type` logic.** Set it in the base `Event.save()` or a
     `pre_save` signal instead of repeating the assignment in every subclass.
 
-12. **Add type hints** to models, managers and querysets for IDE support and earlier
+11. **Add type hints** to models, managers and querysets for IDE support and earlier
     error detection.
 
-13. **Revisit MTI performance only if measured.** Originally filed as high priority, but
+12. **Revisit MTI performance only if measured.** Originally filed as high priority, but
     a query-count check on the real database showed `with_related()` already works:
     reaching `child_event` and then its `competition`, `sport`, `channels` and `links`
     across 25 events costs **0 extra queries**, because the MTI child fetched via
@@ -85,6 +80,10 @@ Empty: nothing outstanding currently threatens the live site or the request path
     `InheritanceManager` only if profiling later shows JOIN overhead.
 
 ## Done
+
+### Block D — 2026-08-10
+- [x] **Made the channels page order links the way the rest of the site does.** It sorted only by the keys the template regroups on, so the rows of a single card — which share all three — came back in whatever order the database chose: the same play buttons appeared as `[2413, 2414, 2504, ...]` in the agenda and `[2326, 2324, 2325, ...]` on the channels page, and that order could shift on its own when the table was rebuilt. `CHANNEL_LINK_ORDERING` is now the single definition used by both.
+- [x] **Translated the source artifacts to English.** Docstrings, comments and the output of the import commands, along with the Spanish stat keys inside the importer. The web interface stays in Spanish, since that is the language of the site; only code and CLI changed. The few Spanish strings left are comments quoting real channel names from the source data (`"Canal de Tenis" -> "tennis channel"`), which have to stay literal.
 
 ### Medium blocks A, B and C — 2026-08-10
 - [x] **Restricted the `env` template filter to an allowlist** and **added the missing test modules**. The filter reaches every template, so `{{ "DJANGO_SECRET_KEY"|env }}` would have rendered the secret; only `DJANGO_DEBUG` is readable now. `filters.py` and the template filters had no tests at all and now do.
