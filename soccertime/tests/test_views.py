@@ -71,9 +71,17 @@ class TestFavoritesView:
     def test_empty_state_message(self, client, db):
         """Should show message when no favorite events."""
         response = client.get(reverse("favorites"))
-        messages = list(response.context["messages"])
-        assert len(messages) == 1
-        assert "No hay eventos" in str(messages[0])
+        assert "No hay eventos" in response.content.decode()
+
+    def test_empty_state_message_hidden_when_there_are_events(self, client, match, favorite_team):
+        """The notice belongs to the listing, not to the visitor."""
+        response = client.get(reverse("favorites"))
+        assert "No hay eventos" not in response.content.decode()
+
+    def test_empty_state_does_not_use_per_request_messages(self, client, db):
+        """A message would be baked into the shared page cache and leak to other visitors."""
+        response = client.get(reverse("favorites"))
+        assert list(response.context["messages"]) == []
 
     def test_context_has_competitions(self, client, favorite_competition):
         """Should have favorite competitions in context."""
@@ -203,7 +211,9 @@ class TestAgendaView:
             for j in range(3):
                 ch = Channel.objects.create(name=f"Channel {i}-{j}")
                 for k in range(2):
-                    link = ChannelLink.objects.create(name=f"Link {i}-{j}-{k}", link="http://example.com", enabled=True)
+                    link = ChannelLink.objects.create(
+                        name=f"Link {i}-{j}-{k}", link=f"http://example.com/{i}-{j}-{k}", enabled=True
+                    )
                     link.sources.add(source)
                     ch.links.add(link)
                 match.channels.add(ch)
@@ -378,9 +388,12 @@ class TestChannelsView:
     def test_empty_state_message(self, client, db):
         """Should show message when no channels."""
         response = client.get(reverse("channels"))
-        messages = list(response.context["messages"])
-        assert len(messages) == 1
-        assert "No hay canales" in str(messages[0])
+        assert "No hay canales" in response.content.decode()
+        assert list(response.context["messages"]) == []
+
+    def test_empty_state_message_hidden_when_there_are_channels(self, client, channel_link):
+        response = client.get(reverse("channels"))
+        assert "No hay canales" not in response.content.decode()
 
 
 class TestCompetitionsView:

@@ -43,6 +43,21 @@ acestream://1111111111111111111111111111111111111111
         source = ChannelLinkSource.objects.get(name="MUNDIAL")
         assert link.sources.filter(pk=source.pk).exists()
 
+    def test_importm3u_same_link_from_two_sources_reuses_one_row(self, tmp_path):
+        """The same URL imported twice must upsert a single row with both sources."""
+        channel = Channel.objects.create(name="DAZN Mundial 1")
+        entry = """#EXTINF:-1 group-title="MUNDIAL",DAZN Mundial 1
+acestream://1111111111111111111111111111111111111111
+"""
+
+        call_command("importm3u", f"--file={write_m3u(tmp_path, entry)}", "--source=first")
+        call_command("importm3u", f"--file={write_m3u(tmp_path, entry)}", "--source=second")
+
+        assert ChannelLink.objects.count() == 1
+        link = ChannelLink.objects.get()
+        assert set(link.sources.values_list("name", flat=True)) == {"FIRST", "SECOND"}
+        assert channel.links.filter(pk=link.pk).count() == 1
+
     def test_importm3u_source_override(self, tmp_path):
         Channel.objects.create(name="DAZN Mundial 1")
 

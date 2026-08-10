@@ -1,5 +1,4 @@
 from django.conf import settings
-from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Max, Q
 from django.http import JsonResponse
@@ -59,10 +58,14 @@ def paginate_queryset(queryset, request, per_page=25):
     return paginator.get_page(request.GET.get("page"))
 
 
-def add_empty_message(request, queryset, message="No hay eventos a la vista :)", level=messages.INFO):
-    """Add a message if queryset is empty."""
-    if not queryset.exists():
-        messages.add_message(request, level, message)
+def empty_state(message="No hay eventos a la vista :)", level="info"):
+    """Notice the templates render when the listing turns out to be empty.
+
+    It travels in the context instead of the messages framework: these views are
+    cached as a whole, and a per-request message would be baked into the shared
+    page cache and served to everybody else.
+    """
+    return {"empty_message": message, "empty_message_level": level}
 
 
 # --- Views ---
@@ -75,11 +78,11 @@ def healthz(request):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def favorites(request):
     queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3).with_related()
-    add_empty_message(request, queryset, "No hay eventos a la vista :(", messages.WARNING)
 
     context = get_base_context()
     context.pop("teams", None)
     context.update({"events": queryset})
+    context.update(empty_state("No hay eventos a la vista :(", "warning"))
     return render(request, "soccertime/agenda.html", context)
 
 
@@ -95,7 +98,6 @@ def agenda(request):
         queryset = Event.objects.today_onwards().with_related()
 
     queryset = queryset.search(request.GET.get("search")).order_by("date")
-    add_empty_message(request, queryset)
 
     context = get_base_context()
     context.update(
@@ -104,6 +106,7 @@ def agenda(request):
             "max_date": max_date,
         }
     )
+    context.update(empty_state())
     return render(request, "soccertime/agenda.html", context)
 
 
@@ -111,7 +114,6 @@ def agenda(request):
 def team_events(request, team):
     team_obj = get_object_or_404(Team, pk=team)
     queryset = Event.objects.for_team(team).in_progress_or_upcoming().with_related()
-    add_empty_message(request, queryset)
 
     # Obtener equipos rivales en partidos futuros, ordenados por fecha de enfrentamiento
     now = timezone.now()
@@ -151,6 +153,7 @@ def team_events(request, team):
             "events_title": team_obj.name,
             "competitions": get_favorite_competitions(),
             "competition_teams": competition_teams,
+            **empty_state(),
         },
     )
 
@@ -159,7 +162,6 @@ def team_events(request, team):
 def channel_events(request, channel):
     channel_obj = get_object_or_404(Channel, pk=channel)
     queryset = Event.objects.for_channel(channel).in_progress_or_upcoming().with_related()
-    add_empty_message(request, queryset)
 
     context = get_base_context()
     context.pop("teams", None)
@@ -169,6 +171,7 @@ def channel_events(request, channel):
             "events_title": channel_obj.name,
         }
     )
+    context.update(empty_state())
     return render(request, "soccertime/agenda.html", context)
 
 
@@ -176,7 +179,6 @@ def channel_events(request, channel):
 def sport_events(request, sport):
     sport_obj = get_object_or_404(Sport, pk=sport)
     queryset = Event.objects.for_sport(sport).in_progress_or_upcoming().with_related()
-    add_empty_message(request, queryset)
 
     context = get_base_context()
     context.pop("teams", None)
@@ -186,6 +188,7 @@ def sport_events(request, sport):
             "events_title": sport_obj.name,
         }
     )
+    context.update(empty_state())
     return render(request, "soccertime/agenda.html", context)
 
 
@@ -193,7 +196,6 @@ def sport_events(request, sport):
 def competition_events(request, competition):
     competition_obj = get_object_or_404(Competition, pk=competition)
     queryset = Event.objects.for_competition(competition).in_progress_or_upcoming().with_related()
-    add_empty_message(request, queryset)
 
     return render(
         request,
@@ -208,6 +210,7 @@ def competition_events(request, competition):
             .exclude(Q(crest__isnull=True) | Q(crest=""))
             .order_by("name")
             .distinct(),
+            **empty_state(),
         },
     )
 
@@ -215,11 +218,13 @@ def competition_events(request, competition):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def channels(request):
     queryset = ChannelLink.objects.order_by("category", "subcategory", "name")
-    add_empty_message(request, queryset, "No hay canales disponibles :_(", messages.ERROR)
     return render(
         request,
         "soccertime/channels.html",
-        {"channels_links": queryset},
+        {
+            "channels_links": queryset,
+            **empty_state("No hay canales disponibles :_(", "danger"),
+        },
     )
 
 

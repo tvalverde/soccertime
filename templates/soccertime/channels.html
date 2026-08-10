@@ -5,6 +5,9 @@
 Soccertime :: {% translate "Canales" %}
 {% endblock %}
 {% block content %}
+{% if not channels_links %}
+    {% include "soccertime/empty_state.html" %}
+{% endif %}
 <div class="container py-3">
 
     {% regroup channels_links|dictsort:"subcategory" by subcategory as subcategorized_channels %}

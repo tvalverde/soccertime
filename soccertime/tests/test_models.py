@@ -11,7 +11,7 @@ Tests cover:
 
 import pytest
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 
 from soccertime.models import (
     ChannelLink,
@@ -140,6 +140,18 @@ class TestChannelLink:
 
     def test_scheme(self, channel_link):
         assert channel_link.scheme == "https"
+
+    def test_link_is_unique(self, db, channel_link):
+        """Two rows may not share a URL: import_entries upserts on `link`."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            ChannelLink.objects.create(name="Duplicate", link=channel_link.link)
+
+    def test_several_links_may_have_no_url(self, db):
+        """The unique constraint must not collapse the rows still missing a URL."""
+        ChannelLink.objects.create(name="Pending A")
+        ChannelLink.objects.create(name="Pending B")
+
+        assert ChannelLink.objects.filter(link__isnull=True).count() == 2
 
     def test_quality_choices(self, db):
         """All quality choices should be valid."""

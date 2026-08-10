@@ -48,6 +48,10 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 </div>
 {% endif %}
 
+{% if not events %}
+    {% include "soccertime/empty_state.html" %}
+{% endif %}
+
 <div class="table-responsive">
     <table class="table table-sm table-hover mb-0">
         <tbody>
