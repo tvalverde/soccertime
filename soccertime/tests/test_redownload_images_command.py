@@ -9,7 +9,7 @@ import requests
 from django.core.management import call_command
 from PIL import Image
 
-from soccertime.models import Flag
+from soccertime.models import Flag, Team
 
 
 def image_bytes(size=(32, 24)):
@@ -35,10 +35,26 @@ def flag_without_file(stored_flag, tmp_path):
 
 @pytest.mark.django_db
 class TestRedownloadImagesCommand:
-    def test_reports_nothing_to_do_when_every_file_is_present(self, stored_flag):
+    def test_reports_nothing_missing_when_every_file_is_present(self, stored_flag):
         out = StringIO()
         call_command("redownload_images", stdout=out)
-        assert "Every flag image is present" in out.getvalue()
+        assert "flags whose file is missing: 0" in out.getvalue()
+
+    def test_reports_crests_that_cannot_be_restored(self, db, settings, tmp_path):
+        """A team keeps no source URL, so its crest is reported but never re-fetched."""
+        settings.MEDIA_ROOT = tmp_path
+        broken = Team.objects.create(name="Sin fichero")
+        broken.save_crest(image_bytes(), "crest.png")
+        (tmp_path / broken.crest.name).unlink()
+        Team.objects.create(name="Sin escudo")
+
+        out = StringIO()
+        with patch("soccertime.management.commands._image_download.requests.get") as mock_get:
+            call_command("redownload_images", stdout=out)
+
+        mock_get.assert_not_called()
+        assert "teams whose crest file is missing: 1" in out.getvalue()
+        assert "teams with no crest at all:        1" in out.getvalue()
 
     def test_restores_a_missing_file_from_its_source_url(self, flag_without_file):
         out = StringIO()

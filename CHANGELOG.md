@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `empty_state()` view helper and `soccertime/empty_state.html`, replacing the messages-based empty notice.
 - `image_width` / `image_height` on `Flag` and `crest_width` / `crest_height` on `Team`, recorded by `save_image` and backfilled for existing rows, so rendering never opens an image file to measure it.
 - Transport security settings driven from the environment through a new `env_flag()` helper: `DJANGO_BEHIND_TLS_PROXY`, `DJANGO_SECURE_COOKIES`, `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_HSTS_SECONDS`, `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` and `DJANGO_SECURE_HSTS_PRELOAD`.
+- `backup-remote-media` Makefile target, run by `deploy-production`, keeping the snapshot on the host rather than inside the volume it protects. Both it and `backup-remote-db` rotate to `KEEP_BACKUPS` copies.
+- Crest reporting in `redownload_images`: broken references are listed even though a `Team` stores no source URL and therefore cannot be re-fetched automatically.
 - `remote-smoke-test` and `wait-remote-healthy` Makefile targets, run at the end of `deploy-production`, so a deploy that leaves the site broken fails instead of reporting success. Pages are fetched from outside the server, because an unhealthy container is dropped from the proxy's routing table while still answering 200 on localhost.
 - Makefile targets for production operations: `backup-remote-db` (run automatically by `deploy-production` before migrating), `list-remote-backups`, `restore-remote-db`, `remote-check`, `remote-clear-cache` and `remote-redownload-images`.
 - `CLAUDE.md`, pointing at `AGENTS.md` and recording the verification rules learned from two production incidents.
@@ -50,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Decoupled `GEMINI.md` from `AGENTS.md` and added specific multi-agent workflow rules.
 
 ### Removed
+- `migrate_crests` management command. A one-off path migration from early 2026 whose "missing or empty file" branch cleared the crest reference of any team whose file was absent, turning a dangling reference the scraper repairs by itself into permanent loss: 1357 teams lost their crest that way.
 - Legacy and redundant template files: `events.html`, `match_item.html`, `simple_event_item.html`, and `event_header.html`.
 
 ### Fixed

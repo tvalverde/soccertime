@@ -305,13 +305,19 @@ make help
 | Command | Description |
 |---------|-------------|
 | `make backup-remote-db` | Snapshot the production database inside its volume |
-| `make list-remote-backups` | List the snapshots kept in the remote volume |
+| `make backup-remote-media` | Snapshot the media volume to the host (~2 MB compressed) |
+| `make list-remote-backups` | List the database and media snapshots kept |
 | `make restore-remote-db BACKUP=<file>` | Restore a snapshot and restart the service |
 | `make download-db` | Download database from server |
 | `make upload-db` | Upload database to server |
 
-> **Note:** `deploy-production` snapshots the database automatically before applying
-> migrations, so there is always a rollback point.
+> **Note:** `deploy-production` snapshots the database and the media automatically
+> before applying migrations, so there is always a rollback point. Both rotate to
+> `KEEP_BACKUPS` copies (2 by default). Media snapshots are kept on the host rather
+> than inside the volume they protect. Flags can always be re-fetched with
+> `make remote-redownload-images`, since each one stores its source URL, but a team
+> crest does not: it only returns when that team is scraped again, which is what the
+> media snapshot preserves.
 
 #### Requests cache
 

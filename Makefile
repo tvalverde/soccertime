@@ -1,4 +1,4 @@
-.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images backup-remote-db list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images backup-remote-db backup-remote-media list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -30,7 +30,8 @@ help:
 	@echo ""
 	@echo "DATABASE (SQLite in Docker volume):"
 	@echo "  backup-remote-db     Snapshot the production database inside its volume"
-	@echo "  list-remote-backups  List the snapshots kept in the remote volume"
+	@echo "  backup-remote-media  Snapshot the media volume to the host (~2 MB)"
+	@echo "  list-remote-backups  List the database and media snapshots kept"
 	@echo "  restore-remote-db    Restore a snapshot (BACKUP=<file>) and restart the service"
 	@echo "  download-db          Download database from remote volume"
 	@echo "  upload-db            Upload database to remote volume"
@@ -81,6 +82,14 @@ PRODUCTION_URL ?= https://www.mojon.es/soccertime
 SMOKE_PATHS ?= /healthz/ /favorites/ /agenda/ /competitions/ /channels/
 HEALTH_TIMEOUT ?= 90
 
+# How many snapshots to keep. Every deploy takes one, so without pruning they pile up:
+# eight database copies had reached 150 MB before this was added.
+KEEP_BACKUPS ?= 2
+
+# Media snapshots live on the host, not inside the media volume: the failure they guard
+# against is losing that volume, which would take the backup with it.
+REMOTE_BACKUP_PATH ?= ~/soccertime-backups
+
 # === Development Commands ===
 
 # Run tests
@@ -117,9 +126,9 @@ LOCAL_ARCHIVE_PATH = /tmp/$(ARCHIVE_NAME)
 ENV_PROD_FILE = .env.production
 
 # Main target for production deployment.
-# The database snapshot runs before remote_deploy, which is what applies the migrations,
+# The snapshots run before remote_deploy, which is what applies the migrations,
 # and the smoke test runs last so a deploy that leaves the site broken fails loudly.
-deploy-production: archive_app upload_files backup-remote-db remote_deploy clean_local_archive remote-smoke-test
+deploy-production: archive_app upload_files backup-remote-db backup-remote-media remote_deploy clean_local_archive remote-smoke-test
 	@echo "Deployment process completed successfully."
 
 # Target to archive application files locally
@@ -225,17 +234,48 @@ backup-remote-db:
 			fi; \
 			cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX); \
 			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX); \
-			echo Backup created: $(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX) \
+			echo Backup created: $(REMOTE_DB_FILE_IN_VOLUME)$(BACKUP_SUFFIX); \
+			total=\$$(ls -1 /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.* 2>/dev/null | wc -l); \
+			extra=\$$((total - $(KEEP_BACKUPS))); \
+			if [ \$$extra -gt 0 ]; then \
+				ls -1 /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.* | sort | head -n \$$extra | while read old; do \
+					echo Pruning \$$old; rm -f \$$old; \
+				done; \
+			fi \
 		" \
 	'
 
-# List the database snapshots currently kept in the remote volume
+# Snapshot the media volume to the host. Around 2 MB compressed, which is worth keeping
+# even though most images can be re-fetched: flags carry their source URL, but a team
+# crest has none, so it only comes back if that team happens to play again.
+backup-remote-media:
+	@echo "--- Backing up remote media ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		set -e; \
+		mkdir -p $(REMOTE_BACKUP_PATH); \
+		docker run --rm -v $(REMOTE_MEDIA_VOLUME):/data -v $(REMOTE_BACKUP_PATH):/backups alpine \
+			tar czf /backups/media$(BACKUP_SUFFIX).tgz -C /data .; \
+		total=$$(ls -1 $(REMOTE_BACKUP_PATH)/media.backup.*.tgz 2>/dev/null | wc -l); \
+		extra=$$((total - $(KEEP_BACKUPS))); \
+		if [ $$extra -gt 0 ]; then \
+			ls -1 $(REMOTE_BACKUP_PATH)/media.backup.*.tgz | sort | head -n $$extra | while read old; do \
+				echo "Pruning $$old"; rm -f "$$old"; \
+			done; \
+		fi; \
+		ls -lh $(REMOTE_BACKUP_PATH)/media.backup.*.tgz | awk "{print \"  \" \$$5, \$$9}" \
+	'
+
+# List the database and media snapshots currently kept
 list-remote-backups:
-	@echo "--- Backups in the remote database volume ---"
+	@echo "--- Database snapshots (in the volume) ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		docker run --rm -v $(REMOTE_DB_VOLUME):/data alpine sh -c " \
-			ls -lh /data | grep backup || echo No backups found \
+			ls -lh /data | grep backup || echo \"  none\" \
 		" \
+	'
+	@echo "--- Media snapshots (on the host) ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		ls -lh $(REMOTE_BACKUP_PATH)/media.backup.*.tgz 2>/dev/null || echo "  none" \
 	'
 
 # Restore the production database from one of those snapshots.
