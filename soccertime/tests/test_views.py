@@ -449,6 +449,25 @@ class TestCompetitionsView:
         assert len(queries) < 15
 
 
+class TestSslRedirect:
+    """The redirect must never reach the health check.
+
+    A 301 there fails the container health check, the orchestrator marks the service
+    unhealthy and the proxy withdraws the route, which takes the entire site down.
+    """
+
+    def test_health_check_is_not_redirected(self, client, db, settings):
+        settings.SECURE_SSL_REDIRECT = True
+        response = client.get(reverse("healthz"))
+        assert response.status_code == 200
+
+    def test_other_pages_are_redirected_to_https(self, client, db, settings):
+        settings.SECURE_SSL_REDIRECT = True
+        response = client.get(reverse("favorites"))
+        assert response.status_code == 301
+        assert response["Location"].startswith("https://")
+
+
 class TestRedirects:
     """Tests for redirect URLs."""
 

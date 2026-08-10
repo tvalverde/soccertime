@@ -180,6 +180,11 @@ SESSION_COOKIE_SECURE = env_flag("DJANGO_SECURE_COOKIES")
 CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 
 SECURE_SSL_REDIRECT = env_flag("DJANGO_SECURE_SSL_REDIRECT")
+# The container health check reaches the app directly over plain HTTP, bypassing the
+# proxy that would mark the request secure. Redirecting it returns a 301, the check
+# fails, the container is declared unhealthy and the proxy withdraws the route, taking
+# the whole site down. Matching is unanchored so it also works under FORCE_SCRIPT_NAME.
+SECURE_REDIRECT_EXEMPT = [r"healthz/$"]
 SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS") or 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_flag("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS")
 SECURE_HSTS_PRELOAD = env_flag("DJANGO_SECURE_HSTS_PRELOAD")
