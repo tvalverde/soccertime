@@ -181,9 +181,17 @@ clean_local_archive:
 	@echo "--- Cleaning up local archive ---"
 	rm $(LOCAL_ARCHIVE_PATH)
 
-# Target to upload files only without running deploy
+# Upload and unpack the code without building, migrating or restarting anything.
+# The archive has to be extracted here too: leaving it packed means a later
+# remote-restart quietly rebuilds the image from the previous version.
 upload-only: archive_app upload_files clean_local_archive
-	@echo "Files uploaded successfully. No remote deployment executed."
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		set -e; \
+		cd $(REMOTE_APP_PATH); \
+		tar zxf $(ARCHIVE_NAME); \
+		rm $(ARCHIVE_NAME) \
+	'
+	@echo "Files uploaded and extracted. No build, migration or restart executed."
 
 # Target to upload only configuration file (.env.production)
 upload-config:
