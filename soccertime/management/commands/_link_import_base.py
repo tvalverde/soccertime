@@ -3,6 +3,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
@@ -258,6 +259,7 @@ class BaseLinkImportCommand(BaseCommand):
             "updated_links": 0,
             "linked_links": 0,
             "channels_not_found": 0,
+            "rejected_links": 0,
         }
 
         with transaction.atomic():
@@ -272,15 +274,23 @@ class BaseLinkImportCommand(BaseCommand):
 
                 category = re.sub(r" \d+", "", channel_name).title()
 
-                channel_link, created = ChannelLink.objects.update_or_create(
-                    link=link,
-                    defaults={
-                        "name": channel_name.title(),
-                        "category": category,
-                        "subcategory": subcategory.title() if subcategory else None,
-                        "quality": quality,
-                    },
-                )
+                try:
+                    channel_link, created = ChannelLink.objects.update_or_create(
+                        link=link,
+                        defaults={
+                            "name": channel_name.title(),
+                            "category": category,
+                            "subcategory": subcategory.title() if subcategory else None,
+                            "quality": quality,
+                        },
+                    )
+                except ValidationError:
+                    # These files come from outside the project, so one unusable entry
+                    # must be reported and stepped over rather than abandoning the
+                    # import, exactly as an unreachable image is during a scrape.
+                    self.warnings.append(f"Rejected link with a disallowed scheme for {channel_name}: {link[:60]}")
+                    stats["rejected_links"] += 1
+                    continue
 
                 if not dry_run:
                     channel_link.sources.add(source_obj)
@@ -332,6 +342,8 @@ class BaseLinkImportCommand(BaseCommand):
         self.stdout.write(f"Updated links:        {stats['updated_links']}")
         self.stdout.write(f"Links linked:         {stats['linked_links']}")
         self.stdout.write(f"Channels not found:   {stats['channels_not_found']}")
+        if stats["rejected_links"]:
+            self.stdout.write(self.style.ERROR(f"Rejected links:       {stats['rejected_links']}"))
 
         if self.warnings:
             self.stdout.write("\nWARNINGS:")

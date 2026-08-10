@@ -300,6 +300,32 @@ class ChannelLink(models.Model):
     def scheme(self) -> str:
         return urlparse(self.link or "").scheme
 
+    @property
+    def has_allowed_scheme(self) -> bool:
+        """Whether this link may be rendered as an `href`.
+
+        The last line of defence, and the only one that covers a row already stored:
+        `save()` cannot vet what a migration, a fixture or a hand-written `UPDATE` put
+        in the table. Reading the scheme through `urlparse` is what makes it match the
+        browser, which lower-cases the scheme and strips tabs and newlines before
+        acting on the URL — comparing the raw string would miss `JavaScript:` and
+        `java&#9;script:`.
+        """
+        return self.scheme in ALLOWED_LINK_SCHEMES
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Vet the link on the way in.
+
+        Field `validators` are only run by `full_clean()`, which `Model.save()` does not
+        call and which nothing in this project called, so the validator declared on
+        `link` never ran outside the admin form — while the importer, the one path fed
+        by third-party channel lists, writes through `update_or_create`. Validating the
+        single field here rather than calling `full_clean()` keeps the unique checks
+        (and their query) out of every save, and cannot fail on an unrelated field.
+        """
+        validate_channel_link(self.link)
+        super().save(*args, **kwargs)
+
 
 class EventQuerySet(models.QuerySet):
     """Custom QuerySet for Event model with chainable methods."""

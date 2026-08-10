@@ -64,7 +64,14 @@ class TestLinkSchemeFilter:
             build_filter()
 
     def test_ignores_links_with_no_scheme(self, db, channel_link_source):
-        link = ChannelLink.objects.create(name="Bare", link="just-a-hash")
+        """Such a row can no longer be saved, but the filter must still tolerate one.
+
+        `ChannelLink.save()` rejects a link whose scheme is not on the allowlist, and a
+        bare string has no scheme at all. `bulk_create` goes straight to SQL without
+        calling `save()`, which is how a legacy row — or a migration, or a fixture —
+        can still put one in the table.
+        """
+        (link,) = ChannelLink.objects.bulk_create([ChannelLink(name="Bare", link="just-a-hash")])
         link.sources.add(channel_link_source)
 
         assert schemes_offered() == []
