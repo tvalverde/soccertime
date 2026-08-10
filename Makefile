@@ -1,4 +1,4 @@
-.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check backup-remote-db list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-clear-cache remote-redownload-images backup-remote-db list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -24,6 +24,8 @@ help:
 	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo "  remote-check         Run Django's deployment checks on production"
+	@echo "  remote-clear-cache   Drop the rendered page cache on production"
+	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
 	@echo ""
 	@echo "DATABASE (SQLite in Docker volume):"
 	@echo "  backup-remote-db     Snapshot the production database inside its volume"
@@ -251,6 +253,27 @@ restore-remote-db:
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) restart $(REMOTE_SOCCERTIME_SERVICE) \
 	'
 	@echo "Database restored and service restarted."
+
+# Restore flag images whose file went missing from the media volume, re-fetching them
+# from the URL each Flag row keeps in its name.
+remote-redownload-images:
+	@echo "--- Restoring missing flag images on production ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+			$(REMOTE_SOCCERTIME_SERVICE) python manage.py redownload_images $(ARGS) \
+	'
+
+# Drop the rendered page cache without running the scraper. Pages are cached for an
+# hour, so this is what makes a fix visible immediately after a deploy.
+remote-clear-cache:
+	@echo "--- Clearing the remote page cache ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+			$(REMOTE_SOCCERTIME_SERVICE) python manage.py shell -c "from django.core.cache import cache; cache.clear()" \
+	'
+	@echo "Page cache cleared."
 
 # Run Django's deployment checks against the running production container
 remote-check:

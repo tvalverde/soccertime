@@ -1,7 +1,5 @@
 import datetime
-import io
 
-import requests
 from django.core.cache import cache
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
@@ -16,6 +14,8 @@ from soccertime.models import (
     Sport,
     Team,
 )
+
+from ._image_download import download_image
 
 # Import sources to register them
 from .scraping import (
@@ -32,8 +32,6 @@ from .scraping.base import (
     get_source,
     list_source_names,
 )
-
-IMAGE_DOWNLOAD_TIMEOUT = 10
 
 
 class Command(BaseCommand):
@@ -226,19 +224,6 @@ class Command(BaseCommand):
 
         self.update_channels(event, agenda_event.channels)
 
-    def download_image(self, url):
-        """Download an image, returning None when the URL is missing or unreachable."""
-        if not url:
-            return None
-        try:
-            response = requests.get(url, stream=True, timeout=IMAGE_DOWNLOAD_TIMEOUT)
-        except requests.RequestException as error:
-            self.stderr.write(f"Could not download image from {url}: {error}")
-            return None
-        if response.status_code != 200:
-            return None
-        return io.BytesIO(response.content)
-
     def get_or_create_flag(self, flag_url):
         """Get or create a flag from URL."""
         if not flag_url:
@@ -251,7 +236,7 @@ class Command(BaseCommand):
             self._flags_cache[flag_url] = flag
 
         if not flag.image or not flag.image.storage.exists(flag.image.name):
-            image = self.download_image(flag_url)
+            image = download_image(flag_url, on_error=self.stderr.write)
             if image:
                 flag.save_flag(image, flag_url)
 
@@ -261,7 +246,7 @@ class Command(BaseCommand):
         """Download the team crest when it is not stored yet."""
         if team.crest and team.crest.storage.exists(team.crest.name):
             return
-        image = self.download_image(crest_url)
+        image = download_image(crest_url, on_error=self.stderr.write)
         if image:
             team.save_crest(image, crest_url)
 

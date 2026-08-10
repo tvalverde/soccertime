@@ -118,7 +118,7 @@ class TestScrapitCommandProcessing:
         """Should create sport when processing event."""
         with (
             patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
-            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+            patch("soccertime.management.commands._image_download.requests.get") as mock_requests,
         ):
             mock_get.return_value = iter([mock_match_event])
             mock_requests.return_value.status_code = 404  # Simulate no image
@@ -130,7 +130,7 @@ class TestScrapitCommandProcessing:
         """Should create competition when processing event."""
         with (
             patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
-            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+            patch("soccertime.management.commands._image_download.requests.get") as mock_requests,
         ):
             mock_get.return_value = iter([mock_match_event])
             mock_requests.return_value.status_code = 404
@@ -142,7 +142,7 @@ class TestScrapitCommandProcessing:
         """Should create teams when processing match event."""
         with (
             patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
-            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+            patch("soccertime.management.commands._image_download.requests.get") as mock_requests,
         ):
             mock_get.return_value = iter([mock_match_event])
             mock_requests.return_value.status_code = 404
@@ -155,7 +155,7 @@ class TestScrapitCommandProcessing:
         """Should create match event."""
         with (
             patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
-            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+            patch("soccertime.management.commands._image_download.requests.get") as mock_requests,
         ):
             mock_get.return_value = iter([mock_match_event])
             mock_requests.return_value.status_code = 404
@@ -192,7 +192,7 @@ class TestScrapitCommandProcessing:
         """Should create channel when processing event."""
         with (
             patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
-            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+            patch("soccertime.management.commands._image_download.requests.get") as mock_requests,
         ):
             mock_get.return_value = iter([mock_match_event])
             mock_requests.return_value.status_code = 404
@@ -204,7 +204,7 @@ class TestScrapitCommandProcessing:
         """Should associate channels with created event."""
         with (
             patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
-            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+            patch("soccertime.management.commands._image_download.requests.get") as mock_requests,
         ):
             mock_get.return_value = iter([mock_match_event])
             mock_requests.return_value.status_code = 404
@@ -296,7 +296,7 @@ class TestScrapitCommandProcessing:
 
         with (
             patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
-            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+            patch("soccertime.management.commands._image_download.requests.get") as mock_requests,
         ):
             mock_get.return_value = iter(events)
             mock_requests.return_value.status_code = 404
@@ -325,7 +325,7 @@ class TestScrapitCommandProcessing:
 
         with (
             patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
-            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+            patch("soccertime.management.commands._image_download.requests.get") as mock_requests,
         ):
             mock_get.return_value = iter([mock_match_event])
             mock_requests.return_value.status_code = 404
@@ -354,7 +354,7 @@ class TestScrapitCommandProcessing:
 
         with (
             patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get,
-            patch("soccertime.management.commands.scrapit.requests.get") as mock_requests,
+            patch("soccertime.management.commands._image_download.requests.get") as mock_requests,
         ):
             mock_get.return_value = iter([mock_match_event])
             mock_requests.side_effect = requests.ConnectionError("boom")
