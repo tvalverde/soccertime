@@ -22,7 +22,7 @@ soccertime/
 ├── compose.yaml              # Docker Compose for development
 ├── compose.production.yaml   # Docker Compose for production
 ├── Dockerfile                # Application Docker image
-├── Makefile                  # Deployment and management commands (deprecated)
+├── Makefile                  # Deployment and production operations (see `make help`)
 ├── CHANGELOG.md              # Project history and versioning
 ├── pyproject.toml            # Python project config (pytest, ruff, coverage)
 ├── requirements.txt          # Python dependencies (pinned versions)
@@ -286,8 +286,16 @@ make help
 | `make remote-restart` | Restart remote services without uploading code |
 | `make remote-scrape` | Run the scraper on the server and clear the cache |
 | `make remote-check` | Run Django's deployment checks against production |
+| `make remote-smoke-test` | Verify a live deploy from outside: health plus every public page |
 | `make remote-clear-cache` | Drop the rendered page cache |
 | `make remote-redownload-images` | Restore flag images missing from the media volume |
+
+> **Note:** `deploy-production` ends with `remote-smoke-test`, so a deploy that leaves
+> the site broken fails instead of reporting success. It waits for the container to
+> report `healthy` and then fetches the public pages **from outside the server** — an
+> unhealthy container is dropped from the proxy's routing table, so the application
+> can answer 200 on localhost while every visitor gets a 404. Override the checked
+> pages with `SMOKE_PATHS` and the entry point with `PRODUCTION_URL`.
 
 > **Note:** pages are cached for an hour, so a fix is not visible until
 > `make remote-clear-cache` runs (or the cache expires).

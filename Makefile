@@ -1,4 +1,4 @@
-.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-clear-cache remote-redownload-images backup-remote-db list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images backup-remote-db list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -24,6 +24,7 @@ help:
 	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo "  remote-check         Run Django's deployment checks on production"
+	@echo "  remote-smoke-test    Verify a live deploy from outside (health + public pages)"
 	@echo "  remote-clear-cache   Drop the rendered page cache on production"
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
 	@echo ""
@@ -75,6 +76,11 @@ REMOTE_STATIC_VOLUME ?= docker_soccertime-static
 REMOTE_DB_FILE_IN_VOLUME ?= db.sqlite3
 REMOTE_CACHE_FILE_IN_VOLUME ?= soccertime_data_cache.sqlite
 
+# Public entry point and pages checked after a deploy. Override in .env if they change.
+PRODUCTION_URL ?= https://www.mojon.es/soccertime
+SMOKE_PATHS ?= /healthz/ /favorites/ /agenda/ /competitions/ /channels/
+HEALTH_TIMEOUT ?= 90
+
 # === Development Commands ===
 
 # Run tests
@@ -111,8 +117,9 @@ LOCAL_ARCHIVE_PATH = /tmp/$(ARCHIVE_NAME)
 ENV_PROD_FILE = .env.production
 
 # Main target for production deployment.
-# The database snapshot runs before remote_deploy, which is what applies the migrations.
-deploy-production: archive_app upload_files backup-remote-db remote_deploy clean_local_archive
+# The database snapshot runs before remote_deploy, which is what applies the migrations,
+# and the smoke test runs last so a deploy that leaves the site broken fails loudly.
+deploy-production: archive_app upload_files backup-remote-db remote_deploy clean_local_archive remote-smoke-test
 	@echo "Deployment process completed successfully."
 
 # Target to archive application files locally
@@ -274,6 +281,47 @@ remote-clear-cache:
 			$(REMOTE_SOCCERTIME_SERVICE) python manage.py shell -c "from django.core.cache import cache; cache.clear()" \
 	'
 	@echo "Page cache cleared."
+
+# Block until the orchestrator reports the service healthy. A failing health check is
+# how the proxy learns to withdraw the route, so an unhealthy container means the site
+# is down even though the application itself may be answering.
+wait-remote-healthy:
+	@echo "--- Waiting for $(REMOTE_SOCCERTIME_SERVICE) to report healthy ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH); \
+		deadline=$$(( $$(date +%s) + $(HEALTH_TIMEOUT) )); \
+		while :; do \
+			status=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps $(REMOTE_SOCCERTIME_SERVICE) --format "{{.Status}}"); \
+			case "$$status" in \
+				*unhealthy*) echo "  $$status"; exit 1 ;; \
+				*healthy*)   echo "  $$status"; exit 0 ;; \
+			esac; \
+			if [ $$(date +%s) -ge $$deadline ]; then echo "  timed out after $(HEALTH_TIMEOUT)s: $$status"; exit 1; fi; \
+			sleep 2; \
+		done \
+	'
+
+# Verify a deploy actually works, from outside the server. Fetching from inside the
+# container is not enough: when the health check failed, the application still answered
+# 200 on localhost while the proxy served 404 to every real visitor. The query string
+# bypasses the page cache so each page is rendered fresh.
+remote-smoke-test: wait-remote-healthy
+	@echo "--- Checking public pages at $(PRODUCTION_URL) ---"
+	@failed=""; \
+	for path in $(SMOKE_PATHS); do \
+		code=$$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 20 "$(PRODUCTION_URL)$$path?smoke=$$$$"); \
+		printf "  %-20s %s\n" "$$path" "$$code"; \
+		[ "$$code" = "200" ] || failed="$$failed $$path"; \
+	done; \
+	if [ -n "$$failed" ]; then \
+		echo ""; \
+		echo "SMOKE TEST FAILED for:$$failed"; \
+		echo "The deploy is live and broken. Inspect it with 'make remote-check' and the"; \
+		echo "container logs, or roll back with 'make list-remote-backups' followed by"; \
+		echo "'make restore-remote-db BACKUP=<file>'."; \
+		exit 1; \
+	fi; \
+	echo "Smoke test passed."
 
 # Run Django's deployment checks against the running production container
 remote-check:
