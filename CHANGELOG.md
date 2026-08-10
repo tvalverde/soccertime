@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `remote-import-links` Makefile target to import a channel-link file into production. It goes through the server's shared bind mount rather than `docker cp`, since `/tmp` inside the container is a tmpfs and a copy into it is invisible to the process, and it removes the file afterwards. `newera.txt` and `elcano.txt` are now git-ignored, which `AGENTS.md` required but nothing enforced.
+
+### Changed
+- The scraper reports events whose broadcast time is not yet announced ("PD") as `pending_time` rather than folding them into `skipped`, and names each one in the log. They are still not stored: an entry with no time has nowhere to sit in a listing ordered by time. This was the only discarded row that raised no warning, which is how 43 of them a run — including a Barcelona match — went unnoticed. `ScrapingStats.add()` replaces the counter-by-counter aggregation the totals did in two places.
+
 ## [0.2.1] - 2026-08-10
 
 Two silent faults in the logic that decides which channel a scraped link belongs to,

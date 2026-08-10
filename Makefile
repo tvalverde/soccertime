@@ -1,4 +1,4 @@
-.PHONY: help typecheck deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -28,6 +28,7 @@ help:
 	@echo "  remote-smoke-test    Verify a live deploy from outside (health + public pages)"
 	@echo "  remote-clear-cache   Drop the rendered page cache on production"
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
+	@echo "  remote-import-links  Import channel links (SOURCE=, FILE=, ARGS=--dry)"
 	@echo ""
 	@echo "DATABASE (SQLite in Docker volume):"
 	@echo "  backup-remote-db     Snapshot the database to the host, compressed (~5.5 MB)"
@@ -95,6 +96,9 @@ KEEP_MONTHLY ?= 12
 # Snapshots live on the host, not inside the volumes they protect: losing a volume is the
 # failure they guard against, and it would take the backup with it.
 REMOTE_BACKUP_PATH ?= ~/soccertime-backups
+# Bind-mounted into the container, unlike /tmp which is a tmpfs there.
+REMOTE_SHARED_PATH ?= ~/shared
+CONTAINER_SHARED_PATH ?= /shared
 LOCAL_BACKUP_PATH ?= ./backups
 REMOTE_IMAGE ?= $(APP_NAME):latest
 BACKUP_TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
@@ -324,6 +328,29 @@ remote-redownload-images:
 		cd $(REMOTE_DOCKER_PATH); \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
 			$(REMOTE_SOCCERTIME_SERVICE) python manage.py redownload_images $(ARGS) \
+	'
+
+# Import channel links from a local file into production. The file is external data and
+# never lives in the repository, so it is dropped in the shared directory for the run and
+# removed afterwards. It goes through the bind mount rather than `docker cp`, because
+# /tmp inside the container is a tmpfs and a copy into it is invisible to the process.
+# Usage: make remote-import-links SOURCE=newera FILE=~/newera.txt [ARGS=--dry]
+remote-import-links:
+	@if [ -z "$(SOURCE)" ] || [ -z "$(FILE)" ]; then \
+		echo "Usage: make remote-import-links SOURCE=newera FILE=~/newera.txt [ARGS=--dry]"; \
+		exit 1; \
+	fi
+	@echo "--- Importing $(FILE) into production as source $(SOURCE) ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_SHARED_PATH)'
+	@scp -P$(REMOTE_PORT) $(FILE) $(REMOTE_HOST):$(REMOTE_SHARED_PATH)/links-import.txt
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+			$(REMOTE_SOCCERTIME_SERVICE) python manage.py addlinksource \
+			--source=$(SOURCE) --file=$(CONTAINER_SHARED_PATH)/links-import.txt $(ARGS); \
+		status=$$?; \
+		rm -f $(REMOTE_SHARED_PATH)/links-import.txt; \
+		exit $$status \
 	'
 
 # Drop the rendered page cache without running the scraper. Pages are cached for an

@@ -64,9 +64,20 @@ class ScrapingStats:
         self.processed = 0
         self.skipped = 0
         self.errors = 0
+        self.pending_time = 0
+
+    def add(self, other: "ScrapingStats") -> None:
+        """Fold another page's counts into these."""
+        self.processed += other.processed
+        self.skipped += other.skipped
+        self.errors += other.errors
+        self.pending_time += other.pending_time
 
     def __str__(self) -> str:
-        return f"processed={self.processed}, skipped={self.skipped}, errors={self.errors}"
+        return (
+            f"processed={self.processed}, skipped={self.skipped}, "
+            f"errors={self.errors}, pending_time={self.pending_time}"
+        )
 
 
 def clean_text(text: str) -> str:
@@ -261,8 +272,16 @@ def parse_iter(soup: Any, sport: str, base_url: str, stats: ScrapingStats | None
 
             # Parse time
             time_text = cols[0].get_text(strip=True)
-            if time_text == "PD":  # "Por Determinar" - skip
-                stats.skipped += 1
+            if time_text == "PD":
+                # "Por Determinar": the event is real and dated, only its broadcast time
+                # has not been announced. Counted apart from the malformed rows in
+                # `skipped`, and logged, because it used to vanish without a trace: these
+                # are the only discarded rows that raise no warning, which is how 42 of
+                # them went unnoticed for months. They are still not stored — an agenda
+                # entry with no time has nowhere to sit in a listing ordered by time.
+                stats.pending_time += 1
+                description = clean_text(" ".join(cols[2].stripped_strings))[:60]
+                logger.info(f"[{sport}] Time not announced yet, not stored: {description}")
                 continue
 
             if date is None:
@@ -405,10 +424,7 @@ def get_events() -> Iterator[Event]:
 
             yield from parse_iter(soup, sport, url, page_stats)
 
-            # Update total stats
-            total_stats.processed += page_stats.processed
-            total_stats.skipped += page_stats.skipped
-            total_stats.errors += page_stats.errors
+            total_stats.add(page_stats)
 
             logger.info(f"[{sport}] Completed: {page_stats}")
 
@@ -438,9 +454,7 @@ def get_events() -> Iterator[Event]:
             soup = BeautifulSoup(response.content, "lxml")
             yield from parse_iter(soup, TEAM_PAGE_SPORT, url, page_stats)
 
-            total_stats.processed += page_stats.processed
-            total_stats.skipped += page_stats.skipped
-            total_stats.errors += page_stats.errors
+            total_stats.add(page_stats)
 
             logger.info(f"[Team: {slug}] Completed: {page_stats}")
 

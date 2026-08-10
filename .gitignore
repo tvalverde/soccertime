@@ -78,6 +78,9 @@ dmypy.json
 # Project specific
 # External channel-link data sources (see AGENTS.md): never commit them
 *.m3u
+# Input for addlinksource: external data, never part of the repository.
+newera.txt
+elcano.txt
 soccertime_data_cache.sqlite
 media
 db
