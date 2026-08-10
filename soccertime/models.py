@@ -462,6 +462,9 @@ class Event(models.Model):
         RACE = "race", _("Race")
         SIMPLE = "simple", _("Simple Event")
 
+    # Set by each concrete subclass, applied on save so no subclass has to remember.
+    EVENT_TYPE = None
+
     event_type = models.CharField(
         max_length=10,
         choices=EventType.choices,
@@ -506,17 +509,25 @@ class Event(models.Model):
     def date_end(self):
         return self.date + (self.duration or datetime.timedelta(hours=2))
 
+    @property
+    def is_favorite_event(self):
+        """Only matches can involve a favourite team; the rest override nothing."""
+        return False
+
+    def save(self, *args, **kwargs):
+        if self.EVENT_TYPE:
+            self.event_type = self.EVENT_TYPE
+        super().save(*args, **kwargs)
+
 
 class Match(Event):
+    EVENT_TYPE = Event.EventType.MATCH
+
     local = models.ForeignKey(Team, related_name="home_matches", on_delete=models.CASCADE)
     visitor = models.ForeignKey(Team, related_name="away_matches", on_delete=models.CASCADE)
 
     class Meta:
         verbose_name_plural = "matches"
-
-    def save(self, *args, **kwargs):
-        self.event_type = Event.EventType.MATCH
-        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.local} - {self.visitor}"
@@ -527,30 +538,18 @@ class Match(Event):
 
 
 class Race(Event):
-    name = models.CharField(max_length=255)
+    EVENT_TYPE = Event.EventType.RACE
 
-    def save(self, *args, **kwargs):
-        self.event_type = Event.EventType.RACE
-        super().save(*args, **kwargs)
+    name = models.CharField(max_length=255)
 
     def __str__(self):
         return f"{self.name}"
-
-    @property
-    def is_favorite_event(self):
-        return False
 
 
 class SimpleEvent(Event):
-    name = models.CharField(max_length=255)
+    EVENT_TYPE = Event.EventType.SIMPLE
 
-    def save(self, *args, **kwargs):
-        self.event_type = Event.EventType.SIMPLE
-        super().save(*args, **kwargs)
+    name = models.CharField(max_length=255)
 
     def __str__(self):
         return f"{self.name}"
-
-    @property
-    def is_favorite_event(self):
-        return False

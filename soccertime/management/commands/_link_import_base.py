@@ -15,6 +15,12 @@ class BaseLinkImportCommand(BaseCommand):
     quality, link) tuples and delegate persistence to import_entries().
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Owned here because import_entries() reads it: leaving each subclass to create
+        # it means a new one that forgets breaks the shared pipeline instead of its own.
+        self.warnings = []
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -245,68 +251,66 @@ class BaseLinkImportCommand(BaseCommand):
             "channels_not_found": 0,
         }
 
-        try:
-            with transaction.atomic():
-                for channel_name, subcategory, quality, link in entries:
-                    stats["channels_processed"] += 1
+        with transaction.atomic():
+            for channel_name, subcategory, quality, link in entries:
+                stats["channels_processed"] += 1
 
-                    channels = self.match_channels(channel_name)
-                    if not channels.exists():
-                        self.warnings.append(f"Channel not found: {channel_name}")
-                        stats["channels_not_found"] += 1
+                channels = self.match_channels(channel_name)
+                if not channels.exists():
+                    self.warnings.append(f"Channel not found: {channel_name}")
+                    stats["channels_not_found"] += 1
+                    continue
+
+                category = re.sub(r" \d+", "", channel_name).title()
+
+                channel_link, created = ChannelLink.objects.update_or_create(
+                    link=link,
+                    defaults={
+                        "name": channel_name.title(),
+                        "category": category,
+                        "subcategory": subcategory.title() if subcategory else None,
+                        "quality": quality,
+                    },
+                )
+
+                if not dry_run:
+                    channel_link.sources.add(source_obj)
+
+                if created:
+                    stats["new_links"] += 1
+                    self.stdout.write(self.style.SUCCESS(f"  New: {link[:50]}..."))
+                else:
+                    stats["updated_links"] += 1
+                    self.stdout.write(f"  Updated: {link[:50]}...")
+
+                # Strategy: Match multiple channels but filter out restrictive types (e.g. BAR)
+                # if the link doesn't explicitly ask for them.
+                # This allows "LA 2" to match "La 2 TVE" AND "La 2 Cat",
+                # but prevents "DAZN 1" from matching "DAZN 1 Bar".
+
+                target_channels = channels
+
+                for channel in target_channels:
+                    # Safety: Avoid associating residential links to Horeca/Bar channels
+                    # unless the link name explicitly says "BAR".
+                    if "bar" in channel.name.lower() and "bar" not in channel_name.lower():
                         continue
 
-                    category = re.sub(r" \d+", "", channel_name).title()
-
-                    channel_link, created = ChannelLink.objects.update_or_create(
-                        link=link,
-                        defaults={
-                            "name": channel_name.title(),
-                            "category": category,
-                            "subcategory": subcategory.title() if subcategory else None,
-                            "quality": quality,
-                        },
-                    )
-
+                    if channel.links.filter(link=channel_link.link).exists():
+                        self.warnings.append(f"Already present in {channel.name}: {channel_link.link[:40]}...")
+                        continue
                     if not dry_run:
-                        channel_link.sources.add(source_obj)
+                        channel.links.add(channel_link)
+                    stats["linked_links"] += 1
+                    self.stdout.write(f"  Linked to: {channel.name}")
 
-                    if created:
-                        stats["new_links"] += 1
-                        self.stdout.write(self.style.SUCCESS(f"  New: {link[:50]}..."))
-                    else:
-                        stats["updated_links"] += 1
-                        self.stdout.write(f"  Updated: {link[:50]}...")
-
-                    # Strategy: Match multiple channels but filter out restrictive types (e.g. BAR)
-                    # if the link doesn't explicitly ask for them.
-                    # This allows "LA 2" to match "La 2 TVE" AND "La 2 Cat",
-                    # but prevents "DAZN 1" from matching "DAZN 1 Bar".
-
-                    target_channels = channels
-
-                    for channel in target_channels:
-                        # Safety: Avoid associating residential links to Horeca/Bar channels
-                        # unless the link name explicitly says "BAR".
-                        if "bar" in channel.name.lower() and "bar" not in channel_name.lower():
-                            continue
-
-                        if channel.links.filter(link=channel_link.link).exists():
-                            self.warnings.append(f"Already present in {channel.name}: {channel_link.link[:40]}...")
-                            continue
-                        if not dry_run:
-                            channel.links.add(channel_link)
-                        stats["linked_links"] += 1
-                        self.stdout.write(f"  Linked to: {channel.name}")
-
-                if dry_run:
-                    raise transaction.TransactionManagementError("Dry run - rollback")
-
-        except transaction.TransactionManagementError:
             if dry_run:
-                self.stdout.write(self.style.WARNING("\nDry run finished - nothing was saved"))
-            else:
-                raise
+                # Everything above ran against the database so the counts are real; the
+                # rollback undoes it on the way out, with no exception to catch.
+                transaction.set_rollback(True)
+
+        if dry_run:
+            self.stdout.write(self.style.WARNING("\nDry run finished - nothing was saved"))
 
         if not dry_run:
             cache.clear()

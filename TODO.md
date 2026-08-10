@@ -20,57 +20,38 @@ Empty.
 
 ### Low
 
-1. **Stop using private Django API in the admin.** `AutoModelAdmin.get_list_filter`
-   filters on `field._choices`; the public `field.choices` is equivalent and will not
-   break on an upgrade. `get_list_display` also mutates the shared `ModelAdmin`
-   singleton with `setattr(self, ...)` per request — harmless today because the
-   generated callables are equivalent, but it should build a local mapping instead.
+Nothing here is worth doing on its own account; each entry says why it is still open.
 
-2. **Wrap the user-facing strings in `gettext_lazy`.** The `empty_state()` defaults in
-   `views.py` (`"No hay eventos a la vista :)"`, `"No hay canales disponibles :_("`) are
-   hardcoded while the templates already use `{% translate %}`.
+1. **`LinkSchemeFilter` reads every link URL.** It walks the whole `ChannelLink` table on
+   each admin list render to build the scheme dropdown. **Parked:** 377 rows, admin only,
+   so the cost is not measurable. Revisit if the table grows by an order of magnitude,
+   and then persist the scheme rather than caching the query.
 
-3. **Make the view context consistent.** `team_events` and `competition_events` rebuild
-   the context by hand instead of using `get_base_context()`, and both `team_events` and
-   `competitions` use function-level imports (`from soccertime.models import Match`,
-   `from django.db.models import Exists, OuterRef`). Move the imports to module scope and
-   reuse the shared helper.
+2. **`match_channels` runs many queries per imported entry.** Several chained `.exists()`
+   probes plus a per-channel `channel.links.filter(...).exists()` inside the import loop.
+   **Parked:** the cost is paid offline by a command run by hand a few times a month.
+   Preload the channel names into memory if a large playlist ever makes it slow.
 
-4. **Give `self.warnings` an owner.** `BaseLinkImportCommand.import_entries` reads it,
-   but only each subclass's `handle()` initialises it, so a new subclass breaks the
-   pipeline. Initialise it in the base class.
+3. **Add type hints.** `models.py` has none. **Parked pending a decision on scope:** the
+   diff touches every module, so it is worth agreeing first whether it covers only the
+   models and querysets or the views and commands too, and whether a checker runs in CI —
+   hints nobody verifies drift out of date and mislead.
 
-5. **Replace the dry-run exception abuse.** `import_entries` triggers its rollback by
-   raising `transaction.TransactionManagementError` and catching it. Use
-   `transaction.set_rollback(True)` or a dedicated private exception.
-
-6. **Deduplicate `is_favorite_event`.** `Race` and `SimpleEvent` both define it
-   returning `False`. Move the default to `Event` and override only in `Match`.
-
-7. **`LinkSchemeFilter` reads every link URL.** It iterates the whole `ChannelLink`
-   table on each admin list render to build the scheme dropdown. Negligible at today's
-   377 rows and admin-only, hence the low rank; persist the scheme or cache a
-   `values_list(...).distinct()` if the table grows.
-
-8. **`match_channels` runs many queries per imported entry.** Several chained
-   `.exists()` probes plus a per-channel `channel.links.filter(...).exists()` inside the
-   import loop. Offline cost only. Preload the channel names and match in Python if
-   large playlists become slow.
-
-9. **Centralize the `event_type` logic.** Set it in the base `Event.save()` or a
-   `pre_save` signal instead of repeating the assignment in every subclass.
-
-10. **Add type hints** to models, managers and querysets for IDE support and earlier
-    error detection.
-
-11. **Revisit MTI performance only if measured.** Originally filed as high priority, but
-    a query-count check on the real database showed `with_related()` already works:
-    reaching `child_event` and then its `competition`, `sport`, `channels` and `links`
-    across 25 events costs **0 extra queries**, because the MTI child fetched via
-    `select_related` shares the parent's caches. Reach for `django-model-utils`'
-    `InheritanceManager` only if profiling later shows JOIN overhead.
+4. **Revisit MTI performance only if measured.** Not work: a note so it is not reopened
+   without profiling. A query count on the real database showed `with_related()` already
+   works — reaching `child_event` and then its `competition`, `sport`, `channels` and
+   `links` across 25 events costs **0 extra queries**, because the MTI child fetched via
+   `select_related` shares the parent's caches.
 
 ## Done
+
+### Blocks E and F — 2026-08-10
+- [x] **Stopped using private Django API in the admin.** `field._choices` becomes the public `field.choices`, and the generated relation columns are attached once in `__init__`, at registration, instead of being rewritten on the shared `ModelAdmin` instance by every request. The names stay, because five subclasses look them up with `list_display.index(...)`.
+- [x] **Gave `self.warnings` an owner.** `import_entries` reads it, so the base command creates it; a subclass that forgot used to break the shared pipeline rather than its own.
+- [x] **Replaced the dry-run exception abuse** with `transaction.set_rollback(True)`, removing a `try`/`except` that raised `TransactionManagementError` at itself to force a rollback.
+- [x] **Removed the duplicated `is_favorite_event`** — the constant `False` now lives on `Event` and only `Match` overrides it — and **centralised `event_type`**: each subclass declares `EVENT_TYPE` and `Event.save()` applies it, replacing three near-identical `save()` overrides.
+- [x] **Made the view context consistent.** `get_base_context(with_teams=False)` replaces the pattern of asking for the favourite teams and popping them back out, the two views that assembled their context by hand now use it, and the function-level imports moved to module scope. Verified the favourites strip still renders on the agenda only, as before.
+- [x] **Wrapped the user-facing strings in `gettext_lazy`**, as named constants so they are visible in one place. The site keeps serving them in Spanish — there is no catalogue to translate against — so nothing changed on screen.
 
 ### Block D — 2026-08-10
 - [x] **Confirmed the `ChannelLink` ordering is intentional.** "Freshest day first, and within that day the order the source listed the links in" is the wanted behaviour, so it stays: collapsing it to `-date_updated` would show every imported batch reversed. Recorded in the comment on `CHANNEL_LINK_ORDERING` so it is not mistaken for an accident again. Worth knowing that `verified` is `False` on all 377 rows, so that tiebreaker never fires until links start being checked.

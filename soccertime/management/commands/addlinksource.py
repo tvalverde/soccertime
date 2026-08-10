@@ -136,8 +136,6 @@ class Command(BaseLinkImportCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING("=== DRY RUN ==="))
 
-        self.warnings = []
-
         parser_map = {
             "NEWERA": self.parse_newera,
             "ELCANO": self.parse_elcano,

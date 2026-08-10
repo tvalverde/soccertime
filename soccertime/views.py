@@ -1,13 +1,29 @@
 from django.conf import settings
 from django.core.paginator import Paginator
-from django.db.models import Count, Max, Q
+from django.db.models import Count, Exists, Max, OuterRef, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import cache_page
 
-from soccertime.models import CHANNEL_LINK_ORDERING, Channel, ChannelLink, Competition, Event, Sport, Team
+from soccertime.models import (
+    CHANNEL_LINK_ORDERING,
+    Channel,
+    ChannelLink,
+    Competition,
+    Event,
+    Favorite,
+    Match,
+    Sport,
+    Team,
+)
+
+# The site is served in Spanish; these are wrapped so a future locale can translate them.
+NO_EVENTS_MESSAGE = _("No hay eventos a la vista :)")
+NO_FAVOURITE_EVENTS_MESSAGE = _("No hay eventos a la vista :(")
+NO_CHANNELS_MESSAGE = _("No hay canales disponibles :_(")
 
 # --- Helper functions ---
 
@@ -34,12 +50,16 @@ def get_favorite_teams():
     )
 
 
-def get_base_context():
-    """Get common context data used across multiple views."""
-    return {
-        "competitions": get_favorite_competitions(),
-        "teams": get_favorite_teams(),
-    }
+def get_base_context(with_teams=False):
+    """Context every listing shares.
+
+    Only the agenda shows the favourite teams strip, so the rest do not pay for the
+    query; the views used to ask for it and pop it back out.
+    """
+    context = {"competitions": get_favorite_competitions()}
+    if with_teams:
+        context["teams"] = get_favorite_teams()
+    return context
 
 
 def parse_requested_date(value):
@@ -58,7 +78,7 @@ def paginate_queryset(queryset, request, per_page=25):
     return paginator.get_page(request.GET.get("page"))
 
 
-def empty_state(message="No hay eventos a la vista :)", level="info"):
+def empty_state(message=NO_EVENTS_MESSAGE, level="info"):
     """Notice the templates render when the listing turns out to be empty.
 
     It travels in the context instead of the messages framework: these views are
@@ -80,9 +100,8 @@ def favorites(request):
     queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3).with_related().chronological()
 
     context = get_base_context()
-    context.pop("teams", None)
     context.update({"events": queryset})
-    context.update(empty_state("No hay eventos a la vista :(", "warning"))
+    context.update(empty_state(NO_FAVOURITE_EVENTS_MESSAGE, "warning"))
     return render(request, "soccertime/agenda.html", context)
 
 
@@ -99,7 +118,7 @@ def agenda(request):
 
     queryset = queryset.search(request.GET.get("search")).chronological()
 
-    context = get_base_context()
+    context = get_base_context(with_teams=True)
     context.update(
         {
             "events": paginate_queryset(queryset, request),
@@ -119,8 +138,6 @@ def team_events(request, team):
     now = timezone.now()
 
     # Upcoming matches for this team
-    from soccertime.models import Match
-
     future_matches = Match.objects.select_related("local", "visitor").filter(
         Q(local=team_obj) | Q(visitor=team_obj), date__gte=now
     )
@@ -145,17 +162,16 @@ def team_events(request, team):
         key=lambda t: opponent_dates.get(t.id),
     )
 
-    return render(
-        request,
-        "soccertime/agenda.html",
+    context = get_base_context()
+    context.update(
         {
             "events": queryset,
             "events_title": team_obj.name,
-            "competitions": get_favorite_competitions(),
             "competition_teams": competition_teams,
             **empty_state(),
-        },
+        }
     )
+    return render(request, "soccertime/agenda.html", context)
 
 
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
@@ -164,7 +180,6 @@ def channel_events(request, channel):
     queryset = Event.objects.for_channel(channel).in_progress_or_upcoming().with_related().chronological()
 
     context = get_base_context()
-    context.pop("teams", None)
     context.update(
         {
             "events": queryset,
@@ -181,7 +196,6 @@ def sport_events(request, sport):
     queryset = Event.objects.for_sport(sport).in_progress_or_upcoming().with_related().chronological()
 
     context = get_base_context()
-    context.pop("teams", None)
     context.update(
         {
             "events": paginate_queryset(queryset, request),
@@ -197,13 +211,11 @@ def competition_events(request, competition):
     competition_obj = get_object_or_404(Competition, pk=competition)
     queryset = Event.objects.for_competition(competition).in_progress_or_upcoming().with_related().chronological()
 
-    return render(
-        request,
-        "soccertime/agenda.html",
+    context = get_base_context()
+    context.update(
         {
             "events": queryset,
             "events_title": competition_obj.name,
-            "competitions": get_favorite_competitions(),
             "competition_teams": Team.objects.filter(
                 Q(home_matches__competition=competition_obj) | Q(away_matches__competition=competition_obj)
             )
@@ -211,8 +223,9 @@ def competition_events(request, competition):
             .order_by("name")
             .distinct(),
             **empty_state(),
-        },
+        }
     )
+    return render(request, "soccertime/agenda.html", context)
 
 
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
@@ -226,7 +239,7 @@ def channels(request):
         "soccertime/channels.html",
         {
             "channels_links": queryset,
-            **empty_state("No hay canales disponibles :_(", "danger"),
+            **empty_state(NO_CHANNELS_MESSAGE, "danger"),
         },
     )
 
@@ -234,10 +247,6 @@ def channels(request):
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def competitions(request):
     """List sports and their competitions, grouping in Python to avoid N+1 queries."""
-    from django.db.models import Exists, OuterRef, Q
-
-    from soccertime.models import Favorite
-
     today = timezone.now().date()
 
     # Sports that still have upcoming events
@@ -274,11 +283,6 @@ def competitions(request):
     # Preserve the sport ordering established above
     sports_data = [sports_map[sport.id] for sport in active_sports]
 
-    return render(
-        request,
-        "soccertime/competitions.html",
-        {
-            "sports_data": sports_data,
-            "competitions": get_favorite_competitions(),
-        },
-    )
+    context = get_base_context()
+    context.update({"sports_data": sports_data})
+    return render(request, "soccertime/competitions.html", context)

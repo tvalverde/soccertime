@@ -97,7 +97,5 @@ class Command(BaseLinkImportCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING("=== DRY RUN ==="))
 
-        self.warnings = []
-
         entries = self.parse_m3u(options["file"])
         self.import_entries(entries, source_name, dry_run)

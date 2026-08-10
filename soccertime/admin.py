@@ -52,25 +52,36 @@ class AutoModelAdmin(admin.ModelAdmin):
     search_fields = []
     list_per_page = 20
 
-    def get_list_display(self, request):
-        list_display = []
+    def __init__(self, model, admin_site):
+        super().__init__(model, admin_site)
+        # Subclasses refer to these columns by name, so they have to be real attributes.
+        # They are attached once here, at registration, rather than on every request:
+        # the admin keeps a single instance per model and rewriting it per request meant
+        # every concurrent request mutating shared state, however benignly.
+        for field in self._displayable_fields():
+            if field.is_relation:
+                setattr(self, f"{field.name}_link", make_related_field(field))
+
+    def _displayable_fields(self):
+        """Concrete fields worth a column: no passwords, no parent links."""
         for field in self.model._meta.concrete_fields:
             if field.name == "password":
                 continue
             if isinstance(field, models.OneToOneField) and field.remote_field.parent_link:
                 continue
-            field_name = field.name
-            if field.is_relation:
-                field_name = f"{field_name}_link"
-                setattr(self, field_name, make_related_field(field))
-            list_display.append(field_name)
+            yield field
+
+    def get_list_display(self, request):
+        list_display = [
+            f"{field.name}_link" if field.is_relation else field.name for field in self._displayable_fields()
+        ]
         for field in self.list_display or []:
             if field not in list_display:
                 list_display.append(field)
         return list_display
 
     def get_list_filter(self, request):
-        list_filter = [field.name for field in self.model._meta.concrete_fields if field._choices]
+        list_filter = [field.name for field in self.model._meta.concrete_fields if field.choices]
         list_filter += [
             field.name
             for field in self.model._meta.concrete_fields
