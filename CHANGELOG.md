@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated `.geminiignore` and `.claudeignore` to prevent context duplication between LLM CLIs.
 
 ### Changed
+- `LinkSchemeFilter` resolves the distinct link schemes with a single database query instead of reading every row into Python, and returns them in a stable order; they came from a set, so the admin dropdown could be ordered differently in each process.
 - The admin attaches its generated relation columns once at registration instead of rewriting them on the shared `ModelAdmin` instance on every request, and reads `field.choices` rather than the private `field._choices`.
 - `event_type` is applied by `Event.save()` from an `EVENT_TYPE` declared on each subclass, and the constant `is_favorite_event` default moved to `Event`, replacing three near-identical overrides apiece.
 - Views share `get_base_context(with_teams=...)` instead of asking for the favourite teams and popping them back out, and their imports moved to module scope.

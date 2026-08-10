@@ -26,7 +26,8 @@ def build_filter(value=None):
 
 
 def schemes_offered():
-    return {scheme for scheme, _ in build_filter().lookups(None, ChannelLinkAdmin(ChannelLink, admin.site))}
+    """What the admin renders: SimpleListFilter resolves the choices when constructed."""
+    return [scheme for scheme, _ in build_filter().lookup_choices]
 
 
 def filtered_names(value=None):
@@ -36,7 +37,7 @@ def filtered_names(value=None):
 @pytest.mark.django_db
 class TestLinkSchemeFilter:
     def test_lists_every_scheme_in_use(self, links):
-        assert schemes_offered() == {"acestream", "https", "http"}
+        assert set(schemes_offered()) == {"acestream", "https", "http"}
 
     def test_ignores_rows_without_a_link(self, links):
         """A pending row has no scheme and must not produce an empty option."""
@@ -52,5 +53,21 @@ class TestLinkSchemeFilter:
         """Matching on the bare prefix would return both."""
         assert filtered_names("http") == ["Plain"]
 
+    def test_lists_them_in_a_stable_order(self, links):
+        """They came out of a set, so the dropdown order changed between processes."""
+        assert schemes_offered() == sorted(schemes_offered())
+        assert schemes_offered() == ["acestream", "http", "https"]
+
+    def test_resolves_the_schemes_in_a_single_query(self, links, django_assert_num_queries):
+        """It used to read every row into Python to parse it."""
+        with django_assert_num_queries(1):
+            build_filter()
+
+    def test_ignores_links_with_no_scheme(self, db, channel_link_source):
+        link = ChannelLink.objects.create(name="Bare", link="just-a-hash")
+        link.sources.add(channel_link_source)
+
+        assert schemes_offered() == []
+
     def test_no_links_at_all(self, db):
-        assert schemes_offered() == set()
+        assert schemes_offered() == []
