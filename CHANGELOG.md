@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-10
+
+Events the scraper was quietly throwing away are now reported. Nothing about what gets
+stored has changed: the point is knowing what does not.
+
 ### Added
-- `remote-import-links` Makefile target to import a channel-link file into production. It goes through the server's shared bind mount rather than `docker cp`, since `/tmp` inside the container is a tmpfs and a copy into it is invisible to the process, and it removes the file afterwards. `newera.txt` and `elcano.txt` are now git-ignored, which `AGENTS.md` required but nothing enforced.
+- `remote-import-links` Makefile target to import a channel-link file into production. The file travels through the server's shared bind mount rather than `docker cp`, since `/tmp` inside the container is a tmpfs, which makes a copy into it report success while staying invisible to the process; it is removed when the run finishes.
+- `newera.txt` and `elcano.txt` to `.gitignore`. `AGENTS.md` already said these external data files must never be committed, but nothing stopped it.
 
 ### Changed
-- The scraper reports events whose broadcast time is not yet announced ("PD") as `pending_time` rather than folding them into `skipped`, and names each one in the log. They are still not stored: an entry with no time has nowhere to sit in a listing ordered by time. This was the only discarded row that raised no warning, which is how 43 of them a run — including a Barcelona match — went unnoticed. `ScrapingStats.add()` replaces the counter-by-counter aggregation the totals did in two places.
+- The scraper counts events whose broadcast time has not been announced ("PD") as `pending_time` instead of folding them into `skipped`, and names each one in the log. They are still not stored: an entry with no time has nowhere to sit in a listing ordered by time, and inventing one would put a false hour on the agenda. This was the only discarded row that raised no warning, which is how 44 of them a run went unnoticed — among them a Barcelona and a Real Madrid match. Running it against the source drops `skipped` to zero on every page, so every row being discarded was one of these rather than a parsing failure.
+- `ScrapingStats.add()` folds a page's counters into the totals, replacing the counter-by-counter addition written out in two places, where a new counter could be added to one and forgotten in the other.
 
 ## [0.2.1] - 2026-08-10
 
