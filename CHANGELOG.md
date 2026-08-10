@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Pillow upgraded from 12.1.0 to 12.3.0. The old version is in range for `CVE-2026-25990` (out-of-bounds write) and `CVE-2026-42311` (integer overflow), both of which can lead to arbitrary code execution when a crafted PSD file is parsed, and for `CVE-2026-59203`, an infinite loop in the EPS parser. This project feeds Pillow image bytes downloaded from URLs found in scraped HTML, and Pillow selects its decoder by sniffing the content rather than trusting the extension, so a URL ending in `.webp` that serves a PSD reaches the vulnerable decoder.
+- Django upgraded from 6.0.1 to 6.0.8, which is five security releases of accumulated fixes. Several apply directly to how this project is built rather than being theoretical: `CVE-2025-14550` is a denial of service in `ASGIRequest` via repeated headers and the site is served by uvicorn over ASGI; `CVE-2026-25674` concerns the file-based cache and file-system storage backends creating objects with unintended permissions, and both are in use; `CVE-2026-35193`, `CVE-2026-8404` and `CVE-2026-48587` are private-data exposure through `cache_page` and `Vary` handling, and every public view here is wrapped in `@cache_page`; `CVE-2026-15920` is cross-site scripting via `URLField` values rendered as links in the admin, which is where `ChannelLink.link` is edited. Staying on the 6.0 series rather than moving to 6.1 keeps this a security fix with no feature-release risk.
+
 ## [0.3.1] - 2026-08-11
 
 A competition's crest strip overflowed by a single team, and the control offering to
