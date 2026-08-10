@@ -1,0 +1,64 @@
+# Soccertime — instructions for Claude Code
+
+**Read `AGENTS.md` first.** It holds the project conventions: stack, testing rules,
+the mandatory `CHANGELOG.md` entry after every change, and the Ruff commands. The other
+CLIs load it automatically; Claude Code does not, so it is easy to work a whole session
+without ever seeing it. That is exactly how the changelog went unmaintained.
+
+## Verify the failing path, not the working one
+
+Two production outages in one session came from the same mistake: testing the state the
+local environment happens to be in, rather than the states production is actually in.
+
+- Local media is complete. Production had 49 flag rows whose file was gone. Declaring
+  `width_field` on the image fields made Django read the file on `post_init`, so merely
+  loading those rows raised `FileNotFoundError` and `/competitions/` returned 500.
+- HTTPS traffic arrives through Traefik carrying `X-Forwarded-Proto`. The container
+  health check does not. Enabling `SECURE_SSL_REDIRECT` answered it with a 301, the check
+  failed, the container was marked unhealthy and the proxy withdrew the route, so every
+  page returned 404.
+
+Before deploying anything that touches stored data or request handling, list the states
+production can hold that local cannot — missing files, null columns, rows written by
+older code, callers that bypass the proxy — and exercise them. Querying production
+read-only first is cheap, and it is what made the `ChannelLink` unique constraint land
+without incident: counting duplicates beforehand showed there were none.
+
+When a test only passes because the environment is clean, it is not a regression test.
+Confirm a new test fails without the fix.
+
+## A deploy is not verified until the container is healthy
+
+`make deploy-production` reported "completed successfully" both times the site was
+broken. After every deploy: wait for the container to report `healthy`, fetch the real
+pages, and check the logs for 500s. `make remote-check` must come back clean. Pages are
+cached for an hour, so use `make remote-clear-cache` before concluding anything from a
+page fetch.
+
+## Django specifics this project has already paid for
+
+- Never declare `width_field` / `height_field` on an `ImageField` here: they hook
+  `update_dimension_fields` to `post_init`, which reads the file. `save_image` records
+  the dimensions from the buffer instead.
+- `SECURE_SSL_REDIRECT` needs `SECURE_REDIRECT_EXEMPT` for `healthz`.
+- Data migrations run against *historical* models, which can still carry field options a
+  later migration removes. Read with `values_list` and write with `update` so no model
+  instance — and no `post_init` handler — is ever built.
+- Views are wrapped in `@cache_page`. Never put per-request state into a cached response:
+  a `messages` entry ends up in the shared page cache and is served to everyone else.
+  Empty states travel in the context and render `soccertime/empty_state.html`.
+- `Event.Meta.ordering` is deliberately the bare `date`. Ordering by related fields makes
+  every count, lookup and admin query join those tables. Listings opt in with
+  `EventQuerySet.chronological()`.
+
+## Production operations
+
+Every production operation belongs in the `Makefile`, never in an ad-hoc SSH command, so
+it is reviewable and repeatable. `deploy-production` snapshots the database before
+migrating. `.env.production` is not versioned — it holds the secret key — but the deploy
+uploads it from the working copy, so production configuration changes take effect there.
+
+## Committing
+
+Stage explicit paths. `git add -A` in this repository sweeps in sandbox artefacts that
+are not real files.

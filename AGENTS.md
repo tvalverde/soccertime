@@ -61,7 +61,7 @@ This document provides the necessary context for understanding and working on th
     -   **Component Consistency:**
         -   **Competitions:** Always show with their flag (`{{ competition.flag.flag_image|safe }}`).
         -   **Teams:** Always show as `[Crest] + Name` to avoid ambiguity between teams sharing the same crest (e.g., Male/Female categories).
-    -   **Empty States:** Use the global Django `messages` framework instead of hardcoded alert blocks in specific templates.
+    -   **Empty States:** Pass `empty_message` / `empty_message_level` in the view context (see `empty_state()` in `views.py`) and include `soccertime/empty_state.html` when the listing is empty. Do **not** use the Django `messages` framework here: the listing views are wrapped in `@cache_page`, so a per-request message is stored in the shared page cache and served to every other visitor.
     -   **Accessibility:** Always provide `aria-label` for links and interactive elements, especially those containing only icons or images.
 
 ## 6. Language & Localization
