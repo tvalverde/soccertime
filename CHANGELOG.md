@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-10
+
+A release dominated by a code review and the production work that came out of it: seven
+confirmed bugs, two of them causing silent data loss, the transport security of a
+publicly reachable admin, and a deploy that can no longer report success over a broken
+site. The application code is now annotated and type-checked.
+
 ### Added
 - Type annotations across the application code, checked by mypy with django-stubs through a new `make typecheck`, and ruff's ANN rules inside `make lint` so unannotated code cannot land. `mypy`, `django-stubs` and `types-requests` added to the requirements.
-- `soccertime/rendering.py`, the single source of image markup for both the templates and the admin, exposed to templates as the `render_image_markup` filter. Models keep the image and its dimensions; the HTML lives outside them, so templates no longer need `|safe`.
+- `soccertime/rendering.py`, the single source of image markup for both the templates and the admin, exposed to templates as the `render_image_markup` filter. Models keep the image and its dimensions; the HTML lives outside them, so templates no longer need `|safe`. This finishes the decoupling the filter was introduced for.
 - Test modules for `filters.py` and the template filters, which had none.
 - `DJANGO_CACHE_LOCATION` to configure the file cache path.
 - `redownload_images` management command (with `--dry-run`) to restore flag images whose file is missing from storage, re-fetching them from the URL each `Flag` keeps in its `name`.
@@ -27,7 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CLAUDE.md`, pointing at `AGENTS.md` and recording the verification rules learned from two production incidents.
 - `duration` field (`DurationField`) to `Event` model allowing custom event durations (defaults to 2 hours if not specified).
 - `validate_channel_link` validator to `ChannelLink.link` supporting IPTV and P2P protocols (`acestream`, `sop`, `rtmp`, `m3u8`, `intent`, `http`, `https`).
-- `render_image_markup` template filter in `soccertime_tags.py` to decouple HTML markup generation from ORM models.
 - Expanded test suite with 18 unit tests covering custom event durations across midnight, P2P link validation, manager forwarding, and template tags.
 - Scraper support for team-specific pages in the `futbolenlatv` source to capture extra events (e.g. friendlies) not listed in the general agenda.
 - Auto-discovery mechanism in `scrapit` command to automatically extract and persist team slugs from `<a>` tags during standard scraping.
@@ -37,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `*.m3u` pattern to `.gitignore`, since M3U playlists are external data sources that must not be committed.
 - Rule in `GEMINI.md` to officially assign complex bug investigations and UI error diagnosis to the Opus 4.6 Architect subagent.
 - Visual highlight (orange/gold left border) to `agenda_item.html` for matches involving favorite teams.
-- `is_favorite_cached` property to `Team` and `Competition` models, and `is_favorite_event` to `Event` subclasses.
+- `is_favorite_cached` property on `Team`, and `is_favorite_event` on `Event`, overridden by `Match`.
 - Database prefetching for favorite relationships in `EventQuerySet.with_related()` to prevent N+1 queries.
 - Rule regarding regression testing for bug fixes in `AGENTS.md`.
 - Competition/Events title header to `agenda.html` to improve context visibility when filtering.
@@ -69,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - `channel_matchers.py`: 320 lines imported by nothing, advertised by Django as a command it could not run.
-- `Sport.competitions_with_events`, `Sport.competitions_without_events`, `Competition.is_favorite` and `Competition.is_favorite_cached`: superseded or byte-identical duplicates, used by nothing but the tests that kept them alive.
+- `Sport.competitions_with_events`, `Sport.competitions_without_events` and `Competition.is_favorite`: superseded or byte-identical duplicates, used by nothing but the tests that kept them alive.
 - `render_image`, `flag_image` and `crest_image` from the models, along with the duplicated fallback SVG. The markup moved to `soccertime/rendering.py`.
 - `migrate_crests` management command. A one-off path migration from early 2026 whose "missing or empty file" branch cleared the crest reference of any team whose file was absent, turning a dangling reference the scraper repairs by itself into permanent loss: 1357 teams lost their crest that way.
 - Legacy and redundant template files: `events.html`, `match_item.html`, `simple_event_item.html`, and `event_header.html`.
