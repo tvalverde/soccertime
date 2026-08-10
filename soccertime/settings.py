@@ -19,11 +19,16 @@ from django.core.exceptions import ImproperlyConfigured
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def env_flag(name):
+    """Read a boolean setting from the environment, defaulting to off."""
+    return os.environ.get(name, "").lower() == "true"
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DJANGO_DEBUG", "").lower() == "true" or False
+DEBUG = env_flag("DJANGO_DEBUG")
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
@@ -139,7 +144,7 @@ STATIC_ROOT = os.environ.get("DJANGO_STATIC_ROOT") or None
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-USE_X_FORWARDED_HOST = os.environ.get("DJANGO_USE_X_FORWARDED_HOST", "").lower() == "true"
+USE_X_FORWARDED_HOST = env_flag("DJANGO_USE_X_FORWARDED_HOST")
 FORCE_SCRIPT_NAME = os.environ.get("DJANGO_FORCE_SCRIPT_NAME") or None
 SESSION_COOKIE_PATH = os.environ.get("DJANGO_SESSION_COOKIE_PATH") or None
 
@@ -164,3 +169,27 @@ CSRF_TRUSTED_ORIGINS = (
     if os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS")
     else []
 )
+
+# Transport security. TLS is terminated by the reverse proxy, so Django only needs to
+# trust the scheme it forwards; enable these wherever the site is actually served over
+# HTTPS and leave them off for local development on plain HTTP.
+if env_flag("DJANGO_BEHIND_TLS_PROXY"):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+SESSION_COOKIE_SECURE = env_flag("DJANGO_SECURE_COOKIES")
+CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+
+SECURE_SSL_REDIRECT = env_flag("DJANGO_SECURE_SSL_REDIRECT")
+SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS") or 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_flag("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS")
+SECURE_HSTS_PRELOAD = env_flag("DJANGO_SECURE_HSTS_PRELOAD")
+
+SILENCED_SYSTEM_CHECKS = [
+    # The reverse proxy already answers http:// with a 301, so redirecting again in
+    # Django would only duplicate work on every request.
+    "security.W008",
+    # HSTS deliberately covers this host only: the domain may serve unrelated
+    # subdomains, and neither includeSubDomains nor preload can be taken back quickly.
+    "security.W005",
+    "security.W021",
+]
