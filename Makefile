@@ -1,4 +1,4 @@
-.PHONY: help typecheck deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -15,6 +15,7 @@ help:
 	@echo "  test-cov             Run tests with coverage report"
 	@echo "  lint                 Check code for linting errors"
 	@echo "  typecheck            Check type annotations with mypy"
+	@echo "  screenshot           Capture a page headlessly, firefox then chrome (URL=, OUT=, SIZE=)"
 	@echo "  lint-fix             Fix auto-fixable linting errors"
 	@echo "  format               Format code with ruff"
 	@echo ""
@@ -116,6 +117,40 @@ test-integration:
 # Run tests with coverage report
 test-cov:
 	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest -m "not integration" --cov --cov-report=term-missing
+
+# Capture a page for visual review, with no browser extension involved.
+# Firefox goes first, but on a desktop with Firefox already open it often hands the URL
+# to the running instance and captures nothing, exiting successfully all the same. So the
+# result is checked rather than assumed, and Chrome finishes the job when that happens.
+# Usage: make screenshot URL=http://localhost:8000/agenda/ [OUT=shot.png] [SIZE=1280,900]
+SCREENSHOT_SIZE ?= 1280,900
+SCREENSHOT_OUT ?= screenshot.png
+
+screenshot:
+	@if [ -z "$(URL)" ]; then \
+		echo "Usage: make screenshot URL=<url> [OUT=shot.png] [SIZE=1280,900]"; \
+		exit 1; \
+	fi
+	@code=$$(curl -s -o /dev/null -w "%{http_code}" -L "$(URL)"); \
+	case "$$code" in 2*|3*) ;; *) echo "Warning: $(URL) answered $$code; the capture will show the browser's error page" ;; esac
+	@out="$(if $(OUT),$(OUT),$(SCREENSHOT_OUT))"; \
+	rm -f "$$out"; \
+	profile=$$(mktemp -d); \
+	MOZ_NO_REMOTE=1 firefox --new-instance --headless --profile "$$profile" \
+		--window-size=$(SCREENSHOT_SIZE) --screenshot "$$out" "$(URL)" >/dev/null 2>&1 || true; \
+	rm -rf "$$profile"; \
+	if [ -s "$$out" ]; then \
+		echo "Written by firefox: $$out"; \
+	else \
+		google-chrome --headless --disable-gpu --hide-scrollbars \
+			--window-size=$(SCREENSHOT_SIZE) --screenshot="$$out" "$(URL)" >/dev/null 2>&1 || true; \
+		if [ -s "$$out" ]; then \
+			echo "Written by chrome, firefox produced nothing: $$out"; \
+		else \
+			echo "Neither firefox nor chrome produced a screenshot of $(URL)"; \
+			exit 1; \
+		fi; \
+	fi
 
 # Check type annotations. Runs in the container because the django-stubs plugin imports
 # the settings module, which needs the environment the container already provides.

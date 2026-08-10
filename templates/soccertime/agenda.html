@@ -21,7 +21,7 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 <div class="container mb-2 py-2 bg-dark text-light">
   <div class="d-flex align-items-start">
     <div id="teams-container" class="flex-grow-1 overflow-hidden" style="max-height: 44px; transition: max-height 0.3s ease;">
-      <div class="d-flex flex-wrap justify-content-center gap-3">
+      <div class="d-flex flex-wrap justify-content-center gap-2">
         {% for team in competition_teams %}
         <span><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team|render_image_markup }}</a></span>
         {% endfor %}

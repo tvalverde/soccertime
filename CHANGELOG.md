@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `screenshot` Makefile target to capture a page headlessly, for reviewing the site without a browser extension. It tries Firefox first and falls back to Chrome, because a desktop Firefox that is already running hands the URL to the open instance and captures nothing while still exiting successfully. The result is checked rather than assumed, so the target fails when no image was produced instead of reporting one that is not there, and it warns when the URL did not answer 2xx, since a browser will happily photograph its own error page.
+
+### Fixed
+- The competition crest strip no longer overflows by a single team on a desktop viewport: the gap between crests goes from `gap-3` to `gap-2`, which fits all 20 La Liga crests on one row.
+- The expand chevron beside that strip hides itself when the strip does not overflow, instead of offering to reveal nothing. Whether it overflows depends on the viewport width and the number of crests, which the server cannot know, so the button ships with the page and decides on render, on resize and once images have loaded.
+
 ## [0.3.0] - 2026-08-10
 
 Events the scraper was quietly throwing away are now reported. Nothing about what gets

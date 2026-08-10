@@ -159,6 +159,23 @@
           const icon = document.getElementById('toggle-teams-icon');
           
           if (btn && container) {
+            const COLLAPSED_HEIGHT = 44;
+
+            // Whether the strip overflows depends on the rendered layout: the viewport
+            // width, how many crests there are and how big they are. The server cannot
+            // know that, so the button ships with the page and hides itself here when
+            // there is nothing underneath to reveal.
+            function syncButtonVisibility() {
+              if (btn.getAttribute('aria-expanded') === 'true') return;
+              const overflows = container.scrollHeight > COLLAPSED_HEIGHT + 1;
+              btn.classList.toggle('d-none', !overflows);
+            }
+
+            syncButtonVisibility();
+            window.addEventListener('resize', syncButtonVisibility);
+            // Crests arriving late change the height, so re-check once everything loads.
+            window.addEventListener('load', syncButtonVisibility);
+
             btn.addEventListener('click', function() {
               if (container.style.maxHeight === '44px' || container.style.maxHeight === '') {
                 container.style.maxHeight = '1000px';
