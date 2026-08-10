@@ -85,3 +85,8 @@ db
 .env.production.local
 .docker/traefik/certs/mojon.local.key
 .docker/traefik/certs/mojon.local.crt
+
+# Claude Code per-machine state. Project-wide configuration belongs in
+# .claude/settings.json, which stays tracked so it can be shared.
+.claude/settings.local.json
+.claude/.cc-writes/
