@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-11
+
+A competition's crest strip overflowed by a single team, and the control offering to
+reveal the overflow stayed on screen even when there was none. Both are layout questions
+the server cannot answer, so the fix decides them where the page is rendered.
+
 ### Added
 - `screenshot` Makefile target to capture a page headlessly, for reviewing the site without a browser extension. It tries Firefox first and falls back to Chrome, because a desktop Firefox that is already running hands the URL to the open instance and captures nothing while still exiting successfully. The result is checked rather than assumed, so the target fails when no image was produced instead of reporting one that is not there, and it warns when the URL did not answer 2xx, since a browser will happily photograph its own error page.
 
