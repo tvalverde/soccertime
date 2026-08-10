@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy and redundant template files: `events.html`, `match_item.html`, `simple_event_item.html`, and `event_header.html`.
 
 ### Fixed
+- The channels page orders the links inside each card the same way the rest of the site does. It sorted only by the grouping keys, so the rows of a single card — which share all three — came back in whatever order the database chose, and the same play buttons appeared in one order there and another in the agenda. `CHANNEL_LINK_ORDERING` is now the single definition, used by the model and by the view.
 - `upload-only` now extracts the uploaded archive. It left it packed, so a following `remote-restart` rebuilt the image from the previous version while reporting success.
 - Deleting a `ChannelLinkSource` no longer destroys every source-less `ChannelLink`, including links created by hand in the admin. Only the links that belonged to the deleted source are considered.
 - Detaching a link from the source side (`source.links.remove(...)`, as the admin form does) no longer raises `AttributeError`; the `m2m_changed` receiver honours `reverse` and `pk_set`.

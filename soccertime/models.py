@@ -251,6 +251,12 @@ class Channel(models.Model):
         return [link for link in self.links.all() if link.enabled]
 
 
+# Freshest day first, and within that day the order the source listed them in, since an
+# import stamps `date_updated` on every row it touches. Defined here rather than inline
+# so the channels page can group its cards and still order inside them the same way.
+CHANNEL_LINK_ORDERING = ["-date_updated__date", "date_updated__time", "-verified", "-id"]
+
+
 class ChannelLink(models.Model):
     class Quality(models.TextChoices):
         ANY = "ANY", "ANY"
@@ -272,7 +278,7 @@ class ChannelLink(models.Model):
 
     class Meta:
         verbose_name_plural = "channels links"
-        ordering = ["-date_updated__date", "date_updated__time", "-verified", "-id"]
+        ordering = CHANNEL_LINK_ORDERING
 
     def __str__(self):
         return f"{self.name} [{self.quality}]"

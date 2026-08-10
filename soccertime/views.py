@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.cache import cache_page
 
-from soccertime.models import Channel, ChannelLink, Competition, Event, Sport, Team
+from soccertime.models import CHANNEL_LINK_ORDERING, Channel, ChannelLink, Competition, Event, Sport, Team
 
 # --- Helper functions ---
 
@@ -217,7 +217,10 @@ def competition_events(request, competition):
 
 @cache_page(settings.CACHE_PAGE_TIMEOUT)
 def channels(request):
-    queryset = ChannelLink.objects.order_by("category", "subcategory", "name")
+    # The template regroups by subcategory, category and name; those keys come first so
+    # the grouping works, and the model's own ordering decides the order inside each card.
+    # Without it the links of a card come back in whatever order the database chose.
+    queryset = ChannelLink.objects.order_by("category", "subcategory", "name", *CHANNEL_LINK_ORDERING)
     return render(
         request,
         "soccertime/channels.html",

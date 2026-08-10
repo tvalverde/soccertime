@@ -395,6 +395,30 @@ class TestChannelsView:
         response = client.get(reverse("channels"))
         assert "No hay canales" not in response.content.decode()
 
+    def test_links_of_a_card_keep_the_model_ordering(self, client, db, channel_link_source):
+        """The same play buttons must not appear in one order here and another in the agenda.
+
+        Ordering only by the grouping keys leaves the rows of a single card — which share
+        all three — in whatever order the database happens to return.
+        """
+        from soccertime.models import CHANNEL_LINK_ORDERING, ChannelLink
+
+        for index in range(4):
+            link = ChannelLink.objects.create(
+                name="Same Channel", category="Deportes", subcategory="Fútbol", link=f"acestream://{index:040d}"
+            )
+            link.sources.add(channel_link_source)
+            # auto_now overwrites whatever we pass, so the timestamps are forced afterwards
+            ChannelLink.objects.filter(pk=link.pk).update(
+                date_updated=timezone.now() - datetime.timedelta(days=index, minutes=index)
+            )
+
+        response = client.get(reverse("channels"))
+
+        rendered = [link.pk for link in response.context["channels_links"]]
+        expected = [link.pk for link in ChannelLink.objects.order_by(*CHANNEL_LINK_ORDERING)]
+        assert rendered == expected
+
 
 class TestCompetitionsView:
     """Tests for competitions view."""
