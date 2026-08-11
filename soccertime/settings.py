@@ -141,6 +141,29 @@ USE_TZ = True
 STATIC_URL = os.environ.get("DJANGO_STATIC_URL") or "static/"
 STATIC_ROOT = os.environ.get("DJANGO_STATIC_ROOT") or None
 
+# Outside development, every static file is served under a name containing a hash of its
+# contents, so changing one changes its URL.
+#
+# Without this a deploy can only be seen by visitors whose browser happens to ask again:
+# nginx sends no `Cache-Control` for these files, only an ETag and a Last-Modified, so
+# browsers fall back to heuristic caching of a URL that never changes. Moving the styles
+# out of the templates and into `theme.css` for the CSP was the first change where that
+# mattered — the pages arrived without their inline styles while the browser kept serving
+# the previous `theme.css` from cache, and the site looked broken until a forced reload.
+#
+# Development keeps the plain backend: `collectstatic` has not run there, and reading
+# names from a manifest that does not exist raises on the first page.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": (
+            "django.contrib.staticfiles.storage.StaticFilesStorage"
+            if DEBUG
+            else "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"
+        )
+    },
+}
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
