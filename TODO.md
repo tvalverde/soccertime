@@ -10,32 +10,9 @@ public path.
 
 ## Pending
 
-What remains of the security audit of 2026-08-11, ordered by criticality. Everything graded
-Critical, High or Medium was fixed and deployed that same day; the four below are the Low
-ones, none of which is known to have been exploited and none of which is reachable from the
-public path. Detail for what was closed is in Done, and in `CHANGELOG.md`. Maintenance work
-that is not a security finding is kept in its own section at the end.
-
-### Low
-
-- [ ] **The production image ships the test, lint and type-checking toolchain.**
-  `requirements.txt` has one list for everything, so pytest, ruff, mypy and django-stubs
-  are installed in production — confirmed by listing packages in the running container.
-  No known vulnerability, just avoidable surface and image size. Fix: split into
-  `requirements.txt` and `requirements-dev.txt`.
-
-- [ ] **`lxml` is the one unpinned dependency.** Every other line in `requirements.txt`
-  carries an exact version; `lxml` sits alone at the bottom with none, so a rebuild can
-  silently change the HTML parser the scraper depends on, and there is no record of what
-  was tested. It resolved to 6.1.1. Fix: pin it.
-
-- [ ] **The `search` parameter is unbounded.** `/agenda/?search=…` accepts any length and
-  runs `icontains` across four joined tables in SQLite, and the first request for a given
-  string is always a cache miss. Cheap to abuse, cheap to fix: cap the length.
-
-- [ ] **`.env.production.local` carries a 20-character secret key** (~114 bits) against
-  the 52 characters used in production. It is a local staging file, so the impact is
-  limited, but it costs nothing to generate a proper one.
+The security audit of 2026-08-11 is closed: every finding it raised, from the two Critical
+ones down to the four Low, was fixed and deployed within the day. The detail is in Done and
+in `CHANGELOG.md`. What is left below is maintenance rather than security.
 
 ### Maintenance
 
@@ -48,8 +25,11 @@ that is not a security finding is kept in its own section at the end.
   rather than assuming. Worth doing in one sitting: read the 6.1 release notes for
   deprecations and backwards-incompatible changes, confirm `django-stubs` has a release
   that targets 6.1 (it is pinned to 6.0.9 today and `make typecheck` will say so plainly),
-  then run the suite, `make lint`, `make typecheck` and `check --deploy`. The native CSP
-  support noted in the Medium section is in 6.0 already, so it does not depend on this.
+  then run the suite, `make lint`, `make typecheck` and `check --deploy`. Two things it now
+  drags that it did not before: `deploy-production` runs those checks with
+  `--fail-level WARNING`, so any new warning 6.1 introduces will block a deploy until it is
+  addressed or deliberately silenced — worth having time in hand rather than doing this in a
+  hurry. The CSP support the site relies on is in 6.0 already, so nothing here waits on it.
 
 ## Done
 
@@ -75,6 +55,16 @@ the git history. Kept here as an index of what has been through this file.
   inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
   links, all `acestream`, none dangerous) and the button counts on `/channels/` and
   `/agenda/` are unchanged after the deploy.
+- **The four Low findings** (2026-08-11) — the production image carried pytest, ruff, mypy
+  and django-stubs, because one requirements file described both environments and the two
+  share an image; it is a build argument now, and the image went from 374 MB to 217 MB.
+  `lxml` was the one unpinned line and, worse, its position under the tooling made it look
+  like a development dependency when it is what the scraper parses with — pinned at 6.1.1
+  and moved, with a test asserting every line in both files carries a version. The `search`
+  parameter is bounded by what the fields can hold rather than by a chosen number, since
+  `icontains` cannot match a string longer than the value it searches, so the answer is
+  returned without a query at all. And the replica's 20-character key became 64, which was
+  the last thing failing the deploy gate there.
 - **The image defaulted to insecure and relied on an unversioned file to correct it**
   (2026-08-11) — the Dockerfile baked `DJANGO_DEBUG=true` and `DJANGO_ADMIN_ENABLED=true`,
   so production was safe only while `.env.production` kept overriding them. Shown against
