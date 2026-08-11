@@ -1,6 +1,7 @@
 """Tests for the settings helpers driving deployment configuration."""
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
 
 from soccertime.settings import env_flag
 
@@ -66,3 +67,58 @@ class TestStaticFilesAreVersioned:
         backend = self.staticfiles_backend_with_debug(monkeypatch, "true")
 
         assert backend == "django.contrib.staticfiles.storage.StaticFilesStorage"
+
+
+class TestTheSettingsFailClosed:
+    """What happens when `.env.production` loses a line.
+
+    That file is deliberately not in the repository, so nothing reviews it and nothing
+    notices an entry going missing. The image now defaults to safe values, which means the
+    interesting question is no longer "what does it fall back to" but "does it refuse".
+    """
+
+    def snapshot(self, monkeypatch, **environment):
+        """Reload the settings under these variables and return the values that matter.
+
+        A snapshot of plain values rather than the module: `importlib.reload` mutates it in
+        place, so a returned reference would point at the restored version by the time the
+        caller read it. Restoring in `finally` matters just as much — leaving the module
+        holding a test's environment would poison every test after it.
+        """
+        import importlib
+
+        import soccertime.settings
+
+        for name, value in environment.items():
+            if value is None:
+                monkeypatch.delenv(name, raising=False)
+            else:
+                monkeypatch.setenv(name, value)
+        try:
+            reloaded = importlib.reload(soccertime.settings)
+            return {"DEBUG": reloaded.DEBUG, "SECRET_KEY": reloaded.SECRET_KEY}
+        finally:
+            monkeypatch.undo()
+            importlib.reload(soccertime.settings)
+
+    def test_an_absent_debug_variable_leaves_debug_off(self, monkeypatch):
+        """The image bakes `false`; this is the behaviour that makes that meaningful."""
+        values = self.snapshot(monkeypatch, DJANGO_DEBUG=None, DJANGO_SECRET_KEY="a-key-for-the-reload")
+
+        assert values["DEBUG"] is False
+
+    def test_no_key_and_no_debug_refuses_to_start(self, monkeypatch):
+        """The whole configuration missing must stop the container, not start it insecurely.
+
+        It then fails its health check, the proxy withdraws the route and the site answers
+        404 — which is a far better outcome than serving Django's debug page to the world.
+        """
+        with pytest.raises(ImproperlyConfigured):
+            self.snapshot(monkeypatch, DJANGO_DEBUG=None, DJANGO_SECRET_KEY=None)
+
+    def test_the_development_key_needs_debug_turned_on_deliberately(self, monkeypatch):
+        """The hardcoded key stays reachable, but only for someone who asked for debug."""
+        values = self.snapshot(monkeypatch, DJANGO_DEBUG="true", DJANGO_SECRET_KEY=None)
+
+        assert values["SECRET_KEY"] == "dev-only-insecure-key-not-for-production"
+        assert values["DEBUG"] is True

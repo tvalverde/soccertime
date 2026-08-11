@@ -209,7 +209,17 @@ upload_files:
 
 # Target to execute deployment commands on remote server via SSH
 #
-# `collectstatic` runs in a throwaway container before the application is recreated, not
+# The configuration check and `collectstatic` both run in a throwaway container before the
+# application is recreated. The check is what catches a security setting that quietly went
+# missing from `.env.production` — dropped HSTS, a lost `SECURE_SSL_REDIRECT`, a cookie no
+# longer marked secure — none of which the image can defend against with a baked default,
+# because the right value depends on where it is deployed. Run after `up -d` it would only
+# report the problem with the bad container already serving; run here it fails the deploy
+# while the previous one is still up. `--fail-level WARNING` is what makes it a gate: those
+# checks are warnings, and the two this project has decided against are silenced in
+# `SILENCED_SYSTEM_CHECKS` rather than ignored here.
+#
+# `collectstatic` runs there too, not
 # through `exec` afterwards. Static filenames carry a content hash, and the manifest that
 # maps plain names to hashed ones is read once, the first time a template renders a
 # `{% static %}` tag. Collecting afterwards meant the new process could read a manifest
@@ -232,6 +242,10 @@ remote_deploy:
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) build $(REMOTE_SOCCERTIME_SERVICE) && \
 		echo "--- Fixing static volume permissions ---" && \
 		docker run --rm -v $(REMOTE_STATIC_VOLUME):/data alpine chown -R $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data && \
+		echo "--- Checking the configuration before anything runs on it ---" && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) run --rm --no-deps \
+			-u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) \
+			python manage.py check --deploy --fail-level WARNING && \
 		echo "--- Collecting static files, before anything serves them ---" && \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) run --rm --no-deps \
 			-u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) \
@@ -540,7 +554,7 @@ remote-check:
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		cd $(REMOTE_DOCKER_PATH); \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
-			$(REMOTE_SOCCERTIME_SERVICE) python manage.py check --deploy \
+			$(REMOTE_SOCCERTIME_SERVICE) python manage.py check --deploy --fail-level WARNING \
 	'
 
 # Download database from remote DB volume (with local backup)
