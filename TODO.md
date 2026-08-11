@@ -16,20 +16,54 @@ in `CHANGELOG.md`. What is left below is maintenance rather than security.
 
 ### Maintenance
 
-- [ ] **Move to Django 6.1.** The 0.3.2 upgrade deliberately stopped at 6.0.8: the point
-  that day was to get off the known CVEs, and taking a feature release at the same time
-  would have mixed a security fix with a change that needs its own review. 6.1 is already
-  out. It is not urgent — 6.0.8 carries every current security fix — but it should not be
-  left indefinitely either, since 6.0 is not an LTS and a non-LTS series stops receiving
-  security fixes once the release after next arrives, so the window is worth checking
-  rather than assuming. Worth doing in one sitting: read the 6.1 release notes for
-  deprecations and backwards-incompatible changes, confirm `django-stubs` has a release
-  that targets 6.1 (it is pinned to 6.0.9 today and `make typecheck` will say so plainly),
-  then run the suite, `make lint`, `make typecheck` and `check --deploy`. Two things it now
-  drags that it did not before: `deploy-production` runs those checks with
-  `--fail-level WARNING`, so any new warning 6.1 introduces will block a deploy until it is
-  addressed or deliberately silenced — worth having time in hand rather than doing this in a
-  hurry. The CSP support the site relies on is in 6.0 already, so nothing here waits on it.
+- [ ] **Move to Django 6.1 — blocked on `django-admin-sortable2`, not on Django.** Attempted
+  on 2026-08-11 in a disposable image, with nothing in the repository touched, and stopped
+  on a defect that only appears in production.
+
+  **Check this first, before anything else.** The package swaps the admin's `actions.js` for
+  a patched copy named after the running Django:
+
+  ```python
+  js[js.index('admin/js/actions.js')] = f'adminsortable2/js/actions-{MAJOR}.{MINOR}.js'
+  ```
+
+  It ships `actions-4.2` through `actions-6.0` and **nothing for 6.1**. Under
+  `ManifestStaticFilesStorage`, which is what production uses, a missing static file raises
+  instead of answering 404, so the two sortable changelists break. Measured with production's
+  own settings:
+
+  | | 6.0.8 | 6.1 |
+  |---|---|---|
+  | `/admin/soccertime/sport/` | 200 | **500** |
+  | `/admin/soccertime/favorite/` | 200 | **500** |
+  | `/admin/soccertime/team/` (not sortable) | 200 | 200 |
+
+  Version 2.3.1 (January 2026) is the latest published and declares support only to Django
+  5.2. **The reevaluation is one question:** does a newer release ship
+  `adminsortable2/js/actions-6.1.js`? `test_the_sortable_admin_has_a_script_for_this_django`
+  in `test_admin.py` answers it automatically — it passes today and fails the moment Django
+  moves ahead of the package, which is what makes this note enforceable rather than advisory.
+
+  **What was already checked and is clean**, so nobody repeats it: the 572 tests, `ruff` and
+  — the suspected blocker — `mypy` with django-stubs 6.0.9 all pass on 6.1, as does
+  `check --deploy --fail-level WARNING`. SQLite 3.53.2 clears the new 3.37 minimum. Nothing
+  removed in 6.1 is used here, the project sends no email, and the `File`-always-truthy change
+  does not apply because the notes exempt `FieldFile`, which is what this code uses.
+
+  **Why none of that caught it:** the suite runs with `DEBUG=true`, where `{% static %}`
+  validates nothing; `collectstatic` succeeds because the file is absent rather than broken;
+  the smoke test never opens the admin; and production keeps the admin switched off. The
+  deploy would have gone green and the 500 would have surfaced at the next
+  `make remote-admin-on`.
+
+  **There is no hurry.** 6.0's mainstream support ended 2026-08-04 but security fixes run to
+  **April 2027**. 6.1 is covered to December 2027 and **6.2 is an LTS, due April 2027** — so
+  if the package stays behind, waiting for 6.2 LTS is a reasonable outcome rather than a
+  failure, though it leaves no slack against 6.0's own end date.
+
+  Two alternatives were considered and rejected: vendoring `actions-6.0.js` under the 6.1
+  name is 6.0's patched file against 6.1's admin, which would appear to work until it did
+  not; and dropping the package means reimplementing drag-ordering for sports and favourites.
 
 ## Done
 

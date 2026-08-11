@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A test that fails when Django moves ahead of `django-admin-sortable2`. The package swaps the admin's `actions.js` for a patched copy named after the running Django, ships one per version up to 6.0, and has nothing for 6.1 — so under `ManifestStaticFilesStorage`, which production uses, the sortable changelists ask for a file nobody shipped and a missing static file raises rather than answering 404. Found while attempting the 6.1 upgrade in a disposable image: with production's own settings, `/admin/soccertime/sport/` and `/admin/soccertime/favorite/` both answered 500 on 6.1 and 200 on 6.0.8, while `/admin/soccertime/team/`, which is not sortable, was unaffected. Nothing already in place would have caught it — the suite runs with `DEBUG=true` where `{% static %}` validates nothing, `collectstatic` succeeds because the file is absent rather than broken, the smoke test never opens the admin, and production keeps the admin switched off, so the deploy would have gone green and the 500 would have surfaced at the next `make remote-admin-on`. The upgrade was abandoned and nothing in the repository was changed for it; `TODO.md` records what was verified clean, so it need not be redone.
+
 ## [0.4.1] - 2026-08-11
 
 The security audit is closed. Every finding it raised is fixed and deployed, and this is the

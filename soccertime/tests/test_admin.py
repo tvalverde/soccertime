@@ -76,3 +76,37 @@ def test_changelist_renders_a_stored_image(admin_client, db, settings, tmp_path)
 
     assert response.status_code == 200
     assert b'width="48.0" height="24.0"' in response.content
+
+
+def test_the_sortable_admin_has_a_script_for_this_django():
+    """`django-admin-sortable2` ships one patched `actions.js` per Django version.
+
+    It swaps the admin's own file for its copy, named after the running Django:
+
+        js[js.index('admin/js/actions.js')] = f'adminsortable2/js/actions-{MAJOR}.{MINOR}.js'
+
+    So a Django upgrade the package has not caught up with leaves the sortable changelists
+    asking for a file nobody shipped. Under `ManifestStaticFilesStorage` — which is what
+    production uses — a missing static file raises rather than 404s, so `Sport` and
+    `Favorite` answer 500 while every other admin page is fine.
+
+    Nothing else here would notice. The suite runs with `DEBUG=true`, where `{% static %}`
+    validates nothing; `collectstatic` succeeds, since the file is simply absent rather than
+    broken; and the smoke test never opens the admin, which production keeps switched off
+    anyway. The failure would surface on the next `make remote-admin-on`, long after the
+    deploy that caused it.
+
+    Measured on Django 6.1: `/admin/soccertime/sport/` and `/admin/soccertime/favorite/`
+    both 500, `/admin/soccertime/team/` — which is not sortable — stays at 200. That is why
+    this project is still on 6.0.8, and this test is what will say when it need not be.
+    """
+    from django import VERSION
+    from django.contrib.staticfiles import finders
+
+    expected = f"adminsortable2/js/actions-{VERSION[0]}.{VERSION[1]}.js"
+
+    assert finders.find(expected), (
+        f"django-admin-sortable2 ships no {expected}, so the sortable changelists will "
+        f"raise under manifest storage. Check for a release that supports Django "
+        f"{VERSION[0]}.{VERSION[1]} before upgrading."
+    )
