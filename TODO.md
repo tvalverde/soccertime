@@ -19,14 +19,6 @@ that is not a security finding is kept in its own section at the end.
 
 ### Medium
 
-- [ ] **The admin is reachable from the internet with nothing slowing down a password
-  guess.** `https://www.mojon.es/soccertime/admin/login/` answers 200 to the world, and
-  there is no rate limiting, lockout, IP allowlist or second factor anywhere in the
-  stack. The cookies are `Secure` and the path is prefixed, but neither is an obstacle to
-  credential stuffing. Cheapest effective fix, in order of preference: restrict the route
-  at Traefik to known addresses, or move it to a non-guessable path plus a login throttle.
-  *(verified: HTTP 200 from outside)*
-
 - [ ] **`DJANGO_ALLOWED_HOSTS=*` disables Django's Host header validation** while
   `DJANGO_USE_X_FORWARDED_HOST=true` makes Django trust a header the client can set.
   Traefik only routes `mojon.es` and `www.mojon.es`, so this is defence in depth rather
@@ -63,7 +55,11 @@ that is not a security finding is kept in its own section at the end.
   mode — full stack traces and settings to any visitor — and, with no `DJANGO_SECRET_KEY`
   set, falls back to the hardcoded `dev-only-insecure-key-not-for-production`, which makes
   session forgery trivial. Fix: default the image to the safe values and let development
-  opt in, which is the direction the rest of the settings module already takes.
+  opt in, which is the direction the rest of the settings module already takes. Worth
+  knowing before starting: the admin tests reverse `admin:` URLs, so they depend on the
+  image's `DJANGO_ADMIN_ENABLED=true` to have registered them. Flipping that default
+  breaks them until they set the flag themselves — and production no longer relies on it
+  either way, since the admin is now off there by default.
 
 ### Low
 
@@ -124,6 +120,20 @@ the git history. Kept here as an index of what has been through this file.
   inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
   links, all `acestream`, none dangerous) and the button counts on `/channels/` and
   `/agenda/` are unchanged after the deploy.
+- **Admin exposed to the internet with nothing throttling a guess** (2026-08-11) — the
+  login form answered 200 to the world with no rate limit, lockout or second factor. An
+  IP allowlist was the obvious fix and was rejected on a fact about the operator rather
+  than about the code: there is no fixed address to allow. Instead the admin is now off
+  in production altogether — `DJANGO_ADMIN_ENABLED` already gated whether `urls.py`
+  registered it, so `/soccertime/admin/` is a 404 and there is nothing to brute-force —
+  with `make remote-admin-on` / `-off` opening the window when there is work to do in it.
+  Those targets edit the local `.env.production` rather than the server's copy, because
+  the deploy uploads the local file and a server-side toggle would be silently undone in
+  the direction that re-exposes the admin. A Traefik rate limit on a router of its own
+  covers the open windows, verified live at 19 × 200 and 21 × 429 over 40 rapid requests
+  while the rest of the site kept answering 200. Basic authentication at the proxy was
+  considered and dropped: with the route absent by default it is a second lock on a door
+  that is not there.
 - **`.env.production` baked into the Docker image** (2026-08-11) — `.dockerignore` listed
   `.env`, a pattern that matches that exact name and nothing else, so `COPY . .` carried
   the file and `DJANGO_SECRET_KEY` with it into every build. The evidence was gathered

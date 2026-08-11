@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- The admin is no longer among the site's URLs. `DJANGO_ADMIN_ENABLED` already decided whether `urls.py` registered it, and production now runs with it off, so `/soccertime/admin/` is a 404 instead of a login form facing the whole internet with nothing slowing down a guess. `make remote-admin-on` and `make remote-admin-off` open and close that window. They edit the local `.env.production` and upload it rather than editing the copy on the server: the deploy uploads the local file, so a server-side toggle would be undone by the next deploy — and undone in the direction that re-exposes the admin, which is the failure nobody would notice. Both directions were exercised against production and the public pages were confirmed serving throughout. An IP allowlist was considered first and rejected, because there is no fixed address to allow.
+- A rate limit in front of the admin, for the windows when it is open: 30 requests a minute with a burst of 15, charged per source address. It rides on a Traefik router of its own so it applies to the admin and to nothing else, and that router carries a higher priority than the application's, which would otherwise match the shorter `/soccertime` prefix first. Traefik terminates TLS here with no CDN in front, so the address it sees is the client's and no `ipStrategy.depth` is needed. Verified live: 40 rapid requests to the login page returned 19 × 200 and 21 × 429, while `/agenda/`, `/competitions/` and `/channels/` answered 200 immediately afterwards. Rejection happens in the proxy, so a refused attempt costs no worker and no write to the SQLite file that is also serving the site.
+
 ## [0.3.3] - 2026-08-11
 
 A secret that was never published, and the housekeeping that keeps it that way. The image
