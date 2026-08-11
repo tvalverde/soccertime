@@ -128,11 +128,14 @@ the last, which is a different kind of thing and says so.
      `compose.production.yaml`, so one `pull` covers both and either one failing fails the
      command. Whatever is decided has to hold for a file this repository does not own.
 
-  Both are confirmed still failing on 2026-08-12 after the day's changes, and `up -d` right
-  afterwards left `docker-soccertime-web-4` running and healthy without recreating it — which
-  is compose behaving correctly: it only recreates when the definition or the image has
-  changed. When something has changed, that path recreates and the site is down for ~6s, where
-  `make deploy-production` hands over between two containers and costs under a second.
+  **The ask is narrow: make `pull` stop erroring on these two.** Starting hypothesis, to be
+  checked rather than assumed — `compose.production.yaml` already declares `build:` for
+  `soccertime-web`, and `docker compose pull` still tries to fetch it because plain `pull`
+  ignores that. Compose has `pull --ignore-buildable` for exactly this, which would cover
+  `soccertime` if the server's own file keeps the build section, and leave `frankenshop` to be
+  handled where it is declared. `--ignore-pull-failures` would silence both but also hide a
+  genuine registry failure for the four images that really are pulled, so it is the fallback
+  rather than the answer.
 
 - [ ] **Production's proxy floats and the replica's is pinned.** The server runs
   `traefik:latest`, today 3.7.10; `compose.production.local.yaml` names an exact version so
