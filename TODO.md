@@ -10,26 +10,11 @@ public path.
 
 ## Pending
 
-The graded sections below came out of the security audit of 2026-08-11, ordered by
-criticality. Findings marked *(verified)* were reproduced against the running system; the
-rest are from reading the code and the deployed configuration. Nothing here is known to
-have been exploited. The two critical findings, the stored XSS and the environment file
-baked into the image were fixed and deployed the same day; see Done. Maintenance work
+What remains of the security audit of 2026-08-11, ordered by criticality. Everything graded
+Critical, High or Medium was fixed and deployed that same day; the four below are the Low
+ones, none of which is known to have been exploited and none of which is reachable from the
+public path. Detail for what was closed is in Done, and in `CHANGELOG.md`. Maintenance work
 that is not a security finding is kept in its own section at the end.
-
-### Medium
-
-- [ ] **The image defaults to insecure and relies on an unversioned file to correct it.**
-  The Dockerfile bakes `DJANGO_DEBUG=true` and `DJANGO_ADMIN_ENABLED=true`; production is
-  safe only because `.env.production` overrides them, and that file is deliberately not in
-  the repository. If it is missing or an entry is dropped, the container comes up in debug
-  mode — full stack traces and settings to any visitor — and, with no `DJANGO_SECRET_KEY`
-  set, falls back to the hardcoded `dev-only-insecure-key-not-for-production`, which makes
-  session forgery trivial. Fix: default the image to the safe values and let development
-  opt in, which is the direction the rest of the settings module already takes. The
-  coupling that would have made this awkward is already gone: the admin tests used to
-  depend on the image's `DJANGO_ADMIN_ENABLED=true` for the URLs they reverse, and they
-  now name a URLconf of their own, so flipping that default costs nothing in the suite.
 
 ### Low
 
@@ -90,6 +75,16 @@ the git history. Kept here as an index of what has been through this file.
   inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
   links, all `acestream`, none dangerous) and the button counts on `/channels/` and
   `/agenda/` are unchanged after the deploy.
+- **The image defaulted to insecure and relied on an unversioned file to correct it**
+  (2026-08-11) — the Dockerfile baked `DJANGO_DEBUG=true` and `DJANGO_ADMIN_ENABLED=true`,
+  so production was safe only while `.env.production` kept overriding them. Shown against
+  the built image before changing it: the old default came up with debug on and the
+  hardcoded development key; the new one exits 1 and refuses to start. Flipping defaults
+  cannot reach `SECURE_SSL_REDIRECT`, the cookies or HSTS, since the right value depends on
+  the deployment — so `deploy-production` now runs `check --deploy --fail-level WARNING` in
+  the throwaway container before the application is recreated, which fails the deploy while
+  the previous container is still serving. That gate caught the weak
+  `.env.production.local` key below on its own.
 - **Pagination dropped the search, and django-bootstrap5 went with it** (2026-08-11) — not
   an audit finding but a bug found while asking whether the package still earned its place.
   It did not: one of its two tags renders nothing here by design, and the other built every
