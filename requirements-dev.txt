@@ -1,0 +1,15 @@
+# Installed only when the image is built with `INSTALL_DEV=true`, which `compose.yaml`
+# passes and the production build does not. Nothing here is imported by the application.
+
+# Testing
+pytest==8.3.5
+pytest-django==4.9.0
+pytest-cov==6.0.0
+
+# Linting & Formatting
+ruff==0.9.6
+
+# Type checking
+mypy==2.3.0
+django-stubs==6.0.9
+types-requests==2.32.4.20250913

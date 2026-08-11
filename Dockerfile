@@ -12,8 +12,15 @@ ENV VIRTUAL_ENV=/venv
 ENV PATH="/venv/bin:$PATH"
 RUN adduser -D -H -u ${DOCKER_UID} appuser
 WORKDIR /code
-COPY  --chown=appuser:appuser  requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Development and production share this image, so the toolchain cannot simply be deleted:
+# `make test`, `make lint` and `make typecheck` all run inside a container built from here.
+# It is installed on request instead, and a build that says nothing is a production build.
+# Neither direction can go wrong quietly — a development image built without the flag fails
+# on the first `pytest`, and a production image cannot pick it up by accident.
+ARG INSTALL_DEV=false
+COPY  --chown=appuser:appuser  requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements.txt && \
+    if [ "$INSTALL_DEV" = "true" ]; then pip install --no-cache-dir -r requirements-dev.txt; fi
 COPY --chown=appuser:appuser . .
 USER appuser
 # The image defaults to what is safe when nothing overrides it, and development opts in

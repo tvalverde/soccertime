@@ -28,7 +28,13 @@ services:
       - traefik.http.routers.traefik-local.service=api@internal
 
   soccertime-web:
-    build: .
+    build:
+      context: .
+      # Compose merges `build.args` across files, so `compose.yaml` would hand this stack
+      # the development toolchain and quietly make the replica less like production than it
+      # looks. This is the point of the replica, so it is pinned rather than inherited.
+      args:
+        INSTALL_DEV: "false"
     env_file:
       - .env.production.local
     networks: !override

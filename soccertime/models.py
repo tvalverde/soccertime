@@ -29,6 +29,12 @@ def validate_channel_link(value: str | None) -> None:
     standard_url_validator(value)
 
 
+# The `max_length` of every field `EventQuerySet.search` looks in. Kept as a constant so
+# the reasoning sits next to the number, and pinned by a test against the fields themselves
+# so widening one of them cannot leave this behind.
+MAX_SEARCHABLE_NAME_LENGTH = 255
+
+
 class SportManager(models.Manager["Sport"]):
     def with_events(self) -> models.QuerySet["Sport"]:
         return self.filter(competitions__events__date__date__gte=timezone.now().date()).distinct()
@@ -371,9 +377,22 @@ class EventQuerySet(models.QuerySet):
         return self.filter(date__gte=now, date__lte=end_date)
 
     def search(self, query: str | None) -> Self:
-        """Search events by team names, race name, or event name."""
+        """Search events by team names, race name, or event name.
+
+        A query longer than the fields being searched is answered without touching the
+        database. That is not a policy about how much someone may type: `icontains` asks
+        whether the query is a substring of the value, so a string longer than the longest
+        value a `CharField(max_length=255)` can hold cannot be inside any of them. Returning
+        nothing is the exact answer, and truncating would have answered a different question
+        than the one asked.
+
+        It matters because this runs `icontains` across four joined tables in SQLite and
+        every distinct string is a fresh cache miss, so an unbounded one is cheap to abuse.
+        """
         if not query:
             return self
+        if len(query) > MAX_SEARCHABLE_NAME_LENGTH:
+            return self.none()
         return self.filter(
             Q(match__local__name__icontains=query)
             | Q(match__visitor__name__icontains=query)

@@ -8,7 +8,7 @@ import datetime
 
 from django.utils import timezone
 
-from soccertime.models import Event, Favorite, Match, SimpleEvent
+from soccertime.models import MAX_SEARCHABLE_NAME_LENGTH, Event, Favorite, Match, Race, SimpleEvent, Team
 
 
 def event_pks(queryset):
@@ -194,6 +194,35 @@ class TestEventQuerySetTypeFilters:
 
 class TestEventQuerySetSearch:
     """Tests for search functionality."""
+
+    def test_a_query_longer_than_the_fields_matches_nothing(self, match):
+        """`icontains` asks for a substring, so nothing that long can be inside a name."""
+        events = Event.objects.search("x" * (MAX_SEARCHABLE_NAME_LENGTH + 1))
+
+        assert event_pks(events) == []
+
+    def test_it_answers_without_asking_the_database(self, match, django_assert_num_queries):
+        """The point of the bound: four joined tables and a guaranteed cache miss otherwise."""
+        with django_assert_num_queries(0):
+            list(Event.objects.search("x" * 5000))
+
+    def test_a_query_at_the_bound_still_searches(self, match):
+        """The limit is where a match becomes impossible, not a round number short of it."""
+        at_the_limit = ("Real Madrid" + "x" * MAX_SEARCHABLE_NAME_LENGTH)[:MAX_SEARCHABLE_NAME_LENGTH]
+
+        assert len(at_the_limit) == MAX_SEARCHABLE_NAME_LENGTH
+        assert event_pks(Event.objects.search(at_the_limit)) == []
+        assert match.pk in event_pks(Event.objects.search("Real Madrid"))
+
+    def test_the_bound_is_what_the_fields_actually_hold(self):
+        """If a name field is ever widened, this is what stops the bound being left behind."""
+        campos = [
+            Team._meta.get_field("name"),
+            Race._meta.get_field("name"),
+            SimpleEvent._meta.get_field("name"),
+        ]
+
+        assert MAX_SEARCHABLE_NAME_LENGTH == max(f.max_length for f in campos)
 
     def test_search_by_local_team(self, match):
         """Should find match by home team name."""

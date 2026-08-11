@@ -5,6 +5,8 @@ services:
       args:
         DOCKER_UID: ${DOCKER_UID:-1000}
         DOCKER_GID: ${DOCKER_GID:-1000}
+        # The test, lint and type-checking tools, which the production image does without.
+        INSTALL_DEV: "true"
     image: soccertime:latest
     command: python manage.py runserver 0.0.0.0:8000
     restart: unless-stopped
