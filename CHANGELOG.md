@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Production validates the `Host` header again. `DJANGO_ALLOWED_HOSTS` was `*`, which turns the check off entirely, while `DJANGO_USE_X_FORWARDED_HOST` tells Django to take the host from a header rather than the connection. Demonstrated against the running site before changing anything: a request carrying `X-Forwarded-Host: evil.example` was answered 200, and the same request now answers 400. Traefik only routes the two real hostnames, so this was defence in depth rather than an open door — but it is the layer that catches the day the proxy rule is loosened or something reaches the container directly, and responses are cached for an hour, which is what turns one poisoned absolute URL into everyone's problem. The list is now `www.mojon.es,mojon.es,localhost,127.0.0.1`; both public names are there because Traefik routes the bare domain too and it does not redirect.
+- `localhost` in that list is not decoration, and there are tests saying so. The container's health check does not go through the proxy — it asks `http://localhost:8000/healthz/` directly — so the tighter-looking list of just the public hostnames makes Django answer it 400, the container is marked unhealthy, and the proxy withdraws the route: the site goes down while the application is answering every real request correctly. That exact outage has happened here before, from `SECURE_SSL_REDIRECT`, so one test now asserts the health check's host is accepted and another asserts that dropping it breaks the check.
+
+### Added
+- `make remote-apply-config`, which uploads `.env.production` and recreates the container. The admin targets already carried that logic inline. Recreating rather than restarting is the part worth naming: a container keeps the environment it was created with, so a restart reports success and changes nothing.
+
 ## [0.3.4] - 2026-08-11
 
 The admin stopped being a permanent fixture of the site. It was the one route answering

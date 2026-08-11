@@ -19,14 +19,6 @@ that is not a security finding is kept in its own section at the end.
 
 ### Medium
 
-- [ ] **`DJANGO_ALLOWED_HOSTS=*` disables Django's Host header validation** while
-  `DJANGO_USE_X_FORWARDED_HOST=true` makes Django trust a header the client can set.
-  Traefik only routes `mojon.es` and `www.mojon.es`, so this is defence in depth rather
-  than an open door — but it is the layer that catches the day the proxy rule is loosened
-  or something reaches the container directly, and the site caches responses for an hour,
-  which is what turns a poisoned absolute URL into everyone's problem. Fix: set it to the
-  two real hostnames.
-
 - [ ] **The image downloader accepts anything, of any size, from any address.**
   `download_image` passes `stream=True` and then reads `response.content`, which pulls the
   whole body into memory regardless of length — the 10-second timeout is per read, so a
@@ -119,6 +111,15 @@ the git history. Kept here as an index of what has been through this file.
   inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
   links, all `acestream`, none dangerous) and the button counts on `/channels/` and
   `/agenda/` are unchanged after the deploy.
+- **`ALLOWED_HOSTS` set to `*` while Django read the host from a header** (2026-08-11) —
+  the check was off and `USE_X_FORWARDED_HOST` made Django take the hostname from a
+  header, so a poisoned absolute URL could have been built and then cached for an hour.
+  Proved against the running site first — `X-Forwarded-Host: evil.example` answered 200,
+  and answers 400 now. The list is the two hostnames Traefik routes plus `localhost` and
+  `127.0.0.1`, and that last part is the whole difficulty: the container health check does
+  not pass through the proxy, so the tighter-looking list of public names alone makes the
+  check fail, the container go unhealthy and the proxy withdraw the route. Tests now
+  assert both halves, including that dropping `localhost` breaks the health check.
 - **Admin exposed to the internet with nothing throttling a guess** (2026-08-11) — the
   login form answered 200 to the world with no rate limit, lockout or second factor. An
   IP allowlist was the obvious fix and was rejected on a fact about the operator rather
