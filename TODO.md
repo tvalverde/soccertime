@@ -128,11 +128,11 @@ the last, which is a different kind of thing and says so.
      `compose.production.yaml`, so one `pull` covers both and either one failing fails the
      command. Whatever is decided has to hold for a file this repository does not own.
 
-  Not part of this: the container appearing as `soccertime-web` in that output. It predates
-  the removal of `container_name`, so the name is simply the old one. Worth knowing anyway is
-  that a manual `docker compose up -d` recreates the container and takes the site down for
-  ~6s, while `make deploy-production` hands over between two and costs under a second — the
-  two are no longer equivalent.
+  Both are confirmed still failing on 2026-08-12 after the day's changes, and `up -d` right
+  afterwards left `docker-soccertime-web-4` running and healthy without recreating it — which
+  is compose behaving correctly: it only recreates when the definition or the image has
+  changed. When something has changed, that path recreates and the site is down for ~6s, where
+  `make deploy-production` hands over between two containers and costs under a second.
 
 - [ ] **Production's proxy floats and the replica's is pinned.** The server runs
   `traefik:latest`, today 3.7.10; `compose.production.local.yaml` names an exact version so
