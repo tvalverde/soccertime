@@ -90,6 +90,12 @@ the git history. Kept here as an index of what has been through this file.
   inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
   links, all `acestream`, none dangerous) and the button counts on `/channels/` and
   `/agenda/` are unchanged after the deploy.
+- **Pagination dropped the search, and django-bootstrap5 went with it** (2026-08-11) — not
+  an audit finding but a bug found while asking whether the package still earned its place.
+  It did not: one of its two tags renders nothing here by design, and the other built every
+  page link as a bare `?page=N`, so following page two of a search returned the unfiltered
+  agenda. Replaced by a partial on Django's `{% querystring %}`, which also stops
+  `{% bootstrap_css %}` sitting one autocomplete from undoing the CSP work.
 - **No `Content-Security-Policy`** (2026-08-11) — the site carried every other security
   header and not this one, the layer that contains an injection rather than preventing it.
   The note here said it would need nonces because of the inline `<script>` blocks; that
