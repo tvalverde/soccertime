@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-08-11
+
+Two places where the site trusted input it had no reason to trust. Django was told to read
+the hostname out of a header and to accept whatever hostname it found; the image fetcher
+took a URL out of scraped HTML and accepted whatever came back — any address, any size, and
+a filename extension chosen by whoever served the file.
+
+Both were demonstrated against the running system before being changed rather than argued
+from the code. A request carrying `X-Forwarded-Host: evil.example` was answered 200, and an
+SVG payload handed to the previous `save_image` was written into the media volume as
+`<sha1>.svg` with `None x None` dimensions, ready to come back as `image/svg+xml` from this
+site's own origin. Neither had been exploited: the 2802 images in production are all
+legitimate WebP, the largest of them 1322 bytes.
+
+The tightening is the kind that breaks things quietly if it is done from the outside in, so
+each guard was checked against what production actually does. `localhost` had to stay in
+the host list because the container's health check does not pass through the proxy, and a
+tidier list would have taken the site down while the application answered every real
+request correctly — the same failure this project already had once from
+`SECURE_SSL_REDIRECT`, and now the subject of a test. The image guards were run against the
+real source, and then against production itself by deleting a stored flag and watching it
+restore byte-identical.
+
 ### Security
 - Images fetched from scraped pages are bounded and vetted. `download_image` accepted any scheme, any address, any size and any content: it read `response.content`, which pulls a whole body into memory however long it is, inside a container capped at 512 MB, and let `requests` follow redirects without looking at where they led — from a container sharing a network with Traefik and every other service on the host. It now refuses a scheme outside http/https; follows redirects one at a time so each hop is checked, since letting the library follow them is exactly what would undo an address check; rejects any host resolving to a private, loopback, link-local or reserved address, checking every record a name returns rather than only the first; rejects a declared or actual body over 2 MB, against a largest-image-in-production of 1322 bytes; and applies an overall deadline, because the existing 10-second timeout is per read and a slow drip resets it forever.
 - The stored filename no longer comes from the source URL. `save_image` took the extension from the URL, so whoever served the file chose how nginx would later label it — and Django never objected, because `get_image_dimensions` answers `(None, None)` for content it cannot parse instead of raising. Demonstrated against the previous code before fixing: an SVG payload was written into the media volume as `<sha1>.svg`, dimensions `None x None`, raw script on disk, ready to be served back as `image/svg+xml` from this site's own origin and to run on the first direct visit. Both halves of the name now come from the content — sha1 for the stem, and the format Pillow decodes for the extension, checked against an allowlist that deliberately excludes SVG. The content type is treated as a cheap early-out rather than as evidence, since it is only the remote server's claim.
