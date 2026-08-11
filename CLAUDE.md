@@ -35,6 +35,14 @@ pages, and check the logs for 500s. `make remote-check` must come back clean. Pa
 cached for an hour, so use `make remote-clear-cache` before concluding anything from a
 page fetch.
 
+`healthy` is not the same as working. `/healthz/` returns JSON and renders no template, so
+it stays green through failures that break every real page. That is exactly what happened
+when static filenames gained a content hash: `collectstatic` ran after `up -d`, the new
+process read a manifest that was not finished, cached it for its whole life, and answered
+500 to every page while the health check passed and the container reported healthy. Only
+the smoke test caught it. Anything that a page renders but `healthz` does not — templates,
+static files, context processors — needs a real page fetched before a deploy is believed.
+
 ## Django specifics this project has already paid for
 
 - Never declare `width_field` / `height_field` on an `ImageField` here: they hook

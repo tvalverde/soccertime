@@ -19,13 +19,6 @@ that is not a security finding is kept in its own section at the end.
 
 ### Medium
 
-- [ ] **No `Content-Security-Policy`.** Confirmed absent from the live response, which
-  carries HSTS, `nosniff`, `X-Frame-Options: DENY` and a referrer policy but no CSP.
-  Django 6.0 ships CSP support natively, so this no longer needs a third-party package.
-  It is what would have contained the stored-XSS finding above, and it is the reason to
-  do it even after that one is fixed. Note the templates carry inline `<script>` blocks,
-  so this needs nonces rather than a one-line setting.
-
 - [ ] **The image defaults to insecure and relies on an unversioned file to correct it.**
   The Dockerfile bakes `DJANGO_DEBUG=true` and `DJANGO_ADMIN_ENABLED=true`; production is
   safe only because `.env.production` overrides them, and that file is deliberately not in
@@ -97,6 +90,18 @@ the git history. Kept here as an index of what has been through this file.
   inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
   links, all `acestream`, none dangerous) and the button counts on `/channels/` and
   `/agenda/` are unchanged after the deploy.
+- **No `Content-Security-Policy`** (2026-08-11) — the site carried every other security
+  header and not this one, the layer that contains an injection rather than preventing it.
+  The note here said it would need nonces because of the inline `<script>` blocks; that
+  turned out to be exactly backwards. A nonce cannot work on a site whose every page is
+  cached for an hour, because `cache_page` stores the body before the middleware builds
+  the header, so a cache hit pairs a fresh nonce with a stale one and blocks the scripts
+  for everybody. The inline went into static files instead, Bootstrap moved off the CDN so
+  `script-src 'self'` means what it says, and the policy carries no `unsafe-inline`
+  anywhere. Two things came out of the deploy rather than the plan: static filenames now
+  carry a content hash, without which browsers kept serving the previous stylesheet, and
+  `collectstatic` now runs before the app starts, without which the manifest is read
+  half-written and every page answers 500 while the health check stays green.
 - **The image downloader accepted anything, of any size, from any address** (2026-08-11) —
   and `save_image` let the source URL choose the stored file's extension. The second half
   was the sharper one, and it was demonstrated against the old code before touching it: an
