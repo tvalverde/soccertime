@@ -12,7 +12,60 @@ public path.
 
 The security audit of 2026-08-11 is closed: every finding it raised, from the two Critical
 ones down to the four Low, was fixed and deployed within the day. The detail is in Done and
-in `CHANGELOG.md`. What is left below is maintenance rather than security.
+in `CHANGELOG.md`. What is left below is maintenance and one improvement, neither urgent.
+
+### Improvements
+
+- [ ] **A second event source, so the site does not depend on one.** Designed in full on
+  2026-08-11 and deliberately not built: it is worth having, but nothing forces it now.
+  The design and every decision behind it are in
+  `~/.claude/plans/robust-percolating-sprout.md`; this is the summary needed to decide
+  whether to pick it up.
+
+  **The source.** `futbolhoy.es` with its sisters `baloncestohoy.es` and `tenishoy.es`:
+  one HTML shape across three domains, `robots.txt` permissive, and genuinely independent
+  infrastructure — IIS/ASP.NET against Cloudflare, its own image CDN. That last part is the
+  whole point. Everything else checked leads back to futbolenlatv: laliga.com covers one
+  competition through CSS classes regenerated on every deploy of theirs; Spanish XMLTV feeds
+  reach only the 26% of the catalogue that is linear TV, since 361 of 563 channels are
+  streaming platforms carrying 66,284 of the 88,755 event-channel pairs; and the IPFS
+  aggregator that supplies this project's own acestream lists draws its agenda from
+  futbolenlatv, with 178 references to `static.futbolenlatv.com` in its markup.
+
+  It covers football, basketball and tennis — **not** motorsport, cycling or golf — and adds
+  almost no events: 4 of 5 sampled fixtures were already present. This buys redundancy, not
+  coverage.
+
+  **Why the two cannot share rows.** `update_channels` calls `.set()`, which replaces, and
+  futbolhoy lists ~0.8 channels per match against futbolenlatv's ~2.4 — so whichever ran last
+  would strip the other's channels, and with them the acestream buttons. A Match is keyed on
+  `{competition, local, visitor}` by exact string, and only **10 of 14 team names and 3 of 18
+  channel names** matched on the same day's data. Fuzzy matching cannot rescue it: the
+  database holds **227 base/variant team pairs** — "Alavés" against "Alavés B", "Alavés C",
+  "Alavés Femenino" — so any rule loose enough to join "Manchester City F." to "Manchester
+  City" merges the women's team into the men's. The favourites are that exact case, with four
+  Barcelona entities and four Madrid ones.
+
+  **The shape agreed.** Both sources scrape every run; each event records its source; each
+  sport is served by exactly one source, chosen in the admin and enforced by a one-to-one on
+  sport. A source cannot be assigned to a sport it has no events for. A sport with no
+  assignment is not shown. Favourites gain a sport and a source, because futbolhoy calls
+  "FC Barcelona Femenino" **"Barcelona Femenino"** and they would otherwise orphan on a
+  switch. `futbolenlatv_slug` — `unique=True` and named for one source — is generalised per
+  source. After two consecutive runs where the active source yields nothing for a sport while
+  another source does, it switches by itself, logs it, and never switches back unasked.
+
+  **What makes it a real piece of work**, and why it was staged into five deployable steps:
+  twelve places read events, and a filtered manager does not cover all of them — the
+  `Count("events", filter=…)` at `views.py:300` is an annotation and reaches SQL without
+  consulting any manager, the opponents strip at `views.py:179` queries `Match.objects`
+  directly, and the `Max("date")` at `views.py:148` bounds the date picker. Missing one leaks
+  the inactive source onto a page, where it looks exactly like duplicated events.
+
+  **Known consequences, accepted:** switching rewrites the past, since `?events-date=` accepts
+  a past date and would then answer from the new source; and events from inactive sources
+  accumulate with nothing to purge them — 52,133 events and 17 MB today, so not pressing, but
+  new.
 
 ### Maintenance
 
