@@ -1,4 +1,5 @@
 import datetime
+from functools import wraps
 from typing import Any
 
 from django.conf import settings
@@ -10,7 +11,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.functional import Promise
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.cache import cache_page
+from django.views.decorators.cache import cache_control, cache_page
 
 from soccertime.models import (
     CHANNEL_LINK_ORDERING,
@@ -23,6 +24,39 @@ from soccertime.models import (
     Sport,
     Team,
 )
+
+
+def cached_page(view: Any) -> Any:
+    """Cache the rendered page on the server, and make the browser ask before reusing it.
+
+    `cache_page` announces its own timeout to the client as `Cache-Control: max-age`, so a
+    visitor who had loaded a page went on serving it from their own cache for the next hour
+    without contacting the server at all. That is wrong for a listing of live events: the
+    scraper runs and `make remote-scrape` clears the server cache, and none of it reached
+    anybody who had just been on the site. It also meant a deploy took up to an hour to
+    become visible to a returning visitor.
+
+    The server cache is untouched — the expensive part is still computed once an hour. What
+    goes is the browser's licence to skip the request. `ConditionalGetMiddleware` answers
+    the resulting revalidation with a 304 and no body whenever the page has not changed, so
+    the cost is a round trip rather than a re-render or a re-download.
+
+    Applied outside `cache_page` so it also patches responses that come back from the
+    cache, including ones stored before this existed.
+
+    The timeout is read per request rather than when this module is imported. Reading it at
+    import time is the usual Django footgun — it binds whatever the setting happened to be
+    while the module loaded, so nothing can change it afterwards and no test can turn the
+    server cache on to check it is still there.
+    """
+
+    @wraps(view)
+    def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        decorated = cache_control(max_age=0, must_revalidate=True)(cache_page(settings.CACHE_PAGE_TIMEOUT)(view))
+        return decorated(request, *args, **kwargs)
+
+    return wrapped
+
 
 # The site is served in Spanish; these are wrapped so a future locale can translate them.
 NO_EVENTS_MESSAGE = _("No hay eventos a la vista :)")
@@ -99,7 +133,7 @@ def healthz(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"status": "ok"})
 
 
-@cache_page(settings.CACHE_PAGE_TIMEOUT)
+@cached_page
 def favorites(request: HttpRequest) -> HttpResponse:
     queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3).with_related().chronological()
 
@@ -109,7 +143,7 @@ def favorites(request: HttpRequest) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
-@cache_page(settings.CACHE_PAGE_TIMEOUT)
+@cached_page
 def agenda(request: HttpRequest) -> HttpResponse:
     max_date_result = Event.objects.aggregate(Max("date"))["date__max"]
     max_date = max_date_result.strftime("%Y-%m-%d") if max_date_result else None
@@ -133,7 +167,7 @@ def agenda(request: HttpRequest) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
-@cache_page(settings.CACHE_PAGE_TIMEOUT)
+@cached_page
 def team_events(request: HttpRequest, team: str) -> HttpResponse:
     team_obj = get_object_or_404(Team, pk=team)
     queryset = Event.objects.for_team(team).in_progress_or_upcoming().with_related().chronological()
@@ -178,7 +212,7 @@ def team_events(request: HttpRequest, team: str) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
-@cache_page(settings.CACHE_PAGE_TIMEOUT)
+@cached_page
 def channel_events(request: HttpRequest, channel: str) -> HttpResponse:
     channel_obj = get_object_or_404(Channel, pk=channel)
     queryset = Event.objects.for_channel(channel).in_progress_or_upcoming().with_related().chronological()
@@ -194,7 +228,7 @@ def channel_events(request: HttpRequest, channel: str) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
-@cache_page(settings.CACHE_PAGE_TIMEOUT)
+@cached_page
 def sport_events(request: HttpRequest, sport: str) -> HttpResponse:
     sport_obj = get_object_or_404(Sport, pk=sport)
     queryset = Event.objects.for_sport(sport).in_progress_or_upcoming().with_related().chronological()
@@ -210,7 +244,7 @@ def sport_events(request: HttpRequest, sport: str) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
-@cache_page(settings.CACHE_PAGE_TIMEOUT)
+@cached_page
 def competition_events(request: HttpRequest, competition: str) -> HttpResponse:
     competition_obj = get_object_or_404(Competition, pk=competition)
     queryset = Event.objects.for_competition(competition).in_progress_or_upcoming().with_related().chronological()
@@ -232,7 +266,7 @@ def competition_events(request: HttpRequest, competition: str) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
-@cache_page(settings.CACHE_PAGE_TIMEOUT)
+@cached_page
 def channels(request: HttpRequest) -> HttpResponse:
     # The template regroups by subcategory, category and name; those keys come first so
     # the grouping works, and the model's own ordering decides the order inside each card.
@@ -248,7 +282,7 @@ def channels(request: HttpRequest) -> HttpResponse:
     )
 
 
-@cache_page(settings.CACHE_PAGE_TIMEOUT)
+@cached_page
 def competitions(request: HttpRequest) -> HttpResponse:
     """List sports and their competitions, grouping in Python to avoid N+1 queries."""
     today = timezone.now().date()

@@ -60,6 +60,12 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    # Turns the revalidation that `cached_page` asks browsers for into a 304 with no
+    # body, by attaching an ETag to the response. Without it every revalidation would
+    # send the whole page again, which would be worse than the hour of staleness it
+    # replaces. Placed high, per Django's documented ordering, so it sees the final
+    # response whatever produced it.
+    "django.middleware.http.ConditionalGetMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
