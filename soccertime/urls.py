@@ -35,12 +35,23 @@ from soccertime.views import (
     team_events,
 )
 
-urlpatterns: list[URLPattern | URLResolver] = []
 
-if os.environ.get("DJANGO_ADMIN_ENABLED", "").lower() == "true":
-    urlpatterns.append(path("admin/", admin.site.urls))
+def admin_is_enabled() -> bool:
+    """Whether the admin should be routed at all.
 
-urlpatterns += [
+    This is a security control rather than a convenience: production runs with the flag
+    off, so `/admin/` resolves to nothing and there is no login form to guess against.
+    Only the exact string `true` enables it, so a typo fails closed.
+    """
+    return os.environ.get("DJANGO_ADMIN_ENABLED", "").lower() == "true"
+
+
+# Kept apart from the rest so a test can compose a URLconf that routes the admin without
+# depending on the environment the suite happens to run in. The container sets the flag
+# to `true`, which is what let the admin tests pass while production had it off.
+admin_urlpatterns: list[URLPattern | URLResolver] = [path("admin/", admin.site.urls)]
+
+site_urlpatterns: list[URLPattern | URLResolver] = [
     path("healthz/", healthz, name="healthz"),
     path("", RedirectView.as_view(url="favorites/")),
     path("favorites/", favorites, name="favorites"),
@@ -53,6 +64,13 @@ urlpatterns += [
     path("channels/", channels, name="channels"),
     path("competitions/", competitions, name="competitions"),
 ]
+
+urlpatterns: list[URLPattern | URLResolver] = []
+
+if admin_is_enabled():
+    urlpatterns += admin_urlpatterns
+
+urlpatterns += site_urlpatterns
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

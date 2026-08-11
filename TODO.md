@@ -55,11 +55,10 @@ that is not a security finding is kept in its own section at the end.
   mode — full stack traces and settings to any visitor — and, with no `DJANGO_SECRET_KEY`
   set, falls back to the hardcoded `dev-only-insecure-key-not-for-production`, which makes
   session forgery trivial. Fix: default the image to the safe values and let development
-  opt in, which is the direction the rest of the settings module already takes. Worth
-  knowing before starting: the admin tests reverse `admin:` URLs, so they depend on the
-  image's `DJANGO_ADMIN_ENABLED=true` to have registered them. Flipping that default
-  breaks them until they set the flag themselves — and production no longer relies on it
-  either way, since the admin is now off there by default.
+  opt in, which is the direction the rest of the settings module already takes. The
+  coupling that would have made this awkward is already gone: the admin tests used to
+  depend on the image's `DJANGO_ADMIN_ENABLED=true` for the URLs they reverse, and they
+  now name a URLconf of their own, so flipping that default costs nothing in the suite.
 
 ### Low
 

@@ -12,7 +12,10 @@ from django.utils import timezone
 
 from soccertime.models import Channel, Competition, Match
 
-pytestmark = pytest.mark.django_db
+# The admin is only routed when `DJANGO_ADMIN_ENABLED` is true, and production runs with
+# it off. Naming the URLconf here keeps these tests about the admin's behaviour rather
+# than about which environment the suite happens to run in.
+pytestmark = [pytest.mark.django_db, pytest.mark.urls("soccertime.tests.urls_with_admin")]
 
 
 def test_match_admin_queries_performance(admin_client, db, sport, team_home, team_away):
