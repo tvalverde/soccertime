@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -17,6 +17,7 @@ help:
 	@echo "  typecheck            Check type annotations with mypy"
 	@echo "  screenshot           Capture a page headlessly, firefox then chrome (URL=, OUT=, SIZE=)"
 	@echo "  lint-fix             Fix auto-fixable linting errors"
+	@echo "  prune-images         Drop this project's superseded images from this machine"
 	@echo "  format               Format code with ruff"
 	@echo ""
 	@echo "DEPLOY:"
@@ -442,6 +443,18 @@ remote-smoke-test: wait-remote-healthy
 		exit 1; \
 	fi; \
 	echo "Smoke test passed."
+
+# The same housekeeping for the development machine, where every `up --build` leaves the
+# image it replaced untagged. The label filter matters more here than on the server: this
+# machine holds images for unrelated projects, and a blanket `docker image prune` would
+# take theirs too.
+#
+# No `:previous` is kept, unlike the production deploy. A superseded image is worth
+# holding there because it is the rollback for a live site; here the way back is to build
+# again, and nothing is serving traffic while that happens.
+prune-images:
+	@echo "--- Removing superseded $(APP_NAME) images from this machine ---"
+	@docker image prune -f --filter label=org.opencontainers.image.title=$(APP_NAME)
 
 # Every deploy retags `latest` onto the new build and leaves the previous one untagged,
 # so superseded images accumulate. Clearing them has to be scoped rather than a blanket

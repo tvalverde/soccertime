@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `make prune-remote-images`, which drops this project's superseded images from the production host and now runs at the end of `deploy-production`, after the smoke test — so a deploy that fails never reaches it. It filters on an OCI label carried by the image instead of being a blanket `docker image prune`: three of the untagged images on that host have no `RepoDigests`, meaning another service built them there and no registry can hand them back. The deploy also tags the outgoing image `soccertime:previous` before building, keeping exactly one rollback, because rebuilding from the same commit does not reproduce an image — `python:3-alpine` and pip both resolve afresh, which is how Pillow and Django drifted five releases out of date here.
+- `make prune-images`, the same housekeeping for the development machine, where every `up --build` leaves the image it replaced untagged. It filters on the same label, which matters more here than on the server: this machine carries images for unrelated projects. No `:previous` is kept, because locally the way back is to build again and nothing is serving traffic meanwhile. Verified by building a superseded image of each kind and confirming the target removes the one carrying this project's label and leaves the other untouched.
 
 ## [0.3.2] - 2026-08-11
 
