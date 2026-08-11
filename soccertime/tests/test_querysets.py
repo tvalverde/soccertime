@@ -195,6 +195,23 @@ class TestEventQuerySetTypeFilters:
 class TestEventQuerySetSearch:
     """Tests for search functionality."""
 
+    def test_it_finds_events_by_competition(self, match, competition):
+        """The gap that made the box useless for the most obvious thing anyone types.
+
+        Measured against the real database before the fix: "LaLiga" returned 0 results,
+        "Fórmula 1" 0 and "Champions" 1, while "Real Madrid" returned 809. Teams were searched
+        and competitions were not.
+        """
+        assert match.pk in event_pks(Event.objects.search(competition.name))
+
+    def test_it_finds_events_by_sport(self, match, competition):
+        """"Tenis" returned nothing at all, because the sport was not searched either."""
+        assert match.pk in event_pks(Event.objects.search(competition.sport.name))
+
+    def test_a_term_matching_nothing_still_matches_nothing(self, match):
+        """The new fields must widen the search, not turn it into a pass-through."""
+        assert event_pks(Event.objects.search("qwertyuiop-no-existe")) == []
+
     def test_a_query_longer_than_the_fields_matches_nothing(self, match):
         """`icontains` asks for a substring, so nothing that long can be inside a name."""
         events = Event.objects.search("x" * (MAX_SEARCHABLE_NAME_LENGTH + 1))

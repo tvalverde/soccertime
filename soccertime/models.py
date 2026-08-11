@@ -158,16 +158,6 @@ class Competition(models.Model):
     def __str__(self) -> str:
         return f"{self.name}"
 
-    @property
-    def has_events(self) -> bool:
-        today = timezone.now().date()
-        return any(event.date.date() >= today for event in self.events.all())
-
-    @property
-    def events_count(self) -> int:
-        today = timezone.now().date()
-        return len({event for event in self.events.all() if event.date.date() >= today})
-
 
 class Team(ImageMixin, models.Model):
     IMG_PARENT_DIR = "crests"
@@ -377,7 +367,14 @@ class EventQuerySet(models.QuerySet):
         return self.filter(date__gte=now, date__lte=end_date)
 
     def search(self, query: str | None) -> Self:
-        """Search events by team names, race name, or event name.
+        """Search events by team, race or event name, and by competition and sport.
+
+        Competition and sport were missing, which made the box useless for the terms people
+        actually type: against the real database "LaLiga" returned nothing, "Fórmula 1"
+        nothing and "Tenis" nothing, while "Real Madrid" returned 809. Both are foreign-key
+        hops, so no row can match twice and no `distinct()` is needed. Channel is not here on
+        purpose — it is a many-to-many, so it would need `distinct()` and change the query
+        shape underneath the pagination, and channels already have a page of their own.
 
         A query longer than the fields being searched is answered without touching the
         database. That is not a policy about how much someone may type: `icontains` asks
@@ -386,7 +383,7 @@ class EventQuerySet(models.QuerySet):
         nothing is the exact answer, and truncating would have answered a different question
         than the one asked.
 
-        It matters because this runs `icontains` across four joined tables in SQLite and
+        It matters because this runs `icontains` across six joined tables in SQLite and
         every distinct string is a fresh cache miss, so an unbounded one is cheap to abuse.
         """
         if not query:
@@ -398,6 +395,8 @@ class EventQuerySet(models.QuerySet):
             | Q(match__visitor__name__icontains=query)
             | Q(race__name__icontains=query)
             | Q(simpleevent__name__icontains=query)
+            | Q(competition__name__icontains=query)
+            | Q(competition__sport__name__icontains=query)
         )
 
     def favorites(self) -> Self:

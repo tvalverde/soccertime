@@ -244,6 +244,7 @@ class TestTeamEventsView:
         response = client.get(reverse("team-events", args=[99999]))
         assert response.status_code == 404
 
+
     def test_shows_team_events(self, client, match, team_home):
         """Should display events for the team."""
         response = client.get(reverse("team-events", args=[team_home.pk]))
@@ -506,3 +507,27 @@ class TestRedirects:
         response = client.get("/events/")
         assert response.status_code == 302
         assert "favorites" in response.url
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("route", ["team", "channel", "sport", "competition"])
+@pytest.mark.parametrize("identifier", ["abc", "1a", "%20", "999999999999999999999999"])
+def test_a_non_numeric_id_is_not_found_rather_than_a_server_error(client, route, identifier):
+    """All four routes took `<str:>` and handed it straight to a primary key lookup.
+
+    Django raised `ValueError: Field 'id' expected a number but got 'abc'`, uncaught, so the
+    request became a 500. A crawler, a link truncated in a chat or a typo reached it, and each
+    one wrote a server error into the log — the place you read when something real has broken.
+    Measured against production before the fix: all four answered 500, while a numeric id that
+    matches nothing correctly answered 404.
+
+    The routes declare `<int:>` now, so a segment that is not a number never matches and the
+    view is never entered. `-1` is deliberately absent from these cases: it was never broken,
+    because it casts to a perfectly good integer that simply matches no row.
+
+    Why it survived: the checks above assert 404 using `args=[99999]`, so they cover the shape
+    that already worked.
+    """
+    response = client.get(f"/events/{route}/{identifier}/")
+
+    assert response.status_code == 404

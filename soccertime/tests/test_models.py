@@ -60,18 +60,6 @@ class TestCompetition:
         with pytest.raises(IntegrityError):
             Competition.objects.create(name="Test League", sport=sport, flag=flag)
 
-    def test_has_events_false(self, competition):
-        assert competition.has_events is False
-
-    def test_has_events_true(self, competition, match):
-        assert competition.has_events is True
-
-    def test_events_count(self, competition, match, match_in_progress):
-        """Should count only upcoming events."""
-        # match is in future, match_in_progress started 1 hour ago
-        # Both should be counted as they're today
-        assert competition.events_count >= 1
-
 
 class TestTeam:
     """Tests for Team model."""
@@ -349,18 +337,6 @@ class TestCodeReviewRegressions:
         qs = Event.objects.with_related()
         assert qs.query.select_related is not False
         assert qs._prefetch_related_lookups
-
-    def test_competition_properties_use_prefetch(self, db, django_assert_max_num_queries, competition, match):
-        """
-        Point 4: Competition properties should not do N+1 queries.
-        They should use list comprehensions to leverage prefetch cache.
-        """
-        comp = Competition.objects.prefetch_related("events", "favorite").get(id=competition.id)
-
-        # Access properties and ensure they don't hit the DB
-        with django_assert_max_num_queries(0):
-            _ = comp.has_events
-            _ = comp.events_count
 
 
 class TestEventDuration:

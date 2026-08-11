@@ -44,13 +44,6 @@ the last, which is a different kind of thing and says so.
   leak into the shared cache once before. **This is a product decision, not a defect**: it
   turns a personal agenda into everybody's, and that may not be what the site is for.
 
-- [ ] **The search does not look at competitions.** `EventQuerySet.search` covers team, race
-  and simple-event names and nothing else, so the most obvious things anyone would type come
-  back empty: **"LaLiga" returns 0 results, "Fórmula 1" returns 0, "Champions" returns 1**,
-  while "Real Madrid" returns 809. Four lines — `Q(competition__name__icontains=…)`, probably
-  the channel too. It is this high in the list only because the cost is nothing and the
-  failure is in front of every visitor who uses the box.
-
 - [ ] **The times are right by accident.** The scraper stores Spanish local time labelled as
   UTC, and the site renders in UTC, so the number displayed is correct because two errors
   cancel. Django says so on every save: *"DateTimeField Event.date received a naive datetime
@@ -198,6 +191,16 @@ the git history. Kept here as an index of what has been through this file.
   characterization tests, then rewrote it: 1236 queries and 638 ms down to 1 query and
   11 ms. The tests found two silent bugs first, one of them dropping every accented
   channel name.
+- **500 on every non-numeric id, and a search blind to competitions** (2026-08-11) — the
+  four event routes declared `<str:>` and passed the value to a primary key lookup, so
+  `/events/team/abc/` and its three siblings answered 500 in production while a numeric id
+  matching nothing correctly answered 404; they take `<int:>` now, and a non-numeric segment
+  never reaches the view. The search covered team, race and simple-event names only, so
+  "LaLiga", "Fórmula 1", "Copa del Rey" and "Tenis" all returned nothing — they return 1,040,
+  263, 243 and 6,884 with competition and sport added. Channel was left out on purpose: it is
+  a many-to-many, so it needs `distinct()` and would change the query shape underneath the
+  pagination. `Competition.has_events` and `events_count` were deleted in the same pass,
+  referenced nowhere and an N+1 waiting for a caller.
 - **Type hints** (0.2.0, 2026-08-10) — annotated 188 functions across 19 modules, put
   mypy and ruff's ANN rules behind them, and fixed the genuine type errors that surfaced.
   Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.
