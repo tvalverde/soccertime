@@ -68,7 +68,7 @@ class Command(BaseCommand):
             if not image:
                 self.stderr.write(f"  Could not restore {flag.display_name or flag.name}")
                 continue
-            flag.save_flag(image, flag.name)
+            flag.save_flag(image)
             restored += 1
 
         self.stdout.write(self.style.SUCCESS(f"  Restored {restored} of {len(broken)} flag images"))

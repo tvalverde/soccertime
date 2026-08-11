@@ -153,7 +153,7 @@ class TestImageMixinDimensions:
         team = Team.objects.create(name="Con escudo")
         buffer = io.BytesIO()
         Image.new("RGB", (48, 24)).save(buffer, format="PNG")
-        team.save_crest(buffer, "crest.png")
+        team.save_crest(buffer)
         return team
 
     def test_dimensions_are_stored_on_save(self, team_with_crest):

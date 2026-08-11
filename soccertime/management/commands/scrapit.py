@@ -245,7 +245,7 @@ class Command(BaseCommand):
         if not flag.image or not flag.image.name or not flag.image.storage.exists(flag.image.name):
             image = download_image(flag_url, on_error=self.stderr.write)
             if image:
-                flag.save_flag(image, flag_url)
+                flag.save_flag(image)
 
         return flag
 
@@ -254,8 +254,8 @@ class Command(BaseCommand):
         if team.crest and team.crest.name and team.crest.storage.exists(team.crest.name):
             return
         image = download_image(crest_url, on_error=self.stderr.write)
-        if image and crest_url:
-            team.save_crest(image, crest_url)
+        if image:
+            team.save_crest(image)
 
     def update_channels(self, event: Match | Race | SimpleEvent, channels: list[str]) -> None:
         channel_objs = [self.get_or_create_channel(c) for c in channels]

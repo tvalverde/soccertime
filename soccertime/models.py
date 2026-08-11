@@ -1,7 +1,6 @@
 import datetime
 import hashlib
 import io
-import os
 from typing import Any, ClassVar, Self, cast
 from urllib.parse import urlparse
 
@@ -14,6 +13,8 @@ from django.db.models.signals import m2m_changed, post_delete, pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext as _
+
+from soccertime.images import extension_for
 
 ALLOWED_LINK_SCHEMES = ["http", "https", "ftp", "ftps", "acestream", "sop", "intent", "rtmp", "m3u8"]
 standard_url_validator = URLValidator(schemes=["http", "https", "ftp", "ftps"])
@@ -88,15 +89,23 @@ class ImageMixin(models.Model):
             return width, height
         return image.width, image.height
 
-    def save_image(self, image_bytes: io.BytesIO, original_filename: str) -> None:
+    def save_image(self, image_bytes: io.BytesIO) -> None:
         """Save image from bytes, using content hash as filename.
 
         The dimensions are measured here, from the buffer already in memory, so that
         rendering never has to open the file again.
+
+        Both halves of the name come from the content and neither from the source URL.
+        The extension used to be `os.path.splitext(url)[1]`, which let whoever served the
+        file choose how nginx would later label it: a URL ending in `.html` or `.svg`
+        served bytes that Django stored without complaint, because `get_image_dimensions`
+        returns `(None, None)` for content it cannot parse rather than raising. The file
+        then came back from this site's own origin as markup. `extension_for` refuses
+        anything that does not decode as a format on the allowlist, so that cannot happen
+        whatever the URL says.
         """
         filename = hashlib.sha1(image_bytes.getvalue()).hexdigest()
-        ext = os.path.splitext(original_filename)[1]
-        name = f"{filename}{ext}"
+        name = f"{filename}{extension_for(image_bytes)}"
         image = ImageFile(image_bytes, name=name)
         setattr(self, f"{self.IMG_FIELD_NAME}_width", image.width)
         setattr(self, f"{self.IMG_FIELD_NAME}_height", image.height)
@@ -121,9 +130,9 @@ class Flag(ImageMixin, models.Model):
     def __str__(self) -> str:
         return self.name
 
-    def save_flag(self, image: io.BytesIO, flag_filename: str) -> None:
+    def save_flag(self, image: io.BytesIO) -> None:
         """Alias for backward compatibility."""
-        self.save_image(image, flag_filename)
+        self.save_image(image)
 
 
 class Competition(models.Model):
@@ -175,9 +184,9 @@ class Team(ImageMixin, models.Model):
     def is_favorite_cached(self) -> bool:
         return bool(self.favorite.all())
 
-    def save_crest(self, crest: io.BytesIO, crest_filename: str) -> None:
+    def save_crest(self, crest: io.BytesIO) -> None:
         """Alias for backward compatibility."""
-        self.save_image(crest, crest_filename)
+        self.save_image(crest)
 
 
 class Favorite(models.Model):

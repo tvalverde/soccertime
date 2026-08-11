@@ -354,3 +354,40 @@ def future_events(match, match_future, race, simple_event):
 def past_events(match_past, race_past, simple_event_past):
     """Only past events."""
     return [match_past, race_past, simple_event_past]
+
+
+# =============================================================================
+# Image download
+# =============================================================================
+#
+# `download_image` resolves the hostname to refuse addresses inside the deployment, so a
+# test that does not stub the lookup makes a real DNS query — slow, and dependent on the
+# machine having a network. Anything exercising the download path takes `public_dns`.
+
+
+@pytest.fixture
+def public_dns(monkeypatch):
+    """Resolve every hostname to a public address, so only the response is under test."""
+    monkeypatch.setattr(
+        "soccertime.management.commands._image_download.socket.getaddrinfo",
+        lambda host, port: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
+
+
+def image_response(body, status=200, content_type="image/png", headers=None, is_redirect=False):
+    """A stand-in for `requests.Response` carrying only what the downloader reads.
+
+    Faithful about `is_redirect` in particular: a bare `Mock` answers truthily to it, so a
+    test built on one has every response treated as a redirect.
+    """
+    from unittest.mock import Mock
+
+    import requests
+
+    response = Mock(spec=requests.Response)
+    response.status_code = status
+    response.is_redirect = is_redirect
+    response.headers = {"Content-Type": content_type, **(headers or {})}
+    response.iter_content = Mock(side_effect=lambda size: iter([body[i : i + size] for i in range(0, len(body), size)]))
+    response.close = Mock()
+    return response

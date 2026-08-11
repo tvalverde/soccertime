@@ -11,6 +11,8 @@ from PIL import Image
 
 from soccertime.models import Flag, Team
 
+from .conftest import image_response
+
 
 def image_bytes(size=(32, 24)):
     buffer = io.BytesIO()
@@ -22,7 +24,7 @@ def image_bytes(size=(32, 24)):
 def stored_flag(db, settings, tmp_path):
     settings.MEDIA_ROOT = tmp_path
     flag = Flag.objects.create(name="https://example.com/spain.png", display_name="España")
-    flag.save_flag(image_bytes(), "spain.png")
+    flag.save_flag(image_bytes())
     return flag
 
 
@@ -44,7 +46,7 @@ class TestRedownloadImagesCommand:
         """A team keeps no source URL, so its crest is reported but never re-fetched."""
         settings.MEDIA_ROOT = tmp_path
         broken = Team.objects.create(name="Sin fichero")
-        broken.save_crest(image_bytes(), "crest.png")
+        broken.save_crest(image_bytes())
         (tmp_path / broken.crest.name).unlink()
         Team.objects.create(name="Sin escudo")
 
@@ -56,11 +58,10 @@ class TestRedownloadImagesCommand:
         assert "teams whose crest file is missing: 1" in out.getvalue()
         assert "teams with no crest at all:        1" in out.getvalue()
 
-    def test_restores_a_missing_file_from_its_source_url(self, flag_without_file):
+    def test_restores_a_missing_file_from_its_source_url(self, flag_without_file, public_dns):
         out = StringIO()
         with patch("soccertime.management.commands._image_download.requests.get") as mock_get:
-            mock_get.return_value.status_code = 200
-            mock_get.return_value.content = image_bytes().getvalue()
+            mock_get.return_value = image_response(image_bytes().getvalue())
             call_command("redownload_images", stdout=out)
 
         mock_get.assert_called_once()
@@ -80,17 +81,19 @@ class TestRedownloadImagesCommand:
         assert "Dry run" in out.getvalue()
         assert flag_without_file.name in out.getvalue()
 
-    def test_a_failed_download_does_not_stop_the_others(self, db, settings, tmp_path):
+    def test_a_failed_download_does_not_stop_the_others(self, db, settings, tmp_path, public_dns):
         settings.MEDIA_ROOT = tmp_path
         for index in range(2):
             flag = Flag.objects.create(name=f"https://example.com/{index}.png", display_name=str(index))
-            flag.save_flag(image_bytes(), f"{index}.png")
+            flag.save_flag(image_bytes())
             (tmp_path / flag.image.name).unlink()
 
         out, err = StringIO(), StringIO()
         with patch("soccertime.management.commands._image_download.requests.get") as mock_get:
-            ok = type("Response", (), {"status_code": 200, "content": image_bytes().getvalue()})()
-            mock_get.side_effect = [requests.ConnectionError("boom"), ok]
+            mock_get.side_effect = [
+                requests.ConnectionError("boom"),
+                image_response(image_bytes().getvalue()),
+            ]
             call_command("redownload_images", stdout=out, stderr=err)
 
         assert "Restored 1 of 2" in out.getvalue()

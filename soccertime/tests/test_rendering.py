@@ -18,7 +18,7 @@ def team_with_crest(db, settings, tmp_path):
     team = Team.objects.create(name="Con escudo")
     buffer = io.BytesIO()
     Image.new("RGB", (48, 24)).save(buffer, format="PNG")
-    team.save_crest(buffer, "crest.png")
+    team.save_crest(buffer)
     return team
 
 

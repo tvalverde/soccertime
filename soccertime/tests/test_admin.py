@@ -70,7 +70,7 @@ def test_changelist_renders_a_stored_image(admin_client, db, settings, tmp_path)
     team = Team.objects.create(name="Con escudo")
     buffer = io.BytesIO()
     Image.new("RGB", (48, 24)).save(buffer, format="PNG")
-    team.save_crest(buffer, "crest.png")
+    team.save_crest(buffer)
 
     response = admin_client.get(reverse("admin:soccertime_team_changelist"))
 
