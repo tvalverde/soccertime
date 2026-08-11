@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The local production replica builds `soccertime:replica` instead of a second image under `soccertime:latest`. Bringing that stack up builds **both** `web` and `soccertime-web` in one command, with opposite values of `INSTALL_DEV`, and both wrote the same tag — so which image ended up there depended on which build finished last. Not theoretical: it happened while closing 0.4.3, when the development container came up on a production image and `make test` died with `exec: "pytest": executable file not found`, a message that reads as a broken environment rather than a tag collision. The reverse is quieter and worse — start the replica without `--build` and it runs an image carrying the test and lint toolchain, so the rehearsal stops rehearsing what it exists to rehearse. The separation is now visible in `docker images`: 220 MB against 331 MB. Reproduced the exact sequence afterwards to confirm it: building the replica leaves the development image untouched, and the replica's own image still has no pytest. Four tests parse the compose files — with `re`, as `test_requirements.py` already reads the Dockerfile, since a parser is not worth a dependency for four fields — and assert that no tag is claimed twice and that the replica still builds without the toolchain. `docker image prune` is unaffected: it removes untagged images only, so the new tag survives.
+
 ## [0.4.3] - 2026-08-11
 
 The stored times stop lying, and nothing on the site moves.

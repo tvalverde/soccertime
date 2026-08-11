@@ -28,11 +28,16 @@ services:
       - traefik.http.routers.traefik-local.service=api@internal
 
   soccertime-web:
+    # Its own tag, because bringing this stack up builds `web` and `soccertime-web` in the
+    # same command with opposite values of `INSTALL_DEV`. Sharing `soccertime:latest` made
+    # the winner depend on which build finished last: one way the development container came
+    # up without pytest and `make test` died with `executable file not found`, which reads as
+    # a broken environment rather than a tag collision; the other way this stack silently ran
+    # an image carrying the toolchain, so the rehearsal stopped rehearsing production.
+    image: soccertime:replica
     build:
       context: .
-      # Compose merges `build.args` across files, so `compose.yaml` would hand this stack
-      # the development toolchain and quietly make the replica less like production than it
-      # looks. This is the point of the replica, so it is pinned rather than inherited.
+      # Pinned rather than inherited: this is what makes the image a production one.
       args:
         INSTALL_DEV: "false"
     env_file:
