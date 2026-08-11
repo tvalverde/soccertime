@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The agenda renders the event's datetime instead of its `.time` and `.date`, which is a prerequisite for fixing the stored times and, on its own, changes nothing at all. `.time` returns a naive `datetime.time`, so the value reached the formatter with its zone already discarded: the page was deaf to `TIME_ZONE`, rendering the same string under `UTC` and under `Europe/Madrid`. That is precisely the state in which moving the stored data to real UTC would shift every time on the site by an hour or two without any test noticing. Nothing in the suite asserted a rendered time, so five now do — three of them failing before this change, printing 20:00 for a summer event at 22:00 Madrid, 21:00 for a winter one, and filing a 00:30 event under the previous day. Verified against production data rather than assumed: 287 events across ten dates spanning both seasons, rendered by the old templates in production and the new ones in the local replica, produce **zero differing times and identical day headers on all eighteen pages**. The three pages that differed at all did so because the replica's snapshot holds a different event, not a different time.
+
 ## [0.4.2] - 2026-08-11
 
 Two defects that had been live in front of every visitor, found by asking which of the

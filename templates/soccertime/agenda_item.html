@@ -3,7 +3,7 @@
 {% load i18n %}
 <tr{% if event.is_favorite_event and "favorites" not in request.path %} class="favorite-event"{% endif %}>
   <th scope="row">
-    {{ event.date.time|date:'H:i' }}
+    {{ event.date|date:'H:i' }}
   </th>
   <td class="text-start">
     <a href="{% url "competition-events" event.competition.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ event.competition }}">{{ event.competition.flag|render_image_markup }} {{ event.competition }}</a><br>
