@@ -1,7 +1,7 @@
 {% load soccertime_tags %}
 {% load l10n %}
 {% load i18n %}
-<tr{% if event.is_favorite_event and "favorites" not in request.path %} style="border-left: 4px solid var(--bs-warning) !important;"{% endif %}>
+<tr{% if event.is_favorite_event and "favorites" not in request.path %} class="favorite-event"{% endif %}>
   <th scope="row">
     {{ event.date.time|date:'H:i' }}
   </th>

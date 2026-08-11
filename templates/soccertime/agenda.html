@@ -20,7 +20,7 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 {% if competition_teams %}
 <div class="container mb-2 py-2 bg-dark text-light">
   <div class="d-flex align-items-start">
-    <div id="teams-container" class="flex-grow-1 overflow-hidden" style="max-height: 44px; transition: max-height 0.3s ease;">
+    <div id="teams-container" class="flex-grow-1 overflow-hidden teams-strip">
       <div class="d-flex flex-wrap justify-content-center gap-2">
         {% for team in competition_teams %}
         <span><a href="{% url "team-events" team.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ team.name }}">{{ team|render_image_markup }}</a></span>
@@ -68,12 +68,6 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
     </table>
 </div>
 {% if events.number %}
-<style>
-    .pagination-wrap .pagination {
-        flex-wrap: wrap;
-        justify-content: inherit;
-    }
-</style>
 <div class="d-flex justify-content-center justify-content-sm-end pe-sm-3 pb-3 pagination-wrap">
     {% bootstrap_pagination events %}
 </div>

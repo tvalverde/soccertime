@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
+from django.utils.csp import CSP
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -66,6 +67,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
 ]
 
 _caching_enabled = not DEBUG and os.environ.get("DJANGO_CACHE", "true").lower() != "false"
@@ -193,6 +195,35 @@ SECURE_REDIRECT_EXEMPT = [r"healthz/$"]
 SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS") or 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_flag("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS")
 SECURE_HSTS_PRELOAD = env_flag("DJANGO_SECURE_HSTS_PRELOAD")
+
+# The layer that contains an injection rather than preventing it, which is why it is worth
+# having even after the stored-XSS finding was fixed at the source.
+#
+# There is no nonce here, and that is deliberate rather than an omission. Every public view
+# is wrapped in `@cache_page` for an hour, and `cache_page` stores the response inside the
+# view decorator — before this middleware adds the header. On a cache hit the header would
+# therefore carry a freshly minted nonce while the cached HTML still carried the old one,
+# and every inline script would be blocked for everyone except the visitor who happened to
+# populate the cache. So the inline went away instead: the scripts and styles live in
+# static files, and nothing on a page needs permission to run.
+#
+# Adding a nonce later would not be a small change — it would be an invitation to write an
+# inline script that works locally and breaks in production an hour after each deploy.
+SECURE_CSP = {
+    "default-src": [CSP.SELF],
+    "script-src": [CSP.SELF],
+    "style-src": [CSP.SELF],
+    # The favicon is an inline SVG data URI in `base.html`. Media and static are served
+    # from this origin by nginx, so `self` already covers every real image.
+    "img-src": [CSP.SELF, "data:"],
+    "font-src": [CSP.SELF],
+    "connect-src": [CSP.SELF],
+    # Alongside `X-Frame-Options: DENY`, which older browsers still need.
+    "frame-ancestors": [CSP.NONE],
+    "base-uri": [CSP.NONE],
+    "form-action": [CSP.SELF],
+    "object-src": [CSP.NONE],
+}
 
 SILENCED_SYSTEM_CHECKS = [
     # HSTS deliberately covers this host only: the domain may serve unrelated
