@@ -71,6 +71,11 @@ dmypy.json
 # IDE
 .idea/
 .vscode/
+# Per-machine state an assistant CLI keeps for this project. The one that was tracked
+# here was a symlink into a home directory, so it reached the server as a dangling link
+# and then the image. The `*ignore` files and the `*.md` instructions beside them are
+# real project configuration and stay versioned; this is not.
+.antigravitycli/
 *.swp
 *.swo
 *~

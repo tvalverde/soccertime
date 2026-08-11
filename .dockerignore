@@ -19,3 +19,5 @@ media/
 static/
 node_modules/
 .git/
+# Per-machine assistant state; the tracked one was a symlink into a home directory.
+.antigravitycli/
