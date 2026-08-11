@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-11
+
+A secret that was never published, and the housekeeping that keeps it that way. The image
+carried `.env.production` because `.dockerignore` matched one filename rather than the
+family, and the copy inside it was never read by anything. What made it worth acting on
+was not exposure — the investigation looked for a way the key could have left the two
+machines that build the image and found none — but persistence: four superseded images on
+the development machine were still holding the file, so the key had outlived every
+deletion anyone would think to perform. It was rotated on that basis, every copy was
+removed, and two prune targets now stop superseded images from accumulating unnoticed
+again. Both are scoped by a label on the image rather than clearing everything untagged,
+because either machine also holds images that other projects built and no registry could
+give back.
+
 ### Security
 - `.env.production` — which holds `DJANGO_SECRET_KEY` — is no longer copied into the Docker image, and the key it carried has been rotated. `.dockerignore` listed `.env`, and that pattern matches only that exact name, so `COPY . .` took `.env.production` and `.env.production.local` into every build; the entry is now `.env*`. Removing them changes no behaviour, because the copy inside the image was never read: the container takes its environment from the compose `env_file`, which is resolved on the host. Nothing indicates the key ever left the two machines that build the image — the project contains no `docker push`, registry or `docker save`, `git log --all -S` finds the key in no commit, and the deploy archive is `git archive HEAD`, which carries tracked files only. What the finding really cost is durability: four superseded images on the development machine were each found still holding the file, so the key outlived every deletion that would occur to anyone. It was rotated on that basis rather than because it is known to be exposed, and those images were removed. The replacement is 64 characters against the previous 52. Rotation invalidates signed data, which here is only the admin login: favourites are rows in the database and no view touches `request.session`.
 
