@@ -123,6 +123,30 @@ the last, which is a different kind of thing and says so.
 
 ### Maintenance
 
+- [ ] **Nothing can read production's logs, though `CLAUDE.md` says every deploy must.** It
+  instructs checking the container logs for 500s after deploying, and separately that every
+  production operation belongs in the `Makefile` rather than an ad-hoc SSH command — and
+  there is no target that reads logs, so the two instructions cannot both be obeyed. Noticed
+  on 2026-08-11 while verifying a deploy: the evidence that nothing was throwing had to be
+  indirect, from fetching pages. A `remote-logs` target, ideally with a `--since` so it can
+  be scoped to the deploy just made.
+
+- [ ] **The local replica has two undocumented traps, both of which look like the application
+  is broken.** Cost most of an hour on 2026-08-11 and neither is in the README's setup steps.
+
+  1. `TRAEFIK_HOST_RULE` is not in `.env`, which is the only env file compose interpolates
+     from. Run the documented command without exporting it and the router rule is the empty
+     string, so **Traefik answers 404 to every path** — including a valid team id, which is
+     what makes it read as a Django problem rather than a proxy one.
+  2. `.env` sets `DOCKER_UID=1001` while the replica's database volume is owned by `1000`,
+     since it came from a production copy. Any write fails with `attempt to write a readonly
+     database`, so `manage.py migrate` cannot be run the documented way — it needs
+     `exec -u 1000:1000`, which nothing says.
+
+  Both are the sort of thing that makes someone distrust a rehearsal that is working
+  perfectly. A `make replica-up` target would fix them together and put the incantation
+  somewhere reviewable, which is what the `Makefile` is for.
+
 - [ ] **Move to Django 6.1 — blocked on `django-admin-sortable2`, not on Django.** Attempted
   on 2026-08-11 in a disposable image, with nothing in the repository touched, and stopped
   on a defect that only appears in production.
