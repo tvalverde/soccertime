@@ -208,6 +208,15 @@ upload_files:
 	fi
 
 # Target to execute deployment commands on remote server via SSH
+#
+# `collectstatic` runs in a throwaway container before the application is recreated, not
+# through `exec` afterwards. Static filenames carry a content hash, and the manifest that
+# maps plain names to hashed ones is read once, the first time a template renders a
+# `{% static %}` tag. Collecting afterwards meant the new process could read a manifest
+# that was still missing or half-written and then hold it for its whole life: every page
+# answered 500 while `/healthz/` — which renders no template — stayed green, so the
+# container looked healthy with the site down. Finishing the collection first removes the
+# window rather than papering over it with a second restart.
 remote_deploy:
 	@echo "--- Initiating remote deployment via SSH ---"
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
@@ -216,17 +225,21 @@ remote_deploy:
 		echo "--- Extracting new application code ---" && \
 		tar zxfv $(ARCHIVE_NAME) && \
 		rm $(ARCHIVE_NAME) && \
-		echo "--- Rebuilding and recreating services via orchestrator ---" && \
 		cd $(REMOTE_DOCKER_PATH) && \
 		{ docker image inspect $(APP_NAME):latest >/dev/null 2>&1 \
 			&& docker tag $(APP_NAME):latest $(APP_NAME):previous || true; } && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans $(REMOTE_SOCCERTIME_SERVICE) && \
+		echo "--- Building the new image ---" && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) build $(REMOTE_SOCCERTIME_SERVICE) && \
 		echo "--- Fixing static volume permissions ---" && \
 		docker run --rm -v $(REMOTE_STATIC_VOLUME):/data alpine chown -R $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data && \
+		echo "--- Collecting static files, before anything serves them ---" && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) run --rm --no-deps \
+			-u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) \
+			python manage.py collectstatic --noinput && \
+		echo "--- Recreating services via orchestrator ---" && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --remove-orphans $(REMOTE_SOCCERTIME_SERVICE) && \
 		echo "--- Applying database migrations ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput && \
-		echo "--- Collecting static files ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py collectstatic --noinput \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput \
 	'
 
 # Target to clean up local temporary archive after upload
