@@ -139,16 +139,17 @@ screenshot:
 	@code=$$(curl -s -o /dev/null -w "%{http_code}" -L "$(URL)"); \
 	case "$$code" in 2*|3*) ;; *) echo "Warning: $(URL) answered $$code; the capture will show the browser's error page" ;; esac
 	@out="$(if $(OUT),$(OUT),$(SCREENSHOT_OUT))"; \
+	size="$(if $(SIZE),$(SIZE),$(SCREENSHOT_SIZE))"; \
 	rm -f "$$out"; \
 	profile=$$(mktemp -d); \
 	MOZ_NO_REMOTE=1 firefox --new-instance --headless --profile "$$profile" \
-		--window-size=$(SCREENSHOT_SIZE) --screenshot "$$out" "$(URL)" >/dev/null 2>&1 || true; \
+		--window-size=$$size --screenshot "$$out" "$(URL)" >/dev/null 2>&1 || true; \
 	rm -rf "$$profile"; \
 	if [ -s "$$out" ]; then \
 		echo "Written by firefox: $$out"; \
 	else \
 		google-chrome --headless --disable-gpu --hide-scrollbars \
-			--window-size=$(SCREENSHOT_SIZE) --screenshot="$$out" "$(URL)" >/dev/null 2>&1 || true; \
+			--window-size=$$size --screenshot="$$out" "$(URL)" >/dev/null 2>&1 || true; \
 		if [ -s "$$out" ]; then \
 			echo "Written by chrome, firefox produced nothing: $$out"; \
 		else \
