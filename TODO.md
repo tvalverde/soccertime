@@ -109,6 +109,13 @@ the last, which is a different kind of thing and says so.
 
 ### Maintenance
 
+- [ ] **Production's proxy floats and the replica's is pinned.** The server runs
+  `traefik:latest`, today 3.7.10; `compose.production.local.yaml` names an exact version so
+  the replica rehearses the real thing. That pin has to be updated by hand when the server
+  pulls a newer Traefik, and nothing notices if it is not — which is exactly how a deploy
+  measured at 0.2s locally cost 13s in production on 2026-08-12. Either pin the server too,
+  or have `make remote-ps` compare the two and say so.
+
 - [ ] **Move to Django 6.1 — blocked on `django-admin-sortable2`, not on Django.** Attempted
   on 2026-08-11 in a disposable image, with nothing in the repository touched, and stopped
   on a defect that only appears in production.

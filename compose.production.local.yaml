@@ -10,7 +10,11 @@ services:
       - excluded-from-the-replica
 
   traefik:
-    image: traefik:v2.11
+    # Pinned to what production actually runs. It said `v2.11` while the server ran 3.7.10,
+    # so the replica rehearsed a different proxy than the one in front of the site — and a
+    # zero-downtime deploy measured at 0.2s here cost 13s there. Version, not configuration,
+    # was the difference. Update this when the server updates.
+    image: traefik:3.7.10
     container_name: soccertime-traefik-local
     restart: unless-stopped
     command:

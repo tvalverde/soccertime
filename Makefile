@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape replica-manage replica-migrate remote-check remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape replica-manage replica-migrate remote-check remote-ps remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -102,6 +102,14 @@ LOG_GREP ?=
 # itself can be exercised — pointing it at 2xx must find the traffic that is certainly there,
 # which is the only way to know the pattern matches anything at all.
 ERROR_STATUS ?= 5[0-9][0-9]
+# Traefik 3 marks a newly discovered server DOWN until its first probe succeeds — v2 marked
+# it up and found out later. So a container answering `/healthz/` is not yet receiving
+# traffic, and retiring the old one at that moment leaves the service with no live server:
+# 502, then 503, then the router is dropped altogether and every path answers 404. Measured
+# at 13 seconds in production and 2.4 in the replica once its proxy was pinned to the same
+# version. Five probe intervals is the margin that removed it.
+PROXY_SETTLE_SECONDS ?= 5
+
 HEALTH_TIMEOUT ?= 90
 
 # Generational retention. A plain count measures history in deploys rather than in time:
@@ -277,7 +285,8 @@ remote_deploy:
 			fi; \
 			sleep 1; \
 		done && \
-		echo "  the new container is serving" && \
+		echo "  the new container is serving, giving Traefik time to see that too" && \
+		sleep $(PROXY_SETTLE_SECONDS) && \
 		if [ -n "$$old" ]; then \
 			echo "--- Retiring the previous container ---" && \
 			docker stop -t 20 $$old >/dev/null && docker rm $$old >/dev/null; \
@@ -635,6 +644,18 @@ replica-manage:
 
 replica-migrate:
 	@$(MAKE) --no-print-directory replica-manage MANAGE=migrate
+
+# What is actually running out there, containers and images. Read-only, and here rather than
+# in an ad-hoc SSH command for the same reason as everything else: so it is reviewable.
+remote-ps:
+	@echo "--- Containers on the remote host ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps --format "table {{.Name}}\t{{.Image}}\t{{.Status}}"; \
+		echo; echo "--- Proxy in front of it ---"; \
+		docker inspect -f "{{.Config.Image}}" traefik 2>/dev/null; \
+		docker exec traefik traefik version 2>/dev/null | head -2 \
+	'
 
 # Read the application's own logs. `CLAUDE.md` requires checking them for 500s after every
 # deploy and, separately, that production operations live here rather than in an ad-hoc SSH
