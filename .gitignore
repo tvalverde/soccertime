@@ -76,6 +76,11 @@ dmypy.json
 # and then the image. The `*ignore` files and the `*.md` instructions beside them are
 # real project configuration and stay versioned; this is not.
 .antigravitycli/
+
+# Copies the download targets leave behind before overwriting, named with `BACKUP_SUFFIX`
+# in the Makefile. `download-media` alone drops 45 MB in the working tree, which is exactly
+# the kind of thing `git add -A` sweeps in.
+*.backup.*
 *.swp
 *.swo
 *~
