@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-08-11
+
+Nothing a visitor can see. This is the tooling around the site, and every item in it was
+found by being bitten during the day's two releases rather than by looking for it.
+
+The deploy could not read its own logs. `CLAUDE.md` requires checking them for 500s after
+every deploy and, in the same breath, that production operations live in the `Makefile` and
+not in an ad-hoc SSH command — and no target read logs, so the two instructions could not both
+be obeyed. Verification of the 0.4.2 deploy had to fall back on fetching pages and inferring.
+A deploy now fails outright when the container it just started has logged a 5xx.
+
+The local production replica had three ways of lying about itself: it silently overwrote the
+development image, so `make test` died with `executable file not found` at the worst possible
+moment; it answered 404 on every path when a variable nobody mentions was unset, which reads
+as a broken application rather than a proxy with nothing to match on; and it refused every
+write to a database volume it did not own. All three are fixed where they start, so the
+command in the README works exactly as written with nothing exported and nothing prepared.
+
 ### Added
 - `make remote-logs` reads the application's log, with `SINCE`, `GREP` and `TAIL`. `CLAUDE.md` requires checking production's logs for 500s after every deploy and, separately, that production operations live in the `Makefile` rather than an ad-hoc SSH command — with no target that read logs, the two instructions could not both be obeyed, and the evidence that nothing was throwing had to come indirectly from fetching pages.
 - A deploy now fails if the new container logged a 5xx since it started. Five pages answering 200 is not proof a release is clean, and this deploy has twice reported success over a broken site. The window is deliberately narrow: widen it and unrelated crawler traffic decides whether a deploy passes. The offending lines are printed rather than counted, because whether a 5xx matters is a judgement a person makes. Exercised by pointing it at 2xx, where it correctly found the traffic that is certainly there and failed — a check that cannot fail is worth nothing, and a mis-escaped pattern would have passed silently forever.
