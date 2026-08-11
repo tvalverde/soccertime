@@ -598,6 +598,21 @@ class Event(models.Model):
         ordering = ["date"]
 
     @property
+    def channels_by_availability(self) -> list["Channel"]:
+        """The channels this event is on, the ones that can be played first.
+
+        `Channel.Meta.ordering` is alphabetical, which buried the actionable one: an event on
+        ATP Tennis TV and Movistar Plus+ listed the channel without a link first and the one
+        with the play buttons second. Reading order should put what can be done ahead of what
+        can only be known.
+
+        Sorted in Python, over the list `with_related()` has already prefetched, so this costs
+        no query. Doing it in SQL would need an annotation and would defeat that prefetch.
+        `sorted` is stable, so the alphabetical order survives inside each group.
+        """
+        return sorted(self.channels.all(), key=lambda channel: not channel.enabled_links)
+
+    @property
     def child_event(self) -> "Match | Race | SimpleEvent | None":
         """Returns the specific child instance of this event (Match, Race, or SimpleEvent)."""
         if self.event_type == self.EventType.MATCH and hasattr(self, "match"):

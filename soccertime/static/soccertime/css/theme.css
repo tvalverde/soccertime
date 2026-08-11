@@ -79,6 +79,7 @@ header, .bg-dark-blue {
     border: 1px solid #4a4a4a;
     color: #a29d9b;
     font-weight: 400;
+    font-style: italic;
 }
 
 .badge.bg-info, .text-bg-info {

@@ -120,6 +120,29 @@ class TestTheChannelColumn:
         assert markup.count("channel-unlinked") == 1
 
 
+class TestTheOrderInsideARow:
+    """What can be played comes before what can only be known.
+
+    `Channel.Meta.ordering` is alphabetical, so a row on ATP Tennis TV and Movistar Plus+ put
+    the one without a link first and hid the play buttons behind it.
+    """
+
+    def test_a_playable_channel_comes_before_one_without_a_link(self, event_on, channel):
+        # Alphabetically the linkless one wins, so the sort has to be doing the work.
+        event = event_on(channel("AAA sin enlace"), channel("ZZZ con enlace", WATCHABLE))
+
+        cell = channel_cell(event)
+
+        assert cell.index("ZZZ con enlace") < cell.index("AAA sin enlace")
+
+    def test_it_costs_no_query(self, event_on, channel, django_assert_num_queries):
+        """Sorted over what `with_related()` already prefetched, not fetched again."""
+        event = event_on(channel("Uno", WATCHABLE), channel("Dos"))
+
+        with django_assert_num_queries(0):
+            assert [c.name for c in event.channels_by_availability] == ["Uno", "Dos"]
+
+
 class TestWatchable:
     def test_it_keeps_an_event_with_an_enabled_link(self, event_on, channel):
         event = event_on(channel("Movistar", WATCHABLE))

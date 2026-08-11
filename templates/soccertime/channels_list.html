@@ -8,8 +8,11 @@ HBO MAX or Movistar+. The site had been told where the match is on and did not s
 The muted variant is the badge alone. The time, the teams and the competition keep their own
 contrast: the page is the agenda first, and it has to stay readable for a row that carries
 nothing to click.
+
+Ordered so the channels that can be played come first: the alphabetical default buried the
+one with the play buttons behind one that only names where the match is on.
 {% endcomment %}
-{% for channel in event.channels.all %}
+{% for channel in event.channels_by_availability %}
   {% with active_links=channel.enabled_links %}
     <a href="{% url "channel-events" channel.pk %}">
       <span class="badge rounded-pill {% if active_links|length %}text-bg-secondary{% else %}channel-unlinked{% endif %}">{{ channel.name }}</span>
