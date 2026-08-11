@@ -109,6 +109,33 @@ the last, which is a different kind of thing and says so.
 
 ### Maintenance
 
+- [ ] **`docker compose pull` on the server fails, and `up -d` renames the container.** Raised
+  on 2026-08-12 from a manual run on the host, to be looked at properly next session.
+
+  ```
+  ! Image frankenshop:latest   pull access denied … or may require 'docker login'
+  ! Image soccertime:latest    pull access denied … or may require 'docker login'
+  Error response from daemon: pull access denied for soccertime
+  Error response from daemon: pull access denied for frankenshop
+  ```
+
+  1. **`soccertime:latest` is built on the host, not published**, so `pull` asks a registry
+     for something that only exists locally and exits non-zero. Anything scripted around
+     `pull` stops there. `pull --ignore-pull-failures`, or a `build:` section that tells
+     compose not to try, or actually publishing the image — worth deciding rather than
+     tolerating.
+  2. **`frankenshop:latest` is the same problem in a neighbour's stack.** The server's
+     `docker-compose.yml` includes `./yodefresa/docker-compose.yml` alongside this project's
+     `compose.production.yaml`, so one `pull` covers both and either one failing fails the
+     command. Whatever is decided has to hold for a file this repository does not own.
+  3. **The output shows `Container soccertime-web`, but the deploy now produces
+     `docker-soccertime-web-4`.** `container_name` was removed on 2026-08-12 so a deploy can
+     run two containers at once. Checked right after: the server is on
+     `docker-soccertime-web-4` and the site answers 200, so nothing is broken — but a manual
+     `docker compose up -d` is no longer equivalent to what `make deploy-production` does, and
+     that difference is the sort that is discovered at the worst moment. Either the manual
+     path should be documented as "recreates with downtime", or `make` should own it.
+
 - [ ] **Production's proxy floats and the replica's is pinned.** The server runs
   `traefik:latest`, today 3.7.10; `compose.production.local.yaml` names an exact version so
   the replica rehearses the real thing. That pin has to be updated by hand when the server
