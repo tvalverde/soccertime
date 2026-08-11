@@ -209,6 +209,30 @@ a {
     border-left: 4px solid var(--bs-warning) !important;
 }
 
+/* The header search, which has to fit three different amounts of room.
+   The `.container` inside the header is 720px from 768px up, 960px from 992 and 1140px
+   from 1200, while the logo takes 170px and the menu 435px. So below lg only a button
+   fits, and at lg there are about 355px left for a box that is 410px wide by default —
+   which is why it used to drop onto a second line all the way from 992 to 1199. */
+@media (max-width: 991.98px) {
+    /* Revealed by the magnifier, on a row of its own rather than squeezed beside the menu.
+       `display: flex` matters: a form is block by default, and `d-lg-flex` only applies from
+       lg up, so without this the submit button drops below the field on a third line. The
+       `collapsing` state is included so the layout does not change shape mid-animation. */
+    #header-search.show,
+    #header-search.collapsing {
+        display: flex;
+        flex-basis: 100%;
+        margin-top: 0.5rem;
+    }
+}
+
+@media (min-width: 992px) and (max-width: 1199.98px) {
+    #header-search .form-control {
+        width: 11rem;
+    }
+}
+
 /* Bootstrap's page links come out around 30px on a phone, below the ~44px a finger hits
    reliably, and this site is used mostly on one — it carries a bottom nav for that reason.
    Only the narrow breakpoint changes; the desktop control is already comfortable. */

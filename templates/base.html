@@ -78,7 +78,23 @@
               </li>
             </ul>
           </nav>
-          <form class="d-none d-lg-flex" role="search" action="{% url 'agenda' %}">
+          {# Below lg the search is behind this button, because there is no room for the box #}
+          {# itself: at 768-991 the container is 720px and the logo and menu leave about     #}
+          {# 115px of it. Bootstrap's own collapse does the work through `data-bs-toggle`,   #}
+          {# which is a data attribute it reads rather than an inline handler, so it needs   #}
+          {# no script of ours and nothing the CSP has to allow.                             #}
+          <button class="btn btn-outline-secondary border-0 d-lg-none" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#header-search"
+                  aria-expanded="false" aria-controls="header-search"
+                  aria-label="{% translate "Mostrar el buscador" %}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+            </svg>
+          </button>
+          {# `collapse` hides it below lg until the button reveals it; `d-lg-flex` wins from #}
+          {# lg up, where Bootstrap's display utilities are !important, so there it is       #}
+          {# simply always open. Same mechanism as a navbar, without adopting the component. #}
+          <form id="header-search" class="collapse d-lg-flex" role="search" action="{% url 'agenda' %}">
             <div class="input-group">
               <span class="input-group-text" id="basic-addon1">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16" aria-hidden="true">

@@ -43,6 +43,16 @@ process read a manifest that was not finished, cached it for its whole life, and
 the smoke test caught it. Anything that a page renders but `healthz` does not — templates,
 static files, context processors — needs a real page fetched before a deploy is believed.
 
+## The development container caches templates
+
+Editing a template and taking a screenshot shows the *previous* markup: the running process
+holds the compiled template and only a `docker compose restart web` picks the change up.
+Static files are served fresh, so a CSS edit appears immediately and a template edit does
+not, which is exactly the combination that makes a stale page look like a working one. It
+already produced one false negative — a collapse that appeared not to open. Restart before
+believing a capture, and add a query string so the browser does not answer from its own
+cache either.
+
 ## Django specifics this project has already paid for
 
 - Never declare `width_field` / `height_field` on an `ImageField` here: they hook
