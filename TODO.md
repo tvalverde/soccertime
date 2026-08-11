@@ -13,22 +13,9 @@ public path.
 The graded sections below came out of the security audit of 2026-08-11, ordered by
 criticality. Findings marked *(verified)* were reproduced against the running system; the
 rest are from reading the code and the deployed configuration. Nothing here is known to
-have been exploited. The two critical findings and the stored XSS were fixed and deployed
-the same day; see Done. Maintenance work that is not a security finding is kept in its
-own section at the end.
-
-### High
-
-- [ ] **`.env.production` — which holds `DJANGO_SECRET_KEY` — is baked into the Docker
-  image.** `.dockerignore` lists `.env`, and that pattern matches only that exact
-  filename, not `.env.production` or `.env.production.local`; `COPY . .` then copies all
-  of them. Confirmed by inspecting the built image directly rather than the dev container,
-  which bind-mounts the source and would have proved nothing. The key is otherwise sound
-  (52 characters, ~310 bits), but a secret in an image layer survives in the host's layer
-  cache and in any exported or shared image, and leaking it means forged sessions and
-  signed cookies against an admin that answers to the public internet. Fix: add
-  `.env*` to `.dockerignore` with `!.env.example` kept, rebuild, and rotate the key —
-  it must be treated as exposed. *(verified: read out of `soccertime:latest`)*
+have been exploited. The two critical findings, the stored XSS and the environment file
+baked into the image were fixed and deployed the same day; see Done. Maintenance work
+that is not a security finding is kept in its own section at the end.
 
 ### Medium
 
@@ -137,6 +124,20 @@ the git history. Kept here as an index of what has been through this file.
   inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
   links, all `acestream`, none dangerous) and the button counts on `/channels/` and
   `/agenda/` are unchanged after the deploy.
+- **`.env.production` baked into the Docker image** (2026-08-11) — `.dockerignore` listed
+  `.env`, a pattern that matches that exact name and nothing else, so `COPY . .` carried
+  the file and `DJANGO_SECRET_KEY` with it into every build. The evidence was gathered
+  before acting rather than after: the project contains no `docker push`, registry or
+  `docker save`, `git log --all -S` finds the key in no commit, and the deploy archive is
+  `git archive HEAD`, which ships tracked files only — so there is no sign the key ever
+  left the two machines that build the image, and this file's original claim that it had
+  to be treated as exposed was stronger than the facts supported. What the finding did
+  cost is durability: four superseded images on the development machine were each still
+  holding the file, so the key outlived every deletion anyone would think to perform. It
+  was rotated on that basis, every copy was removed, and `prune-remote-images` now keeps
+  superseded images from piling up — scoped by an image label rather than a blanket
+  prune, because three untagged images on the production host carry no `RepoDigests` and
+  no registry could hand them back.
 - **Security audit, critical findings** (2026-08-11) — Pillow 12.1.0 was in range for two
   CVEs that can reach arbitrary code execution through a crafted PSD, and this project
   hands Pillow bytes fetched from scraped URLs, where the extension is no protection
