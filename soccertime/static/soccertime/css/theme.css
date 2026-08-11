@@ -208,3 +208,14 @@ a {
 .favorite-event {
     border-left: 4px solid var(--bs-warning) !important;
 }
+
+/* Bootstrap's page links come out around 30px on a phone, below the ~44px a finger hits
+   reliably, and this site is used mostly on one — it carries a bottom nav for that reason.
+   Only the narrow breakpoint changes; the desktop control is already comfortable. */
+@media (max-width: 575.98px) {
+    .pagination-wrap .page-link {
+        min-width: 2.75rem;
+        padding: 0.625rem 0.5rem;
+        text-align: center;
+    }
+}
