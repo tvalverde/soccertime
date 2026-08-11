@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-08-11
+
+The stored times stop lying, and nothing on the site moves.
+
+Every event was stored as Spanish wall clock wearing a UTC label, and rendered in UTC, so the
+two errors cancelled and the page was right. Nothing compared against the real clock was: the
+front page held 111 events with 7 of them already over, because a window declaring three hours
+retained five in summer and four in winter.
+
+Shipped as two releases' worth of care in one day but two separate deploys, because the fix
+has two halves that cancel each other and landing one without the other shifts every time on
+the site. The first deploy changed only how the templates read a datetime and was verified by
+confirming that nothing changed; the second moved 52,133 rows, the setting and the scraper
+together. Production was compared before and after each: **233 events across ten dates in both
+seasons, none of them moved, and every day header identical**. That comparison is also the
+proof the migration ran — one half alone would have shifted the whole site by two hours.
+
+The offset came from each event's own date rather than a constant, since the catalogue splits
+28,689 summer against 23,444 winter and the scraper writes fixtures months ahead of the
+changeover. The one visible consequence is intended: events now leave the front page about two
+hours sooner, which is what `hours_before=3` always claimed.
+
+`TODO.md` had recorded that fixing `TIME_ZONE` would shift every displayed time by two hours.
+It would have done nothing at all — the templates called `.time`, which discards the zone
+before formatting — and that correction is what determined the order of the two deploys.
+
 ### Fixed
 - **Event times are stored as real UTC.** The scraper called `make_aware(value, get_current_timezone())` under `TIME_ZONE = "UTC"`, which applies no offset at all, so a 22:00 kick-off was stored as `22:00 UTC` — the right number wearing the wrong label. Rendering in UTC printed it back unchanged, which is why the site looked correct while everything compared against `timezone.now()` was out by the offset. Measured on production: the front page held **111 events of which 7 had already finished**, because `in_window(hours_before=3)` retained events for five real hours in summer and four in winter, never the three it declares. It now retains three: the oldest event on the replica's front page started 2h46 ago and the one that finished longest ago finished 46 minutes ago, which is what three hours from kick-off means with a two-hour default duration. The 52,133 rows were converted with the offset taken from **each event's own date** rather than a constant — production splits 28,689 summer against 23,444 winter, so a single subtraction would have put nearly half the catalogue an hour out — and the migration has an exact inverse, verified in both directions including October's repeated hour. `TIME_ZONE` is `Europe/Madrid` and the scraper now names `Europe/Madrid` explicitly, so it reads an announced time as Spanish screen time whatever the setting says and whatever month the scrape runs in.
 - `today_onwards` built midnight with `timezone.now().replace(hour=0, …)`, which is midnight **UTC** — 02:00 in Madrid. For the two hours after midnight the site's idea of today was still yesterday, so an event at 00:30 fell outside a listing that claims to start at the beginning of today. That one was wrong under either scheme. The same applied to `Sport.with_events`, the favourite competitions, the competitions page and the datepicker's upper bound, all of which took the UTC date; they take the local one now.
