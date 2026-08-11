@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -30,6 +30,7 @@ help:
 	@echo "  remote-clear-cache   Drop the rendered page cache on production"
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
 	@echo "  remote-import-links  Import channel links (SOURCE=, FILE=, ARGS=--dry)"
+	@echo "  prune-remote-images  Drop this project's superseded images, keeping :previous"
 	@echo ""
 	@echo "DATABASE (SQLite in Docker volume):"
 	@echo "  backup-remote-db     Snapshot the database to the host, compressed (~5.5 MB)"
@@ -181,7 +182,7 @@ ENV_PROD_FILE = .env.production
 # Main target for production deployment.
 # The snapshots run before remote_deploy, which is what applies the migrations,
 # and the smoke test runs last so a deploy that leaves the site broken fails loudly.
-deploy-production: archive_app upload_files backup-remote-db backup-remote-media remote_deploy clean_local_archive remote-smoke-test
+deploy-production: archive_app upload_files backup-remote-db backup-remote-media remote_deploy clean_local_archive remote-smoke-test prune-remote-images
 	@echo "Deployment process completed successfully."
 
 # Target to archive application files locally
@@ -212,6 +213,8 @@ remote_deploy:
 		rm $(ARCHIVE_NAME) && \
 		echo "--- Rebuilding and recreating services via orchestrator ---" && \
 		cd $(REMOTE_DOCKER_PATH) && \
+		{ docker image inspect $(APP_NAME):latest >/dev/null 2>&1 \
+			&& docker tag $(APP_NAME):latest $(APP_NAME):previous || true; } && \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans $(REMOTE_SOCCERTIME_SERVICE) && \
 		echo "--- Fixing static volume permissions ---" && \
 		docker run --rm -v $(REMOTE_STATIC_VOLUME):/data alpine chown -R $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data && \
@@ -439,6 +442,23 @@ remote-smoke-test: wait-remote-healthy
 		exit 1; \
 	fi; \
 	echo "Smoke test passed."
+
+# Every deploy retags `latest` onto the new build and leaves the previous one untagged,
+# so superseded images accumulate. Clearing them has to be scoped rather than a blanket
+# `docker image prune`: three of the untagged images on that host carry no `RepoDigests`,
+# meaning another service built them there and no registry can hand them back. The label
+# restricts this to images built from this Dockerfile.
+#
+# `:previous` is deliberately kept. Rebuilding from the same commit does not reproduce an
+# image, because `python:3-alpine` and pip both resolve afresh — which is exactly how
+# Pillow and Django drifted five releases out of date here — so the outgoing image is the
+# only rollback that is a known quantity. It runs after the smoke test, so a deploy that
+# fails never reaches it and the image it would have replaced stays put.
+prune-remote-images:
+	@echo "--- Removing superseded $(APP_NAME) images (keeping :previous) ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		docker image prune -f --filter label=org.opencontainers.image.title=$(APP_NAME) \
+	'
 
 # Run Django's deployment checks against the running production container
 remote-check:

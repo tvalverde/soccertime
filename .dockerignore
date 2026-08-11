@@ -5,7 +5,11 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
-.env
+# Every environment file, not only the bare `.env`: that pattern matched that exact
+# name and nothing else, so `COPY . .` carried `.env.production` — and the secret key
+# in it — into the image. The container takes its environment from the compose
+# `env_file`, which is read on the host, so no copy inside the image was ever used.
+.env*
 .venv
 *.log
 *.pid

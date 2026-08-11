@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
 FROM python:3-alpine
+# What lets the deploy prune this project's superseded images without touching the ones
+# other services on the host built and cannot re-pull.
+LABEL org.opencontainers.image.title="soccertime"
 ARG DOCKER_UID=1000
 ARG DOCKER_GID=1000
 ENV PYTHONDONTWRITEBYTECODE=1 \

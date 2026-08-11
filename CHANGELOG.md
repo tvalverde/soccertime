@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- `.env.production` — which holds `DJANGO_SECRET_KEY` — is no longer copied into the Docker image, and the key it carried has been rotated. `.dockerignore` listed `.env`, and that pattern matches only that exact name, so `COPY . .` took `.env.production` and `.env.production.local` into every build; the entry is now `.env*`. Removing them changes no behaviour, because the copy inside the image was never read: the container takes its environment from the compose `env_file`, which is resolved on the host. Nothing indicates the key ever left the two machines that build the image — the project contains no `docker push`, registry or `docker save`, `git log --all -S` finds the key in no commit, and the deploy archive is `git archive HEAD`, which carries tracked files only. What the finding really cost is durability: four superseded images on the development machine were each found still holding the file, so the key outlived every deletion that would occur to anyone. It was rotated on that basis rather than because it is known to be exposed, and those images were removed. The replacement is 64 characters against the previous 52. Rotation invalidates signed data, which here is only the admin login: favourites are rows in the database and no view touches `request.session`.
+
+### Added
+- `make prune-remote-images`, which drops this project's superseded images from the production host and now runs at the end of `deploy-production`, after the smoke test — so a deploy that fails never reaches it. It filters on an OCI label carried by the image instead of being a blanket `docker image prune`: three of the untagged images on that host have no `RepoDigests`, meaning another service built them there and no registry can hand them back. The deploy also tags the outgoing image `soccertime:previous` before building, keeping exactly one rollback, because rebuilding from the same commit does not reproduce an image — `python:3-alpine` and pip both resolve afresh, which is how Pillow and Django drifted five releases out of date here.
+
 ## [0.3.2] - 2026-08-11
 
 A security audit of the dependencies and the codebase, and the three findings that were
