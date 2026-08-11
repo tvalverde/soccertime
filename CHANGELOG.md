@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-12
+
+The site starts telling people where the match is on, and deploying it stops interrupting
+them.
+
+It had been told, for every one of its 2,148 future events, and threw the answer away for
+1,809 of them: the template rendered a channel only when it also had a playable link, so the
+column was blank unless you could watch it from here. 952 of those blanks named HBO MAX, DAZN,
+Movistar+ — the one fact a television agenda exists to carry. A real page went from showing a
+channel on 8 rows out of 25 to showing one on all 25, at 1-2 % more bytes, and what can be
+played now comes first inside the row and can be filtered on its own.
+
+The deploy was stopping the container before creating its replacement, which cost about six
+seconds of 502 and then 404 every time. It now starts the new one beside the old and retires
+the old only once the proxy is sending traffic to the new: measured through a real deploy,
+four failed requests out of 553 rather than six unbroken seconds.
+
+That fix went in wrong first and cost thirteen seconds — worse than what it replaced —
+because the replica pinned `traefik:v2.11` while the server runs 3.7.10, and version 3 marks a
+new server down until it has probed it. The lesson was already written in `CLAUDE.md`: the
+states production holds that local does not. The replica's proxy is pinned to production's
+now, which reproduced the failure in one attempt.
+
 ### Added
 - **A deploy no longer takes the site down.** It stopped the container before creating the replacement, so Traefik answered **502 for about 1.5 seconds** while the old one died with its route still registered, then **404 for about 4.5 seconds** once the container was gone and no router matched at all — roughly six seconds, reproduced and measured in the replica by polling every 200 ms rather than taken on trust. The new container now starts beside the one still serving, and the old one is retired only once the new one answers `/healthz/`. Measured the same way afterwards: **0.2 to 0.4 seconds**, one or two requests, at the instant the outgoing container stops.
 - Traefik asks before it sends. It routes to a container the moment it starts, without waiting for the process inside to listen, so overlapping alone still lost about 1.2 seconds to 502s split evenly between a live server and a socket nobody was accepting on yet. A load-balancer health check closes that. One detail only a rehearsal finds: the probe carries the container's IP as `Host` unless told otherwise, Django rejects it through `ALLOWED_HOSTS`, every server is marked down and the service answers **503 to everything** — so the hostname is explicit in both files, and a test pins that the replica overrides production's rather than inheriting a name it does not answer to. The interval is 1s because at 2s a newly started container received traffic for up to two seconds before its first failed probe.
