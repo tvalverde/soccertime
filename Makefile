@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -32,6 +32,8 @@ help:
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
 	@echo "  remote-import-links  Import channel links (SOURCE=, FILE=, ARGS=--dry)"
 	@echo "  prune-remote-images  Drop this project's superseded images, keeping :previous"
+	@echo "  remote-admin-on      Expose the admin on production (remember to turn it off)"
+	@echo "  remote-admin-off     Remove the admin from production's URLs entirely"
 	@echo ""
 	@echo "DATABASE (SQLite in Docker volume):"
 	@echo "  backup-remote-db     Snapshot the database to the host, compressed (~5.5 MB)"
@@ -443,6 +445,45 @@ remote-smoke-test: wait-remote-healthy
 		exit 1; \
 	fi; \
 	echo "Smoke test passed."
+
+# The admin is the one route on this site that answers to a password, and it faced the
+# whole internet with nothing throttling a guess. It is now absent from `urls.py` unless
+# `DJANGO_ADMIN_ENABLED` says otherwise, so `/soccertime/admin/` is a 404 rather than a
+# login form, and these targets open that window when there is work to do in it.
+#
+# They edit the local `.env.production` and upload it, rather than editing the copy on the
+# server. The deploy uploads the local file, so a server-side toggle would be silently
+# undone by the next deploy — and undone in the direction that re-exposes the admin, which
+# is exactly the failure nobody would notice. Keeping the local file the source of truth
+# means the admin is off after every deploy unless it was deliberately turned on.
+#
+# Changing an `env_file` entry needs the container recreated, not restarted: a restart
+# keeps the environment it was created with.
+remote-admin-on:
+	@$(MAKE) --no-print-directory remote-admin-set STATE=true
+	@echo ""
+	@echo "The admin is exposed. Run 'make remote-admin-off' when you are done with it."
+
+remote-admin-off:
+	@$(MAKE) --no-print-directory remote-admin-set STATE=false
+
+remote-admin-set:
+	@case "$(STATE)" in true|false) ;; *) echo "STATE must be true or false"; exit 1 ;; esac
+	@echo "--- Setting DJANGO_ADMIN_ENABLED=$(STATE) in $(ENV_PROD_FILE) ---"
+	@sed -i 's/^DJANGO_ADMIN_ENABLED=.*/DJANGO_ADMIN_ENABLED=$(STATE)/' $(ENV_PROD_FILE)
+	@grep -qx "DJANGO_ADMIN_ENABLED=$(STATE)" $(ENV_PROD_FILE) \
+		|| { echo "Could not set the flag in $(ENV_PROD_FILE); is the line still there?"; exit 1; }
+	@$(MAKE) --no-print-directory upload-config
+	@echo "--- Recreating the container so it picks up the new environment ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH) && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --force-recreate $(REMOTE_SOCCERTIME_SERVICE) \
+	'
+	@$(MAKE) --no-print-directory wait-remote-healthy
+	@code=$$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 20 "$(PRODUCTION_URL)/admin/login/?check=$$$$"); \
+	expected=$$([ "$(STATE)" = "true" ] && echo 200 || echo 404); \
+	echo "  admin login answers $$code (expected $$expected)"; \
+	[ "$$code" = "$$expected" ] || { echo "  the flag did not take effect"; exit 1; }
 
 # The same housekeeping for the development machine, where every `up --build` leaves the
 # image it replaced untagged. The label filter matters more here than on the server: this

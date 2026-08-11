@@ -90,6 +90,24 @@ services:
       - "traefik.http.routers.soccertime-app.tls.certresolver=resolver-http"
       - "traefik.http.routers.soccertime-app.middlewares=soccertime-app-strip-prefix"
       - "traefik.http.middlewares.soccertime-app-strip-prefix.stripprefix.prefixes=/soccertime"
+      # The admin gets its own router purely so a rate limit can be attached to it and to
+      # nothing else. It needs a higher priority than the application router, which would
+      # otherwise match `/soccertime/admin` first on the strength of its shorter prefix.
+      # The limit is generous for a person clicking through the admin and mean for anything
+      # working through a password list, and it is charged per source address: Traefik
+      # terminates TLS itself here, with no CDN in front, so the address it sees is the
+      # client's and needs no `ipStrategy.depth`. Rejection happens in the proxy, which is
+      # the point — a refused attempt costs no worker and no write to the SQLite file that
+      # is also serving the site.
+      - "traefik.http.routers.soccertime-admin.rule=${TRAEFIK_HOST_RULE} && PathPrefix(`/soccertime/admin`)"
+      - "traefik.http.routers.soccertime-admin.priority=1500"
+      - "traefik.http.routers.soccertime-admin.entrypoints=websecure"
+      - "traefik.http.routers.soccertime-admin.tls=true"
+      - "traefik.http.routers.soccertime-admin.middlewares=soccertime-admin-rate-limit,soccertime-app-strip-prefix"
+      - "traefik.http.routers.soccertime-admin.service=soccertime-app-service"
+      - "traefik.http.middlewares.soccertime-admin-rate-limit.ratelimit.average=30"
+      - "traefik.http.middlewares.soccertime-admin-rate-limit.ratelimit.period=1m"
+      - "traefik.http.middlewares.soccertime-admin-rate-limit.ratelimit.burst=15"
       - "traefik.http.services.soccertime-app-service.loadbalancer.server.port=8000"
       - "traefik.http.routers.soccertime-app.service=soccertime-app-service"
 
