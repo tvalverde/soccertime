@@ -1,4 +1,14 @@
 services:
+  # The development server is not part of this stack. It comes in because the replica is
+  # `compose.yaml` plus these overrides, and without this it was started and rebuilt on every
+  # `up`: a second Django on port 8000, and the reason two images were being built from one
+  # command. A profile nobody enables is how compose says "defined here, not started here" —
+  # `compose.yaml` on its own is untouched, since a service only opts out where the profile is
+  # declared.
+  web:
+    profiles:
+      - excluded-from-the-replica
+
   traefik:
     image: traefik:v2.11
     container_name: soccertime-traefik-local

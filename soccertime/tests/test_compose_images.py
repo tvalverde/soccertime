@@ -1,4 +1,4 @@
-"""No two stacks may build different images under the same tag.
+"""The replica stack is `compose.yaml` plus overrides, so it must not inherit its service.
 
 `compose.yaml` builds the development image with `INSTALL_DEV=true`; the local production
 replica builds without it, which is the whole point of having a replica. Both used to be
@@ -31,21 +31,31 @@ REPLICA_STACK = [DEVELOPMENT, PRODUCTION, REPLICA]
 
 
 def services(path):
-    """Every service in a compose file, with the two fields this test is about.
+    """Every service in a compose file, with the three fields these tests are about.
 
     Services sit at four spaces of indentation under `services:` and their keys at six, which
     is true of all three files and is asserted by the guard test below.
     """
     found = {}
     current = None
+    in_profiles = False
     for line in path.read_text().splitlines():
         name = re.fullmatch(r"  ([a-z0-9-]+):", line.rstrip())
         if name:
-            current = name.group(1)
+            current, in_profiles = name.group(1), False
             found[current] = {}
             continue
         if current is None:
             continue
+        if re.fullmatch(r"\s+profiles:", line.rstrip()):
+            in_profiles = True
+            found[current]["profiles"] = []
+            continue
+        entry = re.fullmatch(r"\s+- ([\w-]+)", line.rstrip()) if in_profiles else None
+        if entry:
+            found[current]["profiles"].append(entry.group(1))
+            continue
+        in_profiles = False
         for key, pattern in (("image", r'\s+image:\s*"?([^"\s]+)"?'), ("install_dev", r'\s+INSTALL_DEV:\s*"?(\w+)"?')):
             match = re.fullmatch(pattern, line.rstrip())
             if match:
@@ -68,6 +78,7 @@ def test_the_parser_finds_what_it_claims_to():
 
     assert development["web"]["image"] == "soccertime:latest"
     assert development["web"]["install_dev"] == "true"
+    assert services(REPLICA)["web"]["profiles"] == ["excluded-from-the-replica"]
 
 
 def test_the_replica_and_the_development_image_are_different_tags():
@@ -93,3 +104,36 @@ def test_the_replica_still_builds_without_the_toolchain():
     the assertion above is about which image the argument ends up in.
     """
     assert merged(REPLICA_STACK)["soccertime-web"]["install_dev"] == "false"
+
+
+class TestTheReplicaDoesNotRunTheDevelopmentServer:
+    """The replica is `compose.yaml` plus overrides, so it inherited the `web` service.
+
+    Every `up` therefore started a second Django on port 8000 and rebuilt its image, which is
+    what put two builds behind one command in the first place. A profile nobody enables is how
+    compose says "defined here, not started here": the service still merges, it simply is not
+    part of this stack.
+
+    Verified by running it rather than only by reading the file — with the profile in place,
+    bringing the replica up leaves an already-running development container untouched instead
+    of recreating it, and both stacks serve at once.
+    """
+
+    def test_the_development_service_is_profiled_out_of_the_replica(self):
+        assert merged(REPLICA_STACK)["web"].get("profiles")
+
+    def test_the_replica_still_runs_everything_it_needs(self):
+        """Guards the test above: profiling out too much would also satisfy it."""
+        stack = merged(REPLICA_STACK)
+
+        assert not stack["soccertime-web"].get("profiles")
+        assert not stack["soccertime-nginx"].get("profiles")
+        assert not stack["traefik"].get("profiles")
+
+    def test_the_development_stack_alone_still_starts_it(self):
+        """A service only opts out where the profile is declared, so `compose.yaml` is intact.
+
+        Putting the profile in `compose.yaml` would have been the obvious mistake: it would
+        have stopped a plain `docker compose up` from starting anything at all.
+        """
+        assert not services(DEVELOPMENT)["web"].get("profiles")
