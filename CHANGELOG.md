@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-08-11
+
+The admin stopped being a permanent fixture of the site. It was the one route answering
+to a password, facing the whole internet with nothing slowing down a guess, and an IP
+allowlist — the obvious protection for a login form — was ruled out by a fact about the
+operator rather than about the code: there is no fixed address to allow. So the route is
+simply absent, opened by a make target when there is work to do in it and rate-limited
+while it is open. Pinning the flag that governs it then turned up that the admin tests
+had been passing on an accident, inheriting a routed admin from the container image while
+production ran with it off.
+
 ### Security
 - The admin is no longer among the site's URLs. `DJANGO_ADMIN_ENABLED` already decided whether `urls.py` registered it, and production now runs with it off, so `/soccertime/admin/` is a 404 instead of a login form facing the whole internet with nothing slowing down a guess. `make remote-admin-on` and `make remote-admin-off` open and close that window. They edit the local `.env.production` and upload it rather than editing the copy on the server: the deploy uploads the local file, so a server-side toggle would be undone by the next deploy — and undone in the direction that re-exposes the admin, which is the failure nobody would notice. Both directions were exercised against production and the public pages were confirmed serving throughout. An IP allowlist was considered first and rejected, because there is no fixed address to allow.
 - A rate limit in front of the admin, for the windows when it is open: 30 requests a minute with a burst of 15, charged per source address. It rides on a Traefik router of its own so it applies to the admin and to nothing else, and that router carries a higher priority than the application's, which would otherwise match the shorter `/soccertime` prefix first. Traefik terminates TLS here with no CDN in front, so the address it sees is the client's and no `ipStrategy.depth` is needed. Verified live: 40 rapid requests to the login page returned 19 × 200 and 21 × 429, while `/agenda/`, `/competitions/` and `/channels/` answered 200 immediately afterwards. Rejection happens in the proxy, so a refused attempt costs no worker and no write to the SQLite file that is also serving the site.
