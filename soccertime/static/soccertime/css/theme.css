@@ -69,6 +69,18 @@ header, .bg-dark-blue {
     color: #00363f !important;
 }
 
+/* A channel the event is on that cannot be watched from here. Secondary, not disabled: it
+   carries the one fact a television agenda exists to give, so it has to stay readable.
+   #a29d9b is 6.9:1 against the site's #131313, comfortably past AA's 4.5:1 — measured, not
+   picked by eye, where a dimmer #6f6a68 came out at 3.5:1 and was rejected. The cyan badge
+   beside it sits at 11.6:1, which is what makes the two tell apart at a glance. */
+.badge.channel-unlinked {
+    background-color: transparent;
+    border: 1px solid #4a4a4a;
+    color: #a29d9b;
+    font-weight: 400;
+}
+
 .badge.bg-info, .text-bg-info {
     background-color: var(--bs-secondary) !important; /* using secondary as info for consistency */
     color: #00363f !important;
