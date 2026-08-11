@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% load soccertime_tags %}
-{% load django_bootstrap5 %}
 {% load static %}
 {% load i18n %}
 {% block title %}
@@ -67,9 +66,9 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
         </tbody>
     </table>
 </div>
+{# Only two of the six views rendering this template paginate; the rest pass a plain #}
+{# queryset, which has no `.number`. #}
 {% if events.number %}
-<div class="d-flex justify-content-center justify-content-sm-end pe-sm-3 pb-3 pagination-wrap">
-    {% bootstrap_pagination events %}
-</div>
+    {% include "soccertime/pagination.html" with page=events %}
 {% endif %}
 {% endblock %}

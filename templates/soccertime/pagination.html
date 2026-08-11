@@ -1,0 +1,50 @@
+{% load i18n %}
+{% load soccertime_tags %}
+{# Replaces `{% bootstrap_pagination %}`, which built every link as a bare `?page=N` and    #}
+{# so dropped the rest of the query string: following page 2 of a search returned the       #}
+{# unfiltered agenda. `{% querystring %}` rebuilds the current parameters with `page`        #}
+{# replaced, which is what keeps `?search=` alive across pages.                              #}
+{# The wrapper lives here rather than around the include, so a single-page listing renders #}
+{# nothing at all instead of an empty padded div.                                          #}
+{% if page.paginator.num_pages > 1 %}
+<nav class="d-flex justify-content-center justify-content-sm-end pe-sm-3 pb-3 pagination-wrap"
+     aria-label="{% translate "Paginación de resultados" %}">
+  <ul class="pagination mb-0">
+    {% if page.has_previous %}
+    <li class="page-item">
+      <a class="page-link" href="{% querystring page=page.previous_page_number %}" aria-label="{% translate "Página anterior" %}">&laquo;</a>
+    </li>
+    {% else %}
+    <li class="page-item disabled">
+      <span class="page-link" aria-hidden="true">&laquo;</span>
+    </li>
+    {% endif %}
+
+    {% for number in page|elided_pages %}
+      {% if number|is_ellipsis %}
+    <li class="page-item disabled">
+      <span class="page-link">{{ number }}</span>
+    </li>
+      {% elif number == page.number %}
+    <li class="page-item active" aria-current="page">
+      <span class="page-link">{{ number }}</span>
+    </li>
+      {% else %}
+    <li class="page-item">
+      <a class="page-link" href="{% querystring page=number %}">{{ number }}</a>
+    </li>
+      {% endif %}
+    {% endfor %}
+
+    {% if page.has_next %}
+    <li class="page-item">
+      <a class="page-link" href="{% querystring page=page.next_page_number %}" aria-label="{% translate "Página siguiente" %}">&raquo;</a>
+    </li>
+    {% else %}
+    <li class="page-item disabled">
+      <span class="page-link" aria-hidden="true">&raquo;</span>
+    </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
