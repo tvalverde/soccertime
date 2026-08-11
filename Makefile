@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -32,6 +32,7 @@ help:
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
 	@echo "  remote-import-links  Import channel links (SOURCE=, FILE=, ARGS=--dry)"
 	@echo "  prune-remote-images  Drop this project's superseded images, keeping :previous"
+	@echo "  remote-apply-config  Upload .env.production and recreate the container"
 	@echo "  remote-admin-on      Expose the admin on production (remember to turn it off)"
 	@echo "  remote-admin-off     Remove the admin from production's URLs entirely"
 	@echo ""
@@ -459,6 +460,17 @@ remote-smoke-test: wait-remote-healthy
 #
 # Changing an `env_file` entry needs the container recreated, not restarted: a restart
 # keeps the environment it was created with.
+# Push `.env.production` and put it into effect. Recreating rather than restarting is the
+# part that matters: a container keeps the environment it was created with, so a restart
+# reports success and changes nothing.
+remote-apply-config: upload-config
+	@echo "--- Recreating the container so it picks up the new environment ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH) && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --force-recreate $(REMOTE_SOCCERTIME_SERVICE) \
+	'
+	@$(MAKE) --no-print-directory wait-remote-healthy
+
 remote-admin-on:
 	@$(MAKE) --no-print-directory remote-admin-set STATE=true
 	@echo ""
@@ -473,13 +485,7 @@ remote-admin-set:
 	@sed -i 's/^DJANGO_ADMIN_ENABLED=.*/DJANGO_ADMIN_ENABLED=$(STATE)/' $(ENV_PROD_FILE)
 	@grep -qx "DJANGO_ADMIN_ENABLED=$(STATE)" $(ENV_PROD_FILE) \
 		|| { echo "Could not set the flag in $(ENV_PROD_FILE); is the line still there?"; exit 1; }
-	@$(MAKE) --no-print-directory upload-config
-	@echo "--- Recreating the container so it picks up the new environment ---"
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		cd $(REMOTE_DOCKER_PATH) && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --force-recreate $(REMOTE_SOCCERTIME_SERVICE) \
-	'
-	@$(MAKE) --no-print-directory wait-remote-healthy
+	@$(MAKE) --no-print-directory remote-apply-config
 	@code=$$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 20 "$(PRODUCTION_URL)/admin/login/?check=$$$$"); \
 	expected=$$([ "$(STATE)" = "true" ] && echo 200 || echo 404); \
 	echo "  admin login answers $$code (expected $$expected)"; \
