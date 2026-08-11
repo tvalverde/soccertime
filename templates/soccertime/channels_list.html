@@ -1,22 +1,22 @@
+{% comment %}
+Every channel the event is on, whether or not it can be watched from here.
+
+This used to render a channel only when it had an enabled link and silently drop the rest,
+so the column was empty for 1,809 of 2,148 future events — including 952 that named DAZN,
+HBO MAX or Movistar+. The site had been told where the match is on and did not say.
+
+The muted variant is the badge alone. The time, the teams and the competition keep their own
+contrast: the page is the agenda first, and it has to stay readable for a row that carries
+nothing to click.
+{% endcomment %}
 {% for channel in event.channels.all %}
   {% with active_links=channel.enabled_links %}
-    {% if active_links|length %}
-      <a href="{% url "channel-events" channel.pk %}">
-        <span class="badge rounded-pill text-bg-secondary">{{ channel.name }}</span>
-      </a>
-      {% for link in active_links %}
-        {% include "soccertime/link_button.html" %}
-      {% endfor %}
-      <br>
-    {% endif %}
+    <a href="{% url "channel-events" channel.pk %}">
+      <span class="badge rounded-pill {% if active_links|length %}text-bg-secondary{% else %}channel-unlinked{% endif %}">{{ channel.name }}</span>
+    </a>
+    {% for link in active_links %}
+      {% include "soccertime/link_button.html" %}
+    {% endfor %}
+    <br>
   {% endwith %}
 {% endfor %}
-{% if 'DJANGO_DEBUG'|env %}
-  {% for channel in event.channels.all %}
-    {% with active_links=channel.enabled_links %}
-      {% if not active_links|length %}
-        <span class="badge rounded-pill text-bg-secondary"><del>{{ channel.name }}</del></span><br>
-      {% endif %}
-    {% endwith %}
-  {% endfor %}
-{% endif %}

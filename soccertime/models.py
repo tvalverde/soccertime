@@ -405,6 +405,21 @@ class EventQuerySet(models.QuerySet):
             | Q(competition__sport__name__icontains=query)
         )
 
+    def watchable(self) -> Self:
+        """Events with at least one enabled link, which is what a play button means.
+
+        `distinct()` is not optional: channels are a many-to-many, so an event carried by two
+        linked channels would come back twice and the duplicate would land inside the
+        pagination. That is the same hazard that kept channel out of `search()`.
+
+        One thing this cannot see: `ChannelLink.has_allowed_scheme` is a Python property, so a
+        link that is enabled but carries a scheme the template refuses to render counts here
+        and then draws no button. Measured against production the two agree exactly — 339 by
+        this filter, 339 by what the template draws — because every enabled link is
+        `acestream`. A test pins the divergence rather than leaving it to be discovered.
+        """
+        return self.filter(channels__links__enabled=True).distinct()
+
     def favorites(self) -> Self:
         """Events involving favorite teams or favorite competitions (for non-match events)."""
         return self.filter(

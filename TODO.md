@@ -21,15 +21,6 @@ Every number below is a measurement taken that day, not an estimate, so the case
 be re-read rather than re-argued. None has been designed beyond what is written here — except
 the last, which is a different kind of thing and says so.
 
-- [ ] **Only 15% of what the site lists can be watched, and nothing says which.** Of 2,148
-  future events, **340** have at least one channel carrying an acestream link; 124 of the 568
-  channels have one at all. So somebody looking for something to watch scrolls past six
-  unusable rows for every usable one, and only finds out by looking for the play button. This
-  is the widest gap between what the site promises — "enlaces a streams" is in its own meta
-  description — and what it delivers. Not a case for hiding the rest: knowing Madrid play at
-  21:00 on DAZN is worth having even when the link is not there. A filter, an ordering, or a
-  marker that makes the difference visible before scrolling.
-
 - [ ] **There is no "on now".** Nothing in the templates or the models expresses whether an
   event is live, finished or upcoming — searched for, not assumed. On a live agenda that is
   the most frequent question, and the front page compounds it: `in_window(hours_before=3)`
@@ -53,11 +44,6 @@ the last, which is a different kind of thing and says so.
 - [ ] **It looks like an app and cannot be installed.** Bottom navigation, mobile-first
   layout, and no `manifest` and no `apple-touch-icon`. Nobody can add it to a home screen,
   which is precisely how something like this gets used: open, check what is on, close.
-
-- [ ] **Two in five future events promise a channel they do not name.** **857 of 2,148** carry
-  "Canal por confirmar". Not an error — the source genuinely does not know yet — but they take
-  up the same room as a real listing while offering nothing to act on. They want different
-  treatment: grouped, dimmed, or outside the default filter.
 
 - [ ] **The big pages are heavy for a phone.** `/competitions/` sends **331 KB** of HTML and
   `/channels/` **181 KB**, the latter dumping all 381 links at once. The queries are not the
@@ -211,6 +197,15 @@ the git history. Kept here as an index of what has been through this file.
   application — and `exec -u` with the UID owning a volume copied from production. Both fixed
   at the root: the replica spells its own Traefik rule out, and `make replica-migrate` reads
   the owner off the file rather than hardcoding a number that changes with each dump.
+- **The site hid the channel it knew about** (2026-08-11) — the template rendered a channel
+  only when it had an enabled link, so the column was empty for 1,809 of 2,148 future events,
+  952 of which named a real channel: HBO MAX, DAZN, Movistar+. Measured on a production page,
+  8 rows of 25 showed anything; now 25 do, with the play buttons unchanged at 8 and the page
+  1-2 % heavier. The muted badge is `#a29d9b`, 6.9:1 against the background, computed rather
+  than picked. `?watchable=1` filters to what can be played. This also settles the separate
+  entry about the 857 `Canal por confirmar` rows: they are named now, so an empty cell no
+  longer has to be guessed at. **Left open**: on a phone the channel column still sits past the
+  horizontal scroll, so the gain is a desktop one until the mobile layout is revisited.
 - **Type hints** (0.2.0, 2026-08-10) — annotated 188 functions across 19 modules, put
   mypy and ruff's ANN rules behind them, and fixed the genuine type errors that surfaced.
   Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.

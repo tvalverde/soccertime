@@ -36,7 +36,7 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 {% endif %}
 {% if "agenda" in request.path %}
 <div class="container mb-2 py-2 bg-dark text-light">
-    <div class="d-flex justify-content-center align-items-center position-relative">
+    <div class="d-flex justify-content-center align-items-center gap-2 flex-wrap position-relative">
         <input
                 id="datePicker"
                 type="date"
@@ -44,6 +44,21 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
                 class="form-control w-auto"
                 min="{% now "Y-m-d" %}"
                 max="{{ max_date }}" />
+        {# Both counts are scoped to the date and the search already applied, so they always #}
+        {# describe the list underneath. `querystring` carries those parameters and drops the #}
+        {# page, which would otherwise point past the end of a much shorter list. #}
+        <div class="btn-group btn-group-sm" role="group" aria-label="{% translate "Filtrar por disponibilidad" %}">
+            <a href="{% querystring watchable=None page=None %}"
+               class="btn btn-outline-secondary{% if not only_watchable %} active{% endif %}"
+               {% if not only_watchable %}aria-current="true"{% endif %}>
+                {% translate "Todo" %} <span class="opacity-75">{{ total_events }}</span>
+            </a>
+            <a href="{% querystring watchable=1 page=None %}"
+               class="btn btn-outline-secondary{% if only_watchable %} active{% endif %}"
+               {% if only_watchable %}aria-current="true"{% endif %}>
+                {% translate "Con enlace" %} <span class="opacity-75">{{ watchable_events }}</span>
+            </a>
+        </div>
     </div>
 </div>
 {% endif %}

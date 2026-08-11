@@ -61,6 +61,7 @@ def cached_page(view: Any) -> Any:
 # The site is served in Spanish; these are wrapped so a future locale can translate them.
 NO_EVENTS_MESSAGE = _("No hay eventos a la vista :)")
 NO_FAVOURITE_EVENTS_MESSAGE = _("No hay eventos a la vista :(")
+NO_WATCHABLE_EVENTS_MESSAGE = _("Ninguno de estos eventos tiene enlace para verlo")
 NO_CHANNELS_MESSAGE = _("No hay canales disponibles :_(")
 
 # --- Helper functions ---
@@ -154,16 +155,28 @@ def agenda(request: HttpRequest) -> HttpResponse:
     else:
         queryset = Event.objects.today_onwards().with_related()
 
-    queryset = queryset.search(request.GET.get("search")).chronological()
+    queryset = queryset.search(request.GET.get("search"))
+    # Counted before the filter narrows it, so the control can say what it would show. Both
+    # numbers are scoped to the date and the search already applied: a count that ignored them
+    # would be worse than none, since it would not match the list underneath it.
+    total_events = queryset.count()
+    watchable_events = queryset.watchable().count()
+    only_watchable = request.GET.get("watchable") == "1"
+    if only_watchable:
+        queryset = queryset.watchable()
+    queryset = queryset.chronological()
 
     context = get_base_context(with_teams=True)
     context.update(
         {
             "events": paginate_queryset(queryset, request),
             "max_date": max_date,
+            "only_watchable": only_watchable,
+            "total_events": total_events,
+            "watchable_events": watchable_events,
         }
     )
-    context.update(empty_state())
+    context.update(empty_state(NO_WATCHABLE_EVENTS_MESSAGE if only_watchable else NO_EVENTS_MESSAGE))
     return render(request, "soccertime/agenda.html", context)
 
 

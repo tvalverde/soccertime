@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The agenda names the channel every event is on**, whether or not it can be watched from here. `channels_list.html` rendered a channel only when it had an enabled link and silently dropped the rest — outside `DEBUG`, where they appeared struck through, so the only person who ever saw them was a developer. In production the column was simply empty. Measured on a real page: **25 rows, 8 showing a channel, 17 blank**, and the 8 were exactly the 8 with a play button. Across 2,148 future events, 339 were watchable and shown, **952 named a real channel that was hidden** — HBO MAX, DAZN, OneFootball, Movistar+ — and 857 carried only the `Canal por confirmar` placeholder. A television agenda that has been told where a match is on and does not say so is failing at its one job. The same page now shows a channel on **25 rows of 25**, with the play buttons unchanged at 8.
+- A filter for what can actually be watched, `/agenda/?watchable=1`, as a two-state control beside the datepicker. Both counts are scoped to the date and search already applied, so they always describe the list underneath rather than contradicting it. One identifier rather than a hyphen because `{% querystring %}` parses its keys as Python names, and it matches `EventQuerySet.watchable()`.
+
+### Fixed
+- The channel column's markup depended on an **environment variable**, not on settings: `{% if 'DJANGO_DEBUG'|env %}` meant the suite exercised a different template than production rendered. A test asserting the column's contents passed in the development container and failed with `DJANGO_DEBUG=false`, where the cell came back literally empty. The branch is gone, so there is one template for everyone.
+
+
 ## [0.4.4] - 2026-08-11
 
 Nothing a visitor can see. This is the tooling around the site, and every item in it was
