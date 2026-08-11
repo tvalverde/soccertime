@@ -19,20 +19,6 @@ that is not a security finding is kept in its own section at the end.
 
 ### Medium
 
-- [ ] **The image downloader accepts anything, of any size, from any address.**
-  `download_image` passes `stream=True` and then reads `response.content`, which pulls the
-  whole body into memory regardless of length — the 10-second timeout is per read, so a
-  slow drip keeps it alive — inside a container limited to 512 MB. There is no
-  content-type check, no cap on size, no restriction on the scheme or destination, and
-  redirects are followed by default, so a URL from scraped HTML can point at a private
-  address (SSRF). Related: `save_image` takes the stored file extension straight from the
-  source URL with no allowlist, so a file that Pillow accepts but whose URL ends in
-  `.html` would be written into the media volume and served by nginx as `text/html` from
-  the site's own origin — `nosniff` does not help when the extension is explicit. All 8116
-  files currently stored are `.webp`, so nothing is wrong today. Fix: cap the download
-  size, verify the content type, and derive the extension from the decoded image rather
-  than the URL.
-
 - [ ] **No `Content-Security-Policy`.** Confirmed absent from the live response, which
   carries HSTS, `nosniff`, `X-Frame-Options: DENY` and a referrer policy but no CSP.
   Django 6.0 ships CSP support natively, so this no longer needs a third-party package.
@@ -111,6 +97,19 @@ the git history. Kept here as an index of what has been through this file.
   inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
   links, all `acestream`, none dangerous) and the button counts on `/channels/` and
   `/agenda/` are unchanged after the deploy.
+- **The image downloader accepted anything, of any size, from any address** (2026-08-11) —
+  and `save_image` let the source URL choose the stored file's extension. The second half
+  was the sharper one, and it was demonstrated against the old code before touching it: an
+  SVG payload went into the media volume as `<sha1>.svg` with `None x None` dimensions,
+  because Django's `get_image_dimensions` answers `(None, None)` for content it cannot
+  parse rather than raising — ready to be served back as `image/svg+xml` from this site's
+  own origin. The name now comes entirely from the content, and the format is whatever
+  Pillow decodes, from an allowlist that excludes SVG. The fetch refuses non-http schemes,
+  checks every address each redirect hop resolves to against the private ranges, caps the
+  body at 2 MB, carries an overall deadline as well as the per-read timeout, and bypasses
+  the shared HTTP cache, which would otherwise have buffered whole bodies and made the cap
+  pointless. Confirmed against the real source (228 flag URLs, all `image/webp`) and by
+  removing a file from the production volume and watching it restore byte-identical.
 - **`ALLOWED_HOSTS` set to `*` while Django read the host from a header** (2026-08-11) —
   the check was off and `USE_X_FORWARDED_HOST` made Django take the hostname from a
   header, so a poisoned absolute URL could have been built and then cached for an hour.
