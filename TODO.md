@@ -44,16 +44,6 @@ the last, which is a different kind of thing and says so.
   leak into the shared cache once before. **This is a product decision, not a defect**: it
   turns a personal agenda into everybody's, and that may not be what the site is for.
 
-- [ ] **The times are right by accident.** The scraper stores Spanish local time labelled as
-  UTC, and the site renders in UTC, so the number displayed is correct because two errors
-  cancel. Django says so on every save: *"DateTimeField Event.date received a naive datetime
-  while time zone support is active"*. What does not cancel is the arithmetic:
-  `in_window(hours_before=3)` compares `timezone.now()` in real UTC against those
-  Spanish-labelled times, so the front page's window is **shifted by the offset** — it shows
-  events that finished five hours ago, not three. And the trap: the day somebody "fixes"
-  `TIME_ZONE`, every displayed time on the site moves by two hours at once. Worth fixing
-  deliberately, in one change, with the display pinned by tests first.
-
 - [ ] **A shared link says nothing about itself.** No `og:title`, no `og:image`, no
   `twitter:card`, no JSON-LD, no canonical, no sitemap — checked against the live response.
   This is a site people paste into WhatsApp and Telegram, and those links arrive bare. The
@@ -201,6 +191,17 @@ the git history. Kept here as an index of what has been through this file.
   a many-to-many, so it needs `distinct()` and would change the query shape underneath the
   pagination. `Competition.has_events` and `events_count` were deleted in the same pass,
   referenced nowhere and an N+1 waiting for a caller.
+- **The times were right by accident** (2026-08-11) — the scraper stored Spanish wall clock
+  labelled UTC and the site rendered UTC, so the page was correct while every comparison
+  against `timezone.now()` was out by the offset: the front page held 111 events with 7 of
+  them already over, because a window declaring three hours retained five in summer and four
+  in winter. Fixed in two deploys, the first provably display-neutral. **One thing this file
+  had wrong**: it said fixing `TIME_ZONE` would shift every displayed time by two hours. It
+  would have done nothing at all — the templates called `.time`, which discards the zone
+  before formatting, so the page was deaf to the setting. The real hazard was the reverse,
+  and moving the templates first is what made the data migration safe. 52,133 rows converted
+  with the offset taken from each event's own date, since production splits 55/45 between the
+  seasons; 287 events compared before and after each deploy, none of them moved.
 - **Type hints** (0.2.0, 2026-08-10) — annotated 188 functions across 19 modules, put
   mypy and ruff's ANN rules behind them, and fixed the genuine type errors that surfaced.
   Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.

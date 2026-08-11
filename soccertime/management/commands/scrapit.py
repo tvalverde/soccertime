@@ -1,6 +1,7 @@
 import datetime
 from argparse import ArgumentParser
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from django.core.cache import cache
 from django.core.management.base import BaseCommand, CommandError
@@ -38,6 +39,10 @@ from .scraping.base import (
 # Sources shift an announced event by hours or a day; within this window it is the same
 # event rather than a new one.
 DUPLICATE_WINDOW_DAYS = 2
+
+# The clock the sources print. Their times are naive strings off a Spanish listings page, so
+# this is the only place that knows what they mean.
+SPANISH_SCREEN_TIME = ZoneInfo("Europe/Madrid")
 
 
 class Command(BaseCommand):
@@ -213,7 +218,13 @@ class Command(BaseCommand):
         flag = self.get_or_create_flag(agenda_event.competition_crest)
         competition = self.get_or_create_competition(agenda_event.competition, sport, flag)
 
-        event_datetime = timezone.make_aware(agenda_event.datetime, timezone=timezone.get_current_timezone())
+        # The source publishes Spanish screen time, so that is what the naive value means.
+        # Pinned to Madrid rather than taken from `get_current_timezone()`: this has to say
+        # what it means regardless of the setting, and it used to be read under `TIME_ZONE =
+        # "UTC"`, where it applied no offset at all and stored the wall clock as though it
+        # were UTC. `ZoneInfo` resolves summer or winter from the *event's* own date, not
+        # from the day the scrape runs — the changeover routinely falls between the two.
+        event_datetime = timezone.make_aware(agenda_event.datetime, timezone=SPANISH_SCREEN_TIME)
 
         event: Match | Race | SimpleEvent
         if isinstance(agenda_event.details, MatchDetails):

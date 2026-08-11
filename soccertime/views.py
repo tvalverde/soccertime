@@ -71,7 +71,7 @@ def get_favorite_competitions() -> QuerySet[Competition]:
     return (
         Competition.objects.filter(
             favorite__isnull=False,
-            events__date__date__gte=timezone.now().date(),
+            events__date__date__gte=timezone.localdate(),
         )
         .select_related("flag")
         .distinct()
@@ -146,7 +146,7 @@ def favorites(request: HttpRequest) -> HttpResponse:
 @cached_page
 def agenda(request: HttpRequest) -> HttpResponse:
     max_date_result = Event.objects.aggregate(Max("date"))["date__max"]
-    max_date = max_date_result.strftime("%Y-%m-%d") if max_date_result else None
+    max_date = timezone.localtime(max_date_result).strftime("%Y-%m-%d") if max_date_result else None
 
     requested_date = parse_requested_date(request.GET.get("events-date"))
     if requested_date:
@@ -285,7 +285,7 @@ def channels(request: HttpRequest) -> HttpResponse:
 @cached_page
 def competitions(request: HttpRequest) -> HttpResponse:
     """List sports and their competitions, grouping in Python to avoid N+1 queries."""
-    today = timezone.now().date()
+    today = timezone.localdate()
 
     # Sports that still have upcoming events
     active_sports = (

@@ -133,7 +133,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "es-es"
 
-TIME_ZONE = "UTC"
+# The site is a Spanish TV schedule and its source publishes peninsular time, so every
+# visitor sees that clock wherever they are. Storage stays UTC — `USE_TZ` is on — and this is
+# only how it is read back. Changing it alone used to do nothing at all: the templates called
+# `.time`, which discards the zone before formatting.
+TIME_ZONE = "Europe/Madrid"
 
 USE_I18N = True
 

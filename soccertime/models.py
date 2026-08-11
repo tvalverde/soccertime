@@ -37,7 +37,7 @@ MAX_SEARCHABLE_NAME_LENGTH = 255
 
 class SportManager(models.Manager["Sport"]):
     def with_events(self) -> models.QuerySet["Sport"]:
-        return self.filter(competitions__events__date__date__gte=timezone.now().date()).distinct()
+        return self.filter(competitions__events__date__date__gte=timezone.localdate()).distinct()
 
 
 class Sport(models.Model):
@@ -348,8 +348,14 @@ class EventQuerySet(models.QuerySet):
         )
 
     def today_onwards(self) -> Self:
-        """Events from the start of today onwards."""
-        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        """Events from the start of today onwards, where today is the Spanish day.
+
+        `timezone.now().replace(hour=0, ...)` builds midnight in **UTC**, which is 02:00 in
+        Madrid. For the two hours after midnight the site's idea of today was still yesterday,
+        so an event at 00:30 fell outside a listing that claims to start at the beginning of
+        today.
+        """
+        today_start = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
         return self.filter(date__gte=today_start)
 
     def for_date(self, date: datetime.date) -> Self:
