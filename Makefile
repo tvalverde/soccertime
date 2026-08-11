@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape remote-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape replica-manage replica-migrate remote-check remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -27,6 +27,8 @@ help:
 	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo "  remote-check         Run Django's deployment checks on production"
+	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200)"
+	@echo "  replica-migrate      Migrate the local production replica as its database owner"
 	@echo "  remote-smoke-test    Verify a live deploy from outside (health + public pages)"
 	@echo "  remote-clear-cache   Drop the rendered page cache on production"
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
@@ -89,6 +91,17 @@ REMOTE_CACHE_FILE_IN_VOLUME ?= soccertime_data_cache.sqlite
 # Public entry point and pages checked after a deploy. Override in .env if they change.
 PRODUCTION_URL ?= https://www.mojon.es/soccertime
 SMOKE_PATHS ?= /healthz/ /favorites/ /agenda/ /competitions/ /channels/
+
+# Defaults for `remote-logs`. `SINCE` accepts anything `docker compose logs --since` does,
+# so `10m`, `1h` or an ISO timestamp. `GREP` is a plain pattern, empty for everything.
+LOG_TAIL ?= 200
+LOG_SINCE ?=
+LOG_GREP ?=
+
+# The status codes `remote-error-check` treats as a failed release. A variable so the check
+# itself can be exercised — pointing it at 2xx must find the traffic that is certainly there,
+# which is the only way to know the pattern matches anything at all.
+ERROR_STATUS ?= 5[0-9][0-9]
 HEALTH_TIMEOUT ?= 90
 
 # Generational retention. A plain count measures history in deploys rather than in time:
@@ -468,12 +481,39 @@ remote-smoke-test: wait-remote-healthy
 	if [ -n "$$failed" ]; then \
 		echo ""; \
 		echo "SMOKE TEST FAILED for:$$failed"; \
-		echo "The deploy is live and broken. Inspect it with 'make remote-check' and the"; \
-		echo "container logs, or roll back with 'make list-remote-backups' followed by"; \
-		echo "'make restore-remote-db BACKUP=<file>'."; \
+		echo "The deploy is live and broken. Inspect it with 'make remote-check', 'make"; \
+		echo "remote-logs SINCE=10m', or roll back with 'make list-remote-backups' followed"; \
+		echo "by 'make restore-remote-db BACKUP=<file>'."; \
 		exit 1; \
 	fi; \
 	echo "Smoke test passed."
+	@$(MAKE) --no-print-directory remote-error-check
+
+# Five pages answering 200 is not proof the release is clean: a page can render while another
+# path throws, and the deploy has twice reported success over a broken site. This reads the
+# new container's own log, from the moment it started, and fails the deploy on any 5xx.
+#
+# Scoped to that window on purpose. Widen it and unrelated crawler traffic decides whether a
+# deploy passes; keep it here and anything found is almost certainly the release. The lines
+# are printed rather than counted, because the judgement of whether a 5xx matters is one a
+# person makes, not a grep.
+remote-error-check:
+	@echo "--- Checking for server errors since the container started ---"
+	@errors=$$(ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH); \
+		started=$$(docker inspect -f "{{.State.StartedAt}}" $(REMOTE_SOCCERTIME_SERVICE) 2>/dev/null); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) logs --no-log-prefix \
+			$${started:+--since $$started} $(REMOTE_SOCCERTIME_SERVICE) \
+			| grep -E "\" $(ERROR_STATUS) " || true \
+	'); \
+	if [ -n "$$errors" ]; then \
+		echo "$$errors" | sed "s/^/  /"; \
+		echo ""; \
+		echo "The container logged server errors since it started. The deploy is live."; \
+		echo "Inspect with 'make remote-logs SINCE=10m' and decide whether to roll back."; \
+		exit 1; \
+	fi; \
+	echo "  no 5xx responses logged"
 
 # The admin is the one route on this site that answers to a password, and it faced the
 # whole internet with nothing throttling a guess. It is now absent from `urls.py` unless
@@ -547,6 +587,53 @@ prune-remote-images:
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		docker image prune -f --filter label=org.opencontainers.image.title=$(APP_NAME) \
 	'
+
+# The local production replica, whose stack is three files. Kept here so the incantation is
+# reviewable, which is the same reason the remote operations live here.
+REPLICA_COMPOSE = -f compose.yaml -f compose.production.yaml -f compose.production.local.yaml
+REPLICA_SERVICE ?= soccertime-web
+MANAGE ?= migrate
+
+# Run a management command against the replica as whoever owns its database.
+#
+# The replica's volume comes from a production copy, so its files belong to production's UID
+# while `.env` sets this machine's — 1000 against 1001 here. Running as the wrong one fails
+# with `attempt to write a readonly database`, which says nothing about ownership, and it
+# cannot be hardcoded because the number changes with whichever dump was loaded. So it is
+# read off the file itself.
+#
+#   make replica-migrate
+#   make replica-manage MANAGE="showmigrations soccertime"
+replica-manage:
+	@owner=$$(docker compose $(REPLICA_COMPOSE) exec -T $(REPLICA_SERVICE) \
+		stat -c "%u:%g" /code/db/db.sqlite3 2>/dev/null | tr -d "\r"); \
+	if [ -z "$$owner" ]; then \
+		echo "The replica is not running. Start it with the command in README.md."; \
+		exit 1; \
+	fi; \
+	echo "--- Running '$(MANAGE)' on the replica as $$owner ---"; \
+	docker compose $(REPLICA_COMPOSE) exec -T -u $$owner $(REPLICA_SERVICE) \
+		python manage.py $(MANAGE)
+
+replica-migrate:
+	@$(MAKE) --no-print-directory replica-manage MANAGE=migrate
+
+# Read the application's own logs. `CLAUDE.md` requires checking them for 500s after every
+# deploy and, separately, that production operations live here rather than in an ad-hoc SSH
+# command — and until this existed the two instructions could not both be obeyed, so the
+# evidence that nothing was throwing had to come indirectly from fetching pages.
+#
+#   make remote-logs                     the last 200 lines
+#   make remote-logs SINCE=10m           only what came after a deploy
+#   make remote-logs GREP=" 500 "        only the server errors
+remote-logs:
+	@echo "--- Logs for $(REMOTE_SOCCERTIME_SERVICE) ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) logs \
+			--tail $(LOG_TAIL) $(if $(LOG_SINCE),--since $(LOG_SINCE),) --no-log-prefix \
+			$(REMOTE_SOCCERTIME_SERVICE) \
+	' | { [ -n "$(LOG_GREP)" ] && grep -- "$(LOG_GREP)" || cat; }
 
 # Run Django's deployment checks against the running production container
 remote-check:

@@ -123,30 +123,6 @@ the last, which is a different kind of thing and says so.
 
 ### Maintenance
 
-- [ ] **Nothing can read production's logs, though `CLAUDE.md` says every deploy must.** It
-  instructs checking the container logs for 500s after deploying, and separately that every
-  production operation belongs in the `Makefile` rather than an ad-hoc SSH command — and
-  there is no target that reads logs, so the two instructions cannot both be obeyed. Noticed
-  on 2026-08-11 while verifying a deploy: the evidence that nothing was throwing had to be
-  indirect, from fetching pages. A `remote-logs` target, ideally with a `--since` so it can
-  be scoped to the deploy just made.
-
-- [ ] **The local replica has two undocumented traps, both of which look like the application
-  is broken.** Cost most of an hour on 2026-08-11 and neither is in the README's setup steps.
-
-  1. `TRAEFIK_HOST_RULE` is not in `.env`, which is the only env file compose interpolates
-     from. Run the documented command without exporting it and the router rule is the empty
-     string, so **Traefik answers 404 to every path** — including a valid team id, which is
-     what makes it read as a Django problem rather than a proxy one.
-  2. `.env` sets `DOCKER_UID=1001` while the replica's database volume is owned by `1000`,
-     since it came from a production copy. Any write fails with `attempt to write a readonly
-     database`, so `manage.py migrate` cannot be run the documented way — it needs
-     `exec -u 1000:1000`, which nothing says.
-
-  Both are the sort of thing that makes someone distrust a rehearsal that is working
-  perfectly. A `make replica-up` target would fix them together and put the incantation
-  somewhere reviewable, which is what the `Makefile` is for.
-
 - [ ] **Move to Django 6.1 — blocked on `django-admin-sortable2`, not on Django.** Attempted
   on 2026-08-11 in a disposable image, with nothing in the repository touched, and stopped
   on a defect that only appears in production.
@@ -226,6 +202,15 @@ the git history. Kept here as an index of what has been through this file.
   and moving the templates first is what made the data migration safe. 52,133 rows converted
   with the offset taken from each event's own date, since production splits 55/45 between the
   seasons; 287 events compared before and after each deploy, none of them moved.
+- **The logs were unreadable and the replica had two silent traps** (2026-08-11) — `CLAUDE.md`
+  required checking production's logs after every deploy and forbade ad-hoc SSH, while no
+  target read logs, so the two instructions could not both be obeyed; `make remote-logs`
+  closes that, and `remote-error-check` now fails a deploy that logged a 5xx since its
+  container started. The replica needed `TRAEFIK_HOST_RULE` exported — absent from `.env`, so
+  the rule interpolated empty and Traefik answered 404 to every path, which reads as a broken
+  application — and `exec -u` with the UID owning a volume copied from production. Both fixed
+  at the root: the replica spells its own Traefik rule out, and `make replica-migrate` reads
+  the owner off the file rather than hardcoding a number that changes with each dump.
 - **Type hints** (0.2.0, 2026-08-10) — annotated 188 functions across 19 modules, put
   mypy and ruff's ANN rules behind them, and fixed the genuine type errors that surfaced.
   Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.

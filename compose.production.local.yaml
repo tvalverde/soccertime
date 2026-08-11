@@ -55,6 +55,14 @@ services:
     networks: !override
       - soccertime-local
     labels:
+      # The rule spelled out, not `${TRAEFIK_HOST_RULE}`. That variable is right in
+      # `compose.production.yaml`, which the server includes and where the host is a real
+      # domain — but compose interpolates only from `.env`, which does not carry it, so the
+      # documented command produced an empty rule and **Traefik answered 404 to every path**.
+      # Including a valid team id, which is what made it read as a broken application rather
+      # than a proxy with nothing to match on.
+      - "traefik.http.routers.soccertime-app.rule=Host(`mojon.local`) && PathPrefix(`/soccertime`)"
+      - "traefik.http.routers.soccertime-admin.rule=Host(`mojon.local`) && PathPrefix(`/soccertime/admin`)"
       - "traefik.http.routers.soccertime-app.tls.certresolver="
       - "traefik.docker.network=soccertime-local"
     volumes: !override
@@ -69,6 +77,7 @@ services:
     networks: !override
       - soccertime-local
     labels:
+      - "traefik.http.routers.soccertime-nginx.rule=Host(`mojon.local`) && (PathPrefix(`/soccertime/static`) || PathPrefix(`/soccertime/media`))"
       - "traefik.docker.network=soccertime-local"
     volumes: !override
       - ./media:/usr/share/nginx/html/media:ro
