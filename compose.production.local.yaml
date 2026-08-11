@@ -63,6 +63,10 @@ services:
       # than a proxy with nothing to match on.
       - "traefik.http.routers.soccertime-app.rule=Host(`mojon.local`) && PathPrefix(`/soccertime`)"
       - "traefik.http.routers.soccertime-admin.rule=Host(`mojon.local`) && PathPrefix(`/soccertime/admin`)"
+      # The probe has to name a host this stack answers to, or Traefik marks the only server
+      # down and the replica serves 503 to everything. `www.mojon.es` is not in the replica's
+      # ALLOWED_HOSTS, so leaving this uninherited is the mistake to avoid.
+      - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.hostname=mojon.local"
       - "traefik.http.routers.soccertime-app.tls.certresolver="
       - "traefik.docker.network=soccertime-local"
     volumes: !override

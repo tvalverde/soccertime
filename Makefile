@@ -263,8 +263,25 @@ remote_deploy:
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) run --rm --no-deps \
 			-u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) \
 			python manage.py collectstatic --noinput && \
-		echo "--- Recreating services via orchestrator ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --remove-orphans $(REMOTE_SOCCERTIME_SERVICE) && \
+		echo "--- Starting the new container beside the one still serving ---" && \
+		old=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps -q $(REMOTE_SOCCERTIME_SERVICE) | head -1) && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --no-recreate --remove-orphans \
+			--scale $(REMOTE_SOCCERTIME_SERVICE)=2 $(REMOTE_SOCCERTIME_SERVICE) && \
+		new=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps -q $(REMOTE_SOCCERTIME_SERVICE) | grep -v "$${old:-nothing}" | head -1) && \
+		echo "--- Waiting for it to answer before retiring the old one ---" && \
+		deadline=$$(( $$(date +%s) + $(HEALTH_TIMEOUT) )); \
+		until docker exec $$new python -c "import urllib.request; urllib.request.urlopen(\"http://localhost:8000/healthz/\")" >/dev/null 2>&1; do \
+			if [ $$(date +%s) -ge $$deadline ]; then \
+				echo "  the new container never answered; removing it and leaving the old one serving"; \
+				docker rm -f $$new >/dev/null; exit 1; \
+			fi; \
+			sleep 1; \
+		done && \
+		echo "  the new container is serving" && \
+		if [ -n "$$old" ]; then \
+			echo "--- Retiring the previous container ---" && \
+			docker stop -t 20 $$old >/dev/null && docker rm $$old >/dev/null; \
+		fi && \
 		echo "--- Applying database migrations ---" && \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput \
 	'
@@ -501,7 +518,8 @@ remote-error-check:
 	@echo "--- Checking for server errors since the container started ---"
 	@errors=$$(ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		cd $(REMOTE_DOCKER_PATH); \
-		started=$$(docker inspect -f "{{.State.StartedAt}}" $(REMOTE_SOCCERTIME_SERVICE) 2>/dev/null); \
+		id=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps -q $(REMOTE_SOCCERTIME_SERVICE) | head -1); \
+		started=$$(docker inspect -f "{{.State.StartedAt}}" $$id 2>/dev/null); \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) logs --no-log-prefix \
 			$${started:+--since $$started} $(REMOTE_SOCCERTIME_SERVICE) \
 			| grep -E "\" $(ERROR_STATUS) " || true \

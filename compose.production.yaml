@@ -40,7 +40,10 @@ services:
       - "traefik.http.services.soccertime-nginx.loadbalancer.server.port=8080"
 
   soccertime-web:
-    container_name: soccertime-web
+    # No `container_name`: it forbids running two at once, and a deploy needs exactly that —
+    # the new container has to be serving before the old one goes, or Traefik spends a second
+    # answering 502 and then four answering 404 because no route matches at all. Anything that
+    # needs the running container asks compose for its id rather than assuming the name.
     build:
       context: .
     image: soccertime:latest
@@ -109,6 +112,17 @@ services:
       - "traefik.http.middlewares.soccertime-admin-rate-limit.ratelimit.period=1m"
       - "traefik.http.middlewares.soccertime-admin-rate-limit.ratelimit.burst=15"
       - "traefik.http.services.soccertime-app-service.loadbalancer.server.port=8000"
+      # Traefik routes to a container the moment it starts, without waiting for the process
+      # inside to listen — so a deploy that overlaps two containers would send half its
+      # requests into a socket nobody is accepting on yet. This makes Traefik ask before it
+      # sends. `hostname` is not optional: the probe otherwise carries the container's IP as
+      # `Host`, Django rejects it through ALLOWED_HOSTS, every server is marked down and the
+      # whole service answers 503 — measured, not imagined. `/healthz/` is reached directly,
+      # without the prefix the router strips.
+      - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.path=/healthz/"
+      - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.hostname=www.mojon.es"
+      - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.interval=1s"
+      - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.timeout=1s"
       - "traefik.http.routers.soccertime-app.service=soccertime-app-service"
 
 volumes:

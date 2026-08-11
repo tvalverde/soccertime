@@ -56,7 +56,11 @@ def services(path):
             found[current]["profiles"].append(entry.group(1))
             continue
         in_profiles = False
-        for key, pattern in (("image", r'\s+image:\s*"?([^"\s]+)"?'), ("install_dev", r'\s+INSTALL_DEV:\s*"?(\w+)"?')):
+        for key, pattern in (
+            ("image", r'\s+image:\s*"?([^"\s]+)"?'),
+            ("install_dev", r'\s+INSTALL_DEV:\s*"?(\w+)"?'),
+            ("healthcheck_host", r'\s+- "traefik\.http\.services\.[\w-]+\.loadbalancer\.healthcheck\.hostname=([^"]+)"'),
+        ):
             match = re.fullmatch(pattern, line.rstrip())
             if match:
                 found[current][key] = match.group(1)
@@ -137,3 +141,29 @@ class TestTheReplicaDoesNotRunTheDevelopmentServer:
         have stopped a plain `docker compose up` from starting anything at all.
         """
         assert not services(DEVELOPMENT)["web"].get("profiles")
+
+
+class TestTheTraefikHealthCheck:
+    """Traefik only stops sending traffic to a container that cannot serve if it asks first.
+
+    That is what makes an overlapping deploy possible — measured, the difference between six
+    seconds of 502-then-404 and a single failed request. It comes with a way to take the whole
+    site down, which is why it is pinned here: the probe carries the container's IP as `Host`
+    unless told otherwise, Django rejects it through ALLOWED_HOSTS, every server is marked down
+    and the service answers **503 to everything**. Reproduced in the replica before the label
+    was written.
+    """
+
+    def test_production_names_a_host_for_the_probe(self):
+        assert services(PRODUCTION)["soccertime-web"].get("healthcheck_host")
+
+    def test_the_replica_names_its_own(self):
+        """Inheriting production's would fail every probe here and serve 503.
+
+        `www.mojon.es` is not in the replica's ALLOWED_HOSTS, and nothing else would say so —
+        the symptom is the whole site down, not a warning.
+        """
+        replica = services(REPLICA)["soccertime-web"].get("healthcheck_host")
+
+        assert replica
+        assert replica != services(PRODUCTION)["soccertime-web"]["healthcheck_host"]
