@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-11
+
+Two defects that had been live in front of every visitor, found by asking which of the
+recorded improvements were actually bugs rather than missing features.
+
+The first wrote server errors into the log for anyone who mistyped a URL: all four event
+routes accepted any text where an id belongs and handed it straight to a primary key
+lookup, so `/events/team/abc/` answered 500 while `/events/team/99999999/` correctly
+answered 404. The test that would have caught it was one parameter away from a test that
+already existed — which is the general lesson, not the fix.
+
+The second was the search box ignoring competitions and sports entirely, so "LaLiga",
+"Fórmula 1", "Copa del Rey" and "Tenis" all came back empty while "Real Madrid" returned
+809 results. They return thousands now, at no cost: the tables were already joined.
+
+It also carries the tripwire left behind by the abandoned Django 6.1 upgrade, so the next
+attempt fails in the suite rather than in the admin.
+
+The naive timestamps are deliberately untouched and remain the next thing to fix.
+
 ### Fixed
 - Every parameterised event route answered **500** for a non-numeric id. `urls.py` declared `<str:team>` and the view handed it straight to `get_object_or_404(Team, pk=…)`, so Django raised `ValueError: Field 'id' expected a number but got 'abc'`, uncaught, and the request became a server error. Measured against production before the fix: `/events/team/abc/`, `/events/channel/abc/`, `/events/sport/abc/` and `/events/competition/abc/` all answered 500, while a numeric id matching no row correctly answered 404. A crawler, a link truncated in a chat or a typo reached it, and each one wrote a server error into the log — which is the place you read when something real has broken. The routes declare `<int:>` now, so a segment that is not a number never matches and the view is never entered. Nothing that exists stops resolving: all seven templates build these URLs from `.pk`. Why it survived is one parameter away from a test that was already there — the existing checks assert 404 using `args=[99999]`, so they cover the shape that worked.
 - The search never looked at the competition or the sport, which made the box useless for the most obvious things anyone types. Against the real database: **"LaLiga" returned 0 results, "Fórmula 1" 0, "Copa del Rey" 0 and "Tenis" 0**, while "Real Madrid" returned 809. They now return 1,040, 263, 243 and 6,884. Both new fields are foreign-key hops, so no row can match twice and no `distinct()` is needed — confirmed by counting queries on `/agenda/?search=…`, which is 10 before and after, since `with_related()` already joins them. Channel is deliberately left out although "DAZN" would match 10,494 rows: it is a many-to-many, so it needs `distinct()` and would change the query shape underneath the pagination added this same day, and channels already have a page of their own. The bound added in 0.4.1 still applies unchanged — the new fields are `CharField(max_length=255)` too.
