@@ -12,9 +12,80 @@ public path.
 
 The security audit of 2026-08-11 is closed: every finding it raised, from the two Critical
 ones down to the four Low, was fixed and deployed within the day. The detail is in Done and
-in `CHANGELOG.md`. What is left below is maintenance and one improvement, neither urgent.
+in `CHANGELOG.md`. What is left below is improvements and maintenance, none of it urgent.
 
 ### Improvements
+
+Ordered by the utility each would add, judged against the site and its data on 2026-08-11.
+Every number below is a measurement taken that day, not an estimate, so the case for each can
+be re-read rather than re-argued. None has been designed beyond what is written here — except
+the last, which is a different kind of thing and says so.
+
+- [ ] **Only 15% of what the site lists can be watched, and nothing says which.** Of 2,148
+  future events, **340** have at least one channel carrying an acestream link; 124 of the 568
+  channels have one at all. So somebody looking for something to watch scrolls past six
+  unusable rows for every usable one, and only finds out by looking for the play button. This
+  is the widest gap between what the site promises — "enlaces a streams" is in its own meta
+  description — and what it delivers. Not a case for hiding the rest: knowing Madrid play at
+  21:00 on DAZN is worth having even when the link is not there. A filter, an ordering, or a
+  marker that makes the difference visible before scrolling.
+
+- [ ] **There is no "on now".** Nothing in the templates or the models expresses whether an
+  event is live, finished or upcoming — searched for, not assumed. On a live agenda that is
+  the most frequent question, and the front page compounds it: `in_window(hours_before=3)`
+  mixes what ended, what is being played and what is coming, with nothing to tell them apart.
+  A state on the event and a way to see only what is live.
+
+- [ ] **Favourites are the owner's, not the visitor's.** They are curated in the admin, and
+  every visitor sees the same ones, so the landing page is one person's agenda. This could be
+  per-visitor without accounts or sessions: keep the selection in `localStorage` and filter in
+  the browser. That fits the architecture rather than fighting it — pages stay cached for an
+  hour and shared by everyone, which is exactly the constraint that made a per-request message
+  leak into the shared cache once before. **This is a product decision, not a defect**: it
+  turns a personal agenda into everybody's, and that may not be what the site is for.
+
+- [ ] **The search does not look at competitions.** `EventQuerySet.search` covers team, race
+  and simple-event names and nothing else, so the most obvious things anyone would type come
+  back empty: **"LaLiga" returns 0 results, "Fórmula 1" returns 0, "Champions" returns 1**,
+  while "Real Madrid" returns 809. Four lines — `Q(competition__name__icontains=…)`, probably
+  the channel too. It is this high in the list only because the cost is nothing and the
+  failure is in front of every visitor who uses the box.
+
+- [ ] **The times are right by accident.** The scraper stores Spanish local time labelled as
+  UTC, and the site renders in UTC, so the number displayed is correct because two errors
+  cancel. Django says so on every save: *"DateTimeField Event.date received a naive datetime
+  while time zone support is active"*. What does not cancel is the arithmetic:
+  `in_window(hours_before=3)` compares `timezone.now()` in real UTC against those
+  Spanish-labelled times, so the front page's window is **shifted by the offset** — it shows
+  events that finished five hours ago, not three. And the trap: the day somebody "fixes"
+  `TIME_ZONE`, every displayed time on the site moves by two hours at once. Worth fixing
+  deliberately, in one change, with the display pinned by tests first.
+
+- [ ] **A shared link says nothing about itself.** No `og:title`, no `og:image`, no
+  `twitter:card`, no JSON-LD, no canonical, no sitemap — checked against the live response.
+  This is a site people paste into WhatsApp and Telegram, and those links arrive bare. The
+  same change covers discovery: futbolenlatv marks its fixtures up with schema.org, which is
+  how sports listings reach Google's results at all. Cheap, and the returns are not subtle.
+
+- [ ] **It looks like an app and cannot be installed.** Bottom navigation, mobile-first
+  layout, and no `manifest` and no `apple-touch-icon`. Nobody can add it to a home screen,
+  which is precisely how something like this gets used: open, check what is on, close.
+
+- [ ] **Two in five future events promise a channel they do not name.** **857 of 2,148** carry
+  "Canal por confirmar". Not an error — the source genuinely does not know yet — but they take
+  up the same room as a real listing while offering nothing to act on. They want different
+  treatment: grouped, dimmed, or outside the default filter.
+
+- [ ] **The big pages are heavy for a phone.** `/competitions/` sends **331 KB** of HTML and
+  `/channels/` **181 KB**, the latter dumping all 381 links at once. The queries are not the
+  problem — between 1 and 10 per page, which is what the 0.2.1 work bought — so this is purely
+  how much is rendered in one go.
+
+- [ ] **Nothing reports the system's own health, and the database is 96% past.** **49,985 past
+  events against 2,148 future ones**, with nothing that purges them: unbounded growth of rows
+  nobody will ever read. And if the scrape broke at three in the morning the agenda would
+  empty out, with nothing to say so until somebody noticed. Same family, and the monitoring
+  half is already designed inside the parked entry below.
 
 - [ ] **A second event source, so the site does not depend on one.** Designed in full on
   2026-08-11 and deliberately not built: it is worth having, but nothing forces it now.
