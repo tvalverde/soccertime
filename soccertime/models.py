@@ -5,12 +5,13 @@ from collections.abc import Sequence
 from typing import Any, ClassVar, Self, cast
 from urllib.parse import urlparse
 
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.images import ImageFile
 from django.core.validators import URLValidator
 from django.db import models
 from django.db.models import Count, Prefetch, Q
-from django.db.models.signals import m2m_changed, post_delete, pre_delete
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -526,6 +527,20 @@ def delete_orphan_channel_links(link_pks: list[int]) -> None:
     if not link_pks:
         return
     ChannelLink.objects.filter(pk__in=link_pks).annotate(source_count=Count("sources")).filter(source_count=0).delete()
+
+
+@receiver([post_save, post_delete], sender=Favorite)
+def clear_page_cache_when_the_curated_favorites_change(sender: type[Favorite], **kwargs: Any) -> None:
+    """Editing favourites in the admin used to take up to an hour to show.
+
+    They decide the landing page and the strips above every listing for everybody who has
+    chosen none of their own, and those pages are cached whole — so nothing carried the
+    change out until the hourly scrape happened to clear the cache for its own reasons. That
+    is the same `cache.clear()` this calls, and it is coarse on purpose: the alternative is
+    working out which of eight page variants a favourite appears on, which is more machinery
+    than a table nobody edits twice a week deserves.
+    """
+    cache.clear()
 
 
 @receiver(pre_delete, sender=ChannelLinkSource)

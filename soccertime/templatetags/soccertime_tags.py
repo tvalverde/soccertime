@@ -4,6 +4,7 @@ from django.core.paginator import Paginator
 from django.template.defaulttags import register
 from django.utils.safestring import SafeString
 
+from soccertime.models import Match
 from soccertime.rendering import image_markup
 
 
@@ -16,6 +17,27 @@ def sort_by_list_length(regroup_list: Any, reverse: str = "True") -> list[Any]:
     reverse_bool = str(reverse).lower() not in ("false", "0", "")
     items = list(regroup_list)
     return sorted(items, key=lambda x: len(x.list), reverse=reverse_bool)
+
+
+@register.filter
+def marked_favorite(parent_event: Any, selection: Any) -> bool:
+    """Whether a listing row carries the gold border, for whoever is reading the page.
+
+    Two rules, because there are two kinds of favourite. With no selection it is the owner's
+    curated list, exactly as the border has always meant. With one it is the visitor's, and
+    there a competition covers its matches — the same reading `for_selection()` uses, so the
+    border and the landing page never disagree about what counts.
+
+    Everything it touches is already loaded by `with_related()`, so a listing pays no query
+    for it.
+    """
+    if selection is None:
+        child = parent_event.child_event
+        return bool(child and child.is_favorite_event)
+    if parent_event.competition_id in selection.competitions:
+        return True
+    child = parent_event.child_event
+    return isinstance(child, Match) and (child.local_id in selection.teams or child.visitor_id in selection.teams)
 
 
 @register.filter

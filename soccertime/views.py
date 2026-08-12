@@ -97,26 +97,29 @@ NO_CHANNELS_MESSAGE = _("No hay canales disponibles :_(")
 # --- Helper functions ---
 
 
-def get_favorite_competitions() -> QuerySet[Competition]:
-    """Get competitions marked as favorites, ordered by preference."""
-    return (
-        Competition.objects.filter(
-            favorite__isnull=False,
-            events__date__date__gte=timezone.localdate(),
-        )
-        .select_related("flag")
-        .distinct()
-        .order_by("favorite__order")
+def get_favorite_competitions(selection: Selection | None = None) -> list[Competition]:
+    """The flag strip above every listing: the visitor's competitions, or the owner's.
+
+    Kept to competitions with something still to come either way, which is what makes it a
+    shortcut rather than an archive. A visitor's own are ordered by when they starred them,
+    which the cookie preserves; the owner's keep the order they were dragged into.
+    """
+    upcoming = (
+        Competition.objects.filter(events__date__date__gte=timezone.localdate()).select_related("flag").distinct()
     )
+    if selection is None:
+        return list(upcoming.filter(favorite__isnull=False).order_by("favorite__order"))
+    chosen = upcoming.filter(pk__in=selection.competitions)
+    return sorted(chosen, key=lambda competition: selection.competitions.index(competition.pk))
 
 
-def get_favorite_teams() -> QuerySet[Team]:
-    """Get teams marked as favorites, ordered by preference."""
-    return (
-        Team.objects.filter(favorite__isnull=False)
-        .exclude(Q(crest__isnull=True) | Q(crest=""))
-        .order_by("favorite__order")
-    )
+def get_favorite_teams(selection: Selection | None = None) -> list[Team]:
+    """The crest strip, which only the agenda carries. A team with no crest has nothing to show."""
+    with_crest = Team.objects.exclude(Q(crest__isnull=True) | Q(crest=""))
+    if selection is None:
+        return list(with_crest.filter(favorite__isnull=False).order_by("favorite__order"))
+    chosen = with_crest.filter(pk__in=selection.teams)
+    return sorted(chosen, key=lambda team: selection.teams.index(team.pk))
 
 
 def personalised(view: Any) -> Any:
@@ -156,15 +159,23 @@ def get_star_context(kind: EntityKind, entity_id: int, selection: Selection | No
     }
 
 
-def get_base_context(with_teams: bool = False) -> dict[str, Any]:
+def get_base_context(with_teams: bool = False, selection: Selection | None = None) -> dict[str, Any]:
     """Context every listing shares.
 
     Only the agenda shows the favourite teams strip, so the rest do not pay for the
     query; the views used to ask for it and pop it back out.
+
+    `selection` travels into the context as well, because the gold border marking a
+    favourite row is decided per visitor for the same reason the strips are: a page filtered
+    to one person's teams, under a strip of somebody else's, beside rows bordered as a
+    third's, would contradict itself three ways.
     """
-    context: dict[str, Any] = {"competitions": get_favorite_competitions()}
+    context: dict[str, Any] = {
+        "competitions": get_favorite_competitions(selection),
+        "selection": selection,
+    }
     if with_teams:
-        context["teams"] = get_favorite_teams()
+        context["teams"] = get_favorite_teams(selection)
     return context
 
 
@@ -246,13 +257,13 @@ def favorites(request: HttpRequest) -> HttpResponse:
     else:
         window = window.for_selection(selection.teams, selection.competitions)
 
-    context = get_base_context()
+    context = get_base_context(selection=selection)
     context.update({"events": paginate_queryset(window.with_related().chronological(), request)})
     context.update(empty_state(NO_FAVOURITE_EVENTS_MESSAGE, "warning"))
     return render(request, "soccertime/agenda.html", context)
 
 
-@cached_page
+@cached_unless_personalised
 def agenda(request: HttpRequest) -> HttpResponse:
     max_date_result = Event.objects.aggregate(Max("date"))["date__max"]
     max_date = timezone.localtime(max_date_result).strftime("%Y-%m-%d") if max_date_result else None
@@ -274,7 +285,7 @@ def agenda(request: HttpRequest) -> HttpResponse:
         queryset = queryset.watchable()
     queryset = queryset.chronological()
 
-    context = get_base_context(with_teams=True)
+    context = get_base_context(with_teams=True, selection=read_selection(request))
     # Asking for a specific day is asking for the whole of it, from its beginning; only the
     # rolling "today onwards" listing needs to be told where the present is.
     default_page = 1 if requested_date else page_holding_the_present(queryset)
@@ -295,6 +306,7 @@ def agenda(request: HttpRequest) -> HttpResponse:
 @personalised
 def team_events(request: HttpRequest, team: int) -> HttpResponse:
     team_obj = get_object_or_404(Team, pk=team)
+    selection = read_selection(request)
     queryset = Event.objects.for_team(team).in_progress_or_upcoming().with_related().chronological()
 
     # Opponents in upcoming matches, ordered by when they are played
@@ -325,25 +337,25 @@ def team_events(request: HttpRequest, team: int) -> HttpResponse:
         key=lambda team: opponent_dates[team.id],
     )
 
-    context = get_base_context()
+    context = get_base_context(selection=selection)
     context.update(
         {
             "events": queryset,
             "events_title": team_obj.name,
             "competition_teams": competition_teams,
-            **get_star_context("team", team_obj.pk, read_selection(request)),
+            **get_star_context("team", team_obj.pk, selection),
             **empty_state(),
         }
     )
     return render(request, "soccertime/agenda.html", context)
 
 
-@cached_page
+@cached_unless_personalised
 def channel_events(request: HttpRequest, channel: int) -> HttpResponse:
     channel_obj = get_object_or_404(Channel, pk=channel)
     queryset = Event.objects.for_channel(channel).in_progress_or_upcoming().with_related().chronological()
 
-    context = get_base_context()
+    context = get_base_context(selection=read_selection(request))
     context.update(
         {
             "events": queryset,
@@ -354,12 +366,12 @@ def channel_events(request: HttpRequest, channel: int) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
-@cached_page
+@cached_unless_personalised
 def sport_events(request: HttpRequest, sport: int) -> HttpResponse:
     sport_obj = get_object_or_404(Sport, pk=sport)
     queryset = Event.objects.for_sport(sport).in_progress_or_upcoming().with_related().chronological()
 
-    context = get_base_context()
+    context = get_base_context(selection=read_selection(request))
     context.update(
         {
             "events": paginate_queryset(queryset, request),
@@ -373,14 +385,15 @@ def sport_events(request: HttpRequest, sport: int) -> HttpResponse:
 @personalised
 def competition_events(request: HttpRequest, competition: int) -> HttpResponse:
     competition_obj = get_object_or_404(Competition, pk=competition)
+    selection = read_selection(request)
     queryset = Event.objects.for_competition(competition).in_progress_or_upcoming().with_related().chronological()
 
-    context = get_base_context()
+    context = get_base_context(selection=selection)
     context.update(
         {
             "events": queryset,
             "events_title": competition_obj.name,
-            **get_star_context("competition", competition_obj.pk, read_selection(request)),
+            **get_star_context("competition", competition_obj.pk, selection),
             "competition_teams": Team.objects.filter(
                 Q(home_matches__competition=competition_obj) | Q(away_matches__competition=competition_obj)
             )
@@ -436,7 +449,7 @@ def channels(request: HttpRequest) -> HttpResponse:
     )
 
 
-@cached_page
+@cached_unless_personalised
 def competitions(request: HttpRequest) -> HttpResponse:
     """List sports and their competitions, grouping in Python to avoid N+1 queries."""
     today = timezone.localdate()
@@ -461,7 +474,13 @@ def competitions(request: HttpRequest) -> HttpResponse:
         sport.id: {"sport": sport, "with_events": [], "without_events": []} for sport in active_sports
     }
 
+    selection = read_selection(request)
     for comp in competitions_qs:
+        # The annotation answers for the owner's list, which is the right answer for anybody
+        # who has chosen nothing and the wrong one for everybody else. Overwritten in place
+        # rather than queried differently, so the grouping below stays one query.
+        if selection is not None:
+            comp.is_fav = comp.pk in selection.competitions
         sport_id = comp.sport_id
         if sport_id in sports_map:
             if comp.num_events > 0:
@@ -477,6 +496,6 @@ def competitions(request: HttpRequest) -> HttpResponse:
     # Preserve the sport ordering established above
     sports_data = [sports_map[sport.id] for sport in active_sports]
 
-    context = get_base_context()
+    context = get_base_context(selection=selection)
     context.update({"sports_data": sports_data})
     return render(request, "soccertime/competitions.html", context)

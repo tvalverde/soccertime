@@ -4,7 +4,10 @@
 {# `data-starts-at` carries the instant so `live_state.js` can mark what is on now in the #}
 {# browser. It has to be decided there: pages are cached for an hour, so a badge rendered #}
 {# here would keep claiming an event is live up to sixty minutes after it ended.          #}
-<tr data-starts-at="{{ event.date|date:'c' }}"{% if event.is_favorite_event and "favorites" not in request.path %} class="favorite-event"{% endif %}>
+{# The border is decided per visitor, because the page above it is: `marked_favorite` reads #}
+{# the owner's curated list for anybody who has chosen nothing and the reader's own for     #}
+{# anybody who has. Never on the favourites page itself, where every row is one already.    #}
+<tr data-starts-at="{{ event.date|date:'c' }}"{% if "favorites" not in request.path and parent_event|marked_favorite:selection %} class="favorite-event"{% endif %}>
   <th scope="row">
     {{ event.date|date:'H:i' }}
     <span class="live-badge badge rounded-pill d-none">{% translate "EN DIRECTO" %}</span>

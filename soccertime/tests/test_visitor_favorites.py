@@ -20,6 +20,7 @@ token and the same cookie to every other visitor.
 """
 
 import datetime
+import re
 
 import pytest
 from bs4 import BeautifulSoup
@@ -62,6 +63,42 @@ def listed_teams(html):
 
 def event_rows(html):
     return BeautifulSoup(html, "html.parser").select("tr[data-starts-at]")
+
+
+def _linked_ids(elements, kind):
+    return {int(re.search(rf"/{kind}/(\d+)/", element["href"]).group(1)) for element in elements}
+
+
+def strip_competition_ids(html):
+    """The flag strip that sits above every listing."""
+    strip = BeautifulSoup(html, "html.parser").select_one("div.bg-primary")
+    return _linked_ids(strip.select("a"), "competition") if strip else set()
+
+
+def strip_team_ids(html):
+    """The crest strip, which only the agenda carries."""
+    strip = BeautifulSoup(html, "html.parser").select_one("#teams-container")
+    return _linked_ids(strip.select("a"), "team") if strip else set()
+
+
+def highlighted_competition_ids(html):
+    """The competitions the listing page marks as favourites."""
+    marked = BeautifulSoup(html, "html.parser").select("a.text-bg-warning")
+    return _linked_ids(marked, "competition")
+
+
+def bordered_rows(html):
+    return BeautifulSoup(html, "html.parser").select("tr.favorite-event")
+
+
+@pytest.fixture
+def crested_team(db):
+    """The strip skips teams with no crest, so a team that appears in it needs one.
+
+    The file does not have to exist — `image_markup` draws its placeholder when it is
+    missing — and this is about which teams the strip lists, not what they look like.
+    """
+    return Team.objects.create(name="Girona FC", crest="crests/girona.png")
 
 
 @pytest.fixture
@@ -378,6 +415,100 @@ class TestTheCuratedRuleIsUntouched:
         html = client.get(reverse("favorites")).content.decode()
 
         assert len(event_rows(html)) == 1
+
+
+@pytest.mark.django_db
+class TestTheStripsAndTheBorderFollowTheVisitorToo:
+    """The shortcuts at the top of every page, and the gold border in the listings.
+
+    Leaving them curated would have meant a site that contradicts itself: your agenda
+    filtered to my teams, above a strip of yours, beside rows bordered as yours. They read
+    the same selection now, on the same terms as the landing page — the listings stay in the
+    shared cache for everybody who has chosen nothing, and are rendered fresh for whoever has.
+    """
+
+    def test_the_flag_strip_shows_the_visitor_s_competitions(
+        self, visitor, match, favorite_team, competition_tour, race
+    ):
+        star(visitor, "competition", competition_tour)
+
+        html = visitor.get(reverse("agenda")).content.decode()
+
+        assert strip_competition_ids(html) == {competition_tour.pk}
+
+    def test_and_the_owner_s_to_everybody_else(self, client, match, favorite_competition, competition):
+        html = client.get(reverse("agenda")).content.decode()
+
+        assert strip_competition_ids(html) == {competition.pk}
+
+    def test_the_crest_strip_shows_the_visitor_s_teams(self, visitor, match, favorite_team, crested_team):
+        star(visitor, "team", crested_team)
+
+        html = visitor.get(reverse("agenda")).content.decode()
+
+        assert strip_team_ids(html) == {crested_team.pk}
+
+    def test_the_border_marks_the_visitor_s_events(self, visitor, match, other_match, favorite_team):
+        star(visitor, "team", other_match.local)
+
+        html = visitor.get(reverse("agenda")).content.decode()
+
+        assert len(bordered_rows(html)) == 1
+        assert f"/team/{other_match.local_id}/" in str(bordered_rows(html)[0])
+
+    def test_and_the_owner_s_for_everybody_else(self, client, match, other_match, favorite_team):
+        html = client.get(reverse("agenda")).content.decode()
+
+        assert f"/team/{match.local_id}/" in str(bordered_rows(html)[0])
+
+    def test_the_competition_listing_highlights_the_visitor_s(
+        self, visitor, match, favorite_competition, competition_champions, match_future
+    ):
+        star(visitor, "competition", competition_champions)
+
+        html = visitor.get(reverse("competitions")).content.decode()
+
+        assert highlighted_competition_ids(html) == {competition_champions.pk}
+
+    def test_a_listing_is_still_shared_by_everybody_who_chose_nothing(
+        self, client, match, favorite_team, server_side_cache, django_assert_num_queries
+    ):
+        """The half that keeps the site fast: every crawler and every first visit is here."""
+        client.get(reverse("agenda"))
+
+        with django_assert_num_queries(0):
+            client.get(reverse("agenda"))
+
+    def test_and_a_personalised_one_never_reaches_the_next_visitor(
+        self, match, other_match, favorite_team, server_side_cache, competition_tour
+    ):
+        chooser = Client()
+        star(chooser, "competition", competition_tour)
+        chooser.get(reverse("agenda"))
+
+        html = Client().get(reverse("agenda")).content.decode()
+
+        assert competition_tour.pk not in strip_competition_ids(html)
+
+
+@pytest.mark.django_db
+class TestTheOwnerSeesTheirOwnEditsAtOnce:
+    """Nothing invalidated the page cache when a `Favorite` changed, so a strip edited in the
+    admin went on showing the old one until the next hourly scrape happened to clear it."""
+
+    def test_adding_one_clears_the_page_cache(self, client, match, competition, server_side_cache):
+        client.get(reverse("agenda"))
+
+        Favorite.objects.create(competition=competition, order=1)
+
+        assert strip_competition_ids(client.get(reverse("agenda")).content.decode()) == {competition.pk}
+
+    def test_removing_one_does_too(self, client, match, favorite_competition, competition, server_side_cache):
+        client.get(reverse("agenda"))
+
+        favorite_competition.delete()
+
+        assert strip_competition_ids(client.get(reverse("agenda")).content.decode()) == set()
 
 
 @pytest.mark.django_db
