@@ -73,6 +73,12 @@ the last, which is a different kind of thing and says so.
   empty out, with nothing to say so until somebody noticed. Same family, and the monitoring
   half is already designed inside the parked entry below.
 
+- [ ] **On a phone, the channel column sits past the horizontal scroll.** Surfaced by the
+  channel-visibility work of 2026-08-11 and parked since: the column now names the channel
+  for every event, but on a phone it is off-screen until the table is scrolled sideways, so
+  the gain is a desktop one until the mobile layout is revisited. Cosmetics by the criteria
+  above, which is why it sits here.
+
 - [ ] **A second event source, so the site does not depend on one.** Designed in full on
   2026-08-11 and deliberately not built: it is worth having, but nothing forces it now.
   The design and every decision behind it are in
@@ -184,259 +190,63 @@ the last, which is a different kind of thing and says so.
 
 ## Done
 
-Detail for each of these is in `CHANGELOG.md` under the version that shipped it, and in
-the git history. Kept here as an index of what has been through this file.
+An index only: one line per item, newest first. The detail — measurements, rejected
+alternatives, the story of each — is in `CHANGELOG.md` under the version that shipped it,
+and in the git history. This section held full paragraphs until 2026-08-13; they
+duplicated the changelog and were compressed into what an index is for: finding things.
 
-- **Favourites belong to the visitor** (0.7.0, 2026-08-13) — a star on each team's and
-  competition's page, the selection in a signed cookie, filtered and paginated on the
-  server. Not the `localStorage` design this entry originally sketched: that was built and
-  thrown away when it turned out to require shipping the whole window (437 KB) and made
-  pagination impossible. The entry's product question was answered *both*: visitors get
-  their own, and the admin's curated table stays as what everybody else sees. The audit of
-  the branch also made the site faster than before the feature: `/competitions/` 2.56s to
-  0.29s, a competition page 1.64s to 0.03s.
-- **Responses are compressed** (2026-08-13) — `/competitions/` travels at 28 KB instead of
-  338. The transfer half of the "big pages" entry above; its rendering half remains open.
-
-- **Channel matching** (0.2.1, 2026-08-10) — pinned `match_channels` with 41
-  characterization tests, then rewrote it: 1236 queries and 638 ms down to 1 query and
-  11 ms. The tests found two silent bugs first, one of them dropping every accented
-  channel name.
-- **500 on every non-numeric id, and a search blind to competitions** (2026-08-11) — the
-  four event routes declared `<str:>` and passed the value to a primary key lookup, so
-  `/events/team/abc/` and its three siblings answered 500 in production while a numeric id
-  matching nothing correctly answered 404; they take `<int:>` now, and a non-numeric segment
-  never reaches the view. The search covered team, race and simple-event names only, so
-  "LaLiga", "Fórmula 1", "Copa del Rey" and "Tenis" all returned nothing — they return 1,040,
-  263, 243 and 6,884 with competition and sport added. Channel was left out on purpose: it is
-  a many-to-many, so it needs `distinct()` and would change the query shape underneath the
-  pagination. `Competition.has_events` and `events_count` were deleted in the same pass,
-  referenced nowhere and an N+1 waiting for a caller.
-- **The times were right by accident** (2026-08-11) — the scraper stored Spanish wall clock
-  labelled UTC and the site rendered UTC, so the page was correct while every comparison
-  against `timezone.now()` was out by the offset: the front page held 111 events with 7 of
-  them already over, because a window declaring three hours retained five in summer and four
-  in winter. Fixed in two deploys, the first provably display-neutral. **One thing this file
-  had wrong**: it said fixing `TIME_ZONE` would shift every displayed time by two hours. It
-  would have done nothing at all — the templates called `.time`, which discards the zone
-  before formatting, so the page was deaf to the setting. The real hazard was the reverse,
-  and moving the templates first is what made the data migration safe. 52,133 rows converted
-  with the offset taken from each event's own date, since production splits 55/45 between the
-  seasons; 287 events compared before and after each deploy, none of them moved.
-- **The logs were unreadable and the replica had two silent traps** (2026-08-11) — `CLAUDE.md`
-  required checking production's logs after every deploy and forbade ad-hoc SSH, while no
-  target read logs, so the two instructions could not both be obeyed; `make remote-logs`
-  closes that, and `remote-error-check` now fails a deploy that logged a 5xx since its
-  container started. The replica needed `TRAEFIK_HOST_RULE` exported — absent from `.env`, so
-  the rule interpolated empty and Traefik answered 404 to every path, which reads as a broken
-  application — and `exec -u` with the UID owning a volume copied from production. Both fixed
-  at the root: the replica spells its own Traefik rule out, and `make replica-migrate` reads
-  the owner off the file rather than hardcoding a number that changes with each dump.
-- **The site hid the channel it knew about** (2026-08-11) — the template rendered a channel
-  only when it had an enabled link, so the column was empty for 1,809 of 2,148 future events,
-  952 of which named a real channel: HBO MAX, DAZN, Movistar+. Measured on a production page,
-  8 rows of 25 showed anything; now 25 do, with the play buttons unchanged at 8 and the page
-  1-2 % heavier. The muted badge is `#a29d9b`, 6.9:1 against the background, computed rather
-  than picked. `?watchable=1` filters to what can be played. This also settles the separate
-  entry about the 857 `Canal por confirmar` rows: they are named now, so an empty cell no
-  longer has to be guessed at. **Left open**: on a phone the channel column still sits past the
-  horizontal scroll, so the gain is a desktop one until the mobile layout is revisited.
-- **`docker compose pull` failed on the host** (2026-08-12) — `soccertime` and `frankenshop`
-  are built there and exist in no registry, so a pull asked for them, was denied and exited
-  non-zero, taking the four genuinely remote images down with it. Ours now declares
-  `pull_policy: never`, which states the fact and needs no flag; `build` was tried first and
-  rejected because it makes every `up` rebuild, which would put a build and a
-  `docker/dockerfile:1` download inside a deploy's container hand-over. `make remote-pull`
-  covers the whole host with `--ignore-buildable`, which skips exactly the services that
-  declare a build — both of them do — and not `--ignore-pull-failures`, which would also hide
-  a real registry outage. Verified against the server: exit 0, both images skipped, the other
-  four pulled.
-- **The agenda opened in the past, and said nothing about what was on** (2026-08-12) — the
-  entry framed this as a missing live badge; measuring found the larger cause, that
-  `today_onwards()` starts at midnight: 16 of the first 25 rows were already over, and 71 of
-  127 on a busy Saturday evening. It opens at the page holding the present now and hides
-  nothing, which matters because **"finished" is never a fact here**: all 52,022 events have
-  `duration = NULL`, so it is always a flat 2h estimate, wrong for the 30% of events in
-  tennis, cycling, motorsport and golf. Four hiding cutoffs were measured and every one buried
-  live events, which is why the design moves the starting page instead. The `EN DIRECTO` badge
-  is computed in the browser because pages are cached for an hour, and deliberately
-  under-claims for long sports rather than risk claiming something is on when it is over.
-  **Constrains anything built on event state later**: without real durations, only "started
-  recently" can be asserted.
-- **The five LOW findings of the review** (2026-08-12) — closed together, which finishes it.
-  The dead `env` template filter deleted with its allowlist; four view signatures corrected
-  from `str` to `int`; the settle/probe-interval coupling pinned by a test that goes red when
-  either side moves alone; and the health probe filtered out of the access log, where it was
-  **89,280 lines a day and 97% of the traffic** — measured, half the review's estimate —
-  suppressed only while passing, so a failing probe still shows. `collectstatic` accumulation
-  was measured (6.4 MB, 300 files, ~2 MB a year) and deliberately left unpruned: adding
-  machinery to the deploy is not worth megabytes, so `make remote-ps` reports the size
-  instead. Two bugs surfaced during the work and neither was caught by unit tests: declaring
-  the filter in `LOGGING` silenced the **entire** access log, because `dictConfig` resets a
-  named logger's unspecified keys and cleared uvicorn's handler; and anchoring the path match
-  at the start matched nothing, because `--root-path` puts `/soccertime/healthz/` in the log.
-  Both were found by running it against the real stack, and both now have tests.
-- **DNS rebinding bypassed the image downloader's address check** (2026-08-12) — the host was
-  resolved by the check and again by `requests`, so a short-TTL DNS could answer public then
-  internal. Resolved once now and the connection pinned to the vetted IP via urllib3's
-  `create_connection` hook, SNI preserved so TLS still validates; each redirect hop pinned
-  independently. A test connects to the vetted address rather than a second lookup's, and
-  fails without the pin.
-- **The upsert window merged real fixtures, and the phase text duplicated them**
-  (2026-08-12) — identity is exact now and date changes are observed per scrape unit:
-  superseded rows pruned in the same scrape, ambiguous ones after two consecutive misses.
-  The first real run against production data caught the second bug on its own: `details`
-  sat inside race identity, and 234 same-slot twin rows existed. Healed by rule and by a
-  one-shot migration. Migrations also moved before the deploy handover, closing the
-  500-window a column-adding release would have opened — additive-first is now the stated
-  discipline.
-- **The remote targets assumed one container** (2026-08-12) — `remote-clear-cache` and
-  `remote-scrape` cleared one container's per-tmpfs page cache and left the other serving
-  stale pages; `remote-error-check` scanned one log; `wait-remote-healthy` declared success
-  with one container healthy while another was still starting, shown on the replica against
-  the same state the new logic refuses. All iterate now; the deploy's migrate keeps its
-  single `exec` with the reason documented — the relay has just asserted exactly one, and the
-  database is shared.
-- **The deploy relay could silently deploy nothing** (2026-08-12) — with two containers left
-  by an interrupted deploy it created nothing, mistook the second old container for the new
-  one and reported success with the built image never running; with zero it started two and
-  seeded that state. Extracted to `scripts/relay.sh`, shared verbatim between production
-  (`ssh 'sh -s'`) and `make replica-relay`, healing anomalous states loudly and asserting by
-  image id that what serves is what was built. Rehearsed in all four states; the sibling
-  finding that other remote targets assume one container remains open.
-- **Type hints** (0.2.0, 2026-08-10) — annotated 188 functions across 19 modules, put
-  mypy and ruff's ANN rules behind them, and fixed the genuine type errors that surfaced.
-  Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.
-- **Scraper reporting** (0.3.0, 2026-08-10) — events whose time is not yet announced are
-  counted and named instead of being silently folded into `skipped`.
-- **Stored XSS through channel link schemes** (2026-08-11) — `ChannelLink.link` declared
-  a validator that never ran, because Django only invokes field validators from
-  `full_clean()` and the importer writes through `update_or_create`, so a `javascript:`
-  or `data:` URI from a third-party channel list reached the rendered `href` and ran in
-  the site's own origin on click. Fixed in three layers: `save()` vets the link field,
-  the importer reports and steps over a rejected entry instead of abandoning the run, and
-  the template renders no anchor for a disallowed scheme, which is what covers a row
-  inserted by `bulk_create`, a migration or a fixture. Production was audited first (381
-  links, all `acestream`, none dangerous) and the button counts on `/channels/` and
-  `/agenda/` are unchanged after the deploy.
-- **The four Low findings** (2026-08-11) — the production image carried pytest, ruff, mypy
-  and django-stubs, because one requirements file described both environments and the two
-  share an image; it is a build argument now, and the image went from 374 MB to 217 MB.
-  `lxml` was the one unpinned line and, worse, its position under the tooling made it look
-  like a development dependency when it is what the scraper parses with — pinned at 6.1.1
-  and moved, with a test asserting every line in both files carries a version. The `search`
-  parameter is bounded by what the fields can hold rather than by a chosen number, since
-  `icontains` cannot match a string longer than the value it searches, so the answer is
-  returned without a query at all. And the replica's 20-character key became 64, which was
-  the last thing failing the deploy gate there.
-- **The image defaulted to insecure and relied on an unversioned file to correct it**
-  (2026-08-11) — the Dockerfile baked `DJANGO_DEBUG=true` and `DJANGO_ADMIN_ENABLED=true`,
-  so production was safe only while `.env.production` kept overriding them. Shown against
-  the built image before changing it: the old default came up with debug on and the
-  hardcoded development key; the new one exits 1 and refuses to start. Flipping defaults
-  cannot reach `SECURE_SSL_REDIRECT`, the cookies or HSTS, since the right value depends on
-  the deployment — so `deploy-production` now runs `check --deploy --fail-level WARNING` in
-  the throwaway container before the application is recreated, which fails the deploy while
-  the previous container is still serving. That gate caught the weak
-  `.env.production.local` key below on its own.
-- **Pagination dropped the search, and django-bootstrap5 went with it** (2026-08-11) — not
-  an audit finding but a bug found while asking whether the package still earned its place.
-  It did not: one of its two tags renders nothing here by design, and the other built every
-  page link as a bare `?page=N`, so following page two of a search returned the unfiltered
-  agenda. Replaced by a partial on Django's `{% querystring %}`, which also stops
-  `{% bootstrap_css %}` sitting one autocomplete from undoing the CSP work.
-- **No `Content-Security-Policy`** (2026-08-11) — the site carried every other security
-  header and not this one, the layer that contains an injection rather than preventing it.
-  The note here said it would need nonces because of the inline `<script>` blocks; that
-  turned out to be exactly backwards. A nonce cannot work on a site whose every page is
-  cached for an hour, because `cache_page` stores the body before the middleware builds
-  the header, so a cache hit pairs a fresh nonce with a stale one and blocks the scripts
-  for everybody. The inline went into static files instead, Bootstrap moved off the CDN so
-  `script-src 'self'` means what it says, and the policy carries no `unsafe-inline`
-  anywhere. Two things came out of the deploy rather than the plan: static filenames now
-  carry a content hash, without which browsers kept serving the previous stylesheet, and
-  `collectstatic` now runs before the app starts, without which the manifest is read
-  half-written and every page answers 500 while the health check stays green.
-- **The image downloader accepted anything, of any size, from any address** (2026-08-11) —
-  and `save_image` let the source URL choose the stored file's extension. The second half
-  was the sharper one, and it was demonstrated against the old code before touching it: an
-  SVG payload went into the media volume as `<sha1>.svg` with `None x None` dimensions,
-  because Django's `get_image_dimensions` answers `(None, None)` for content it cannot
-  parse rather than raising — ready to be served back as `image/svg+xml` from this site's
-  own origin. The name now comes entirely from the content, and the format is whatever
-  Pillow decodes, from an allowlist that excludes SVG. The fetch refuses non-http schemes,
-  checks every address each redirect hop resolves to against the private ranges, caps the
-  body at 2 MB, carries an overall deadline as well as the per-read timeout, and bypasses
-  the shared HTTP cache, which would otherwise have buffered whole bodies and made the cap
-  pointless. Confirmed against the real source (228 flag URLs, all `image/webp`) and by
-  removing a file from the production volume and watching it restore byte-identical.
-- **`ALLOWED_HOSTS` set to `*` while Django read the host from a header** (2026-08-11) —
-  the check was off and `USE_X_FORWARDED_HOST` made Django take the hostname from a
-  header, so a poisoned absolute URL could have been built and then cached for an hour.
-  Proved against the running site first — `X-Forwarded-Host: evil.example` answered 200,
-  and answers 400 now. The list is the two hostnames Traefik routes plus `localhost` and
-  `127.0.0.1`, and that last part is the whole difficulty: the container health check does
-  not pass through the proxy, so the tighter-looking list of public names alone makes the
-  check fail, the container go unhealthy and the proxy withdraw the route. Tests now
-  assert both halves, including that dropping `localhost` breaks the health check.
-- **Admin exposed to the internet with nothing throttling a guess** (2026-08-11) — the
-  login form answered 200 to the world with no rate limit, lockout or second factor. An
-  IP allowlist was the obvious fix and was rejected on a fact about the operator rather
-  than about the code: there is no fixed address to allow. Instead the admin is now off
-  in production altogether — `DJANGO_ADMIN_ENABLED` already gated whether `urls.py`
-  registered it, so `/soccertime/admin/` is a 404 and there is nothing to brute-force —
-  with `make remote-admin-on` / `-off` opening the window when there is work to do in it.
-  Those targets edit the local `.env.production` rather than the server's copy, because
-  the deploy uploads the local file and a server-side toggle would be silently undone in
-  the direction that re-exposes the admin. A Traefik rate limit on a router of its own
-  covers the open windows, verified live at 19 × 200 and 21 × 429 over 40 rapid requests
-  while the rest of the site kept answering 200. Basic authentication at the proxy was
-  considered and dropped: with the route absent by default it is a second lock on a door
-  that is not there.
-- **`.env.production` baked into the Docker image** (2026-08-11) — `.dockerignore` listed
-  `.env`, a pattern that matches that exact name and nothing else, so `COPY . .` carried
-  the file and `DJANGO_SECRET_KEY` with it into every build. The evidence was gathered
-  before acting rather than after: the project contains no `docker push`, registry or
-  `docker save`, `git log --all -S` finds the key in no commit, and the deploy archive is
-  `git archive HEAD`, which ships tracked files only — so there is no sign the key ever
-  left the two machines that build the image, and this file's original claim that it had
-  to be treated as exposed was stronger than the facts supported. What the finding did
-  cost is durability: four superseded images on the development machine were each still
-  holding the file, so the key outlived every deletion anyone would think to perform. It
-  was rotated on that basis, every copy was removed, and `prune-remote-images` now keeps
-  superseded images from piling up — scoped by an image label rather than a blanket
-  prune, because three untagged images on the production host carry no `RepoDigests` and
-  no registry could hand them back.
-- **Security audit, critical findings** (2026-08-11) — Pillow 12.1.0 was in range for two
-  CVEs that can reach arbitrary code execution through a crafted PSD, and this project
-  hands Pillow bytes fetched from scraped URLs, where the extension is no protection
-  because Pillow sniffs the content to choose its decoder; upgraded to 12.3.0. Django
-  6.0.1 was five security releases behind, with fixes landing on ASGI request handling,
-  the file-based cache and storage backends, `Vary` handling behind `cache_page` and
-  `URLField` rendering in the admin — all in use here; upgraded to 6.0.8, staying on the
-  6.0 series so it remained a security fix rather than a feature move. Verified in
-  production afterwards: Pillow decodes the real stored images, `redownload_images`
-  reports 0 missing files as before, checks and logs clean.
-- **UI fixes** (0.3.1, 2026-08-11) — competition crest strip fits one row; the expander
-  hides when there is nothing to expand.
-- **Low-priority blocks D, E and F** (2026-08-10) — `LinkSchemeFilter` resolved in the
-  database, consistent `ChannelLink` ordering across the site, private Django API removed
-  from the admin, dry-run rollback done properly, duplicated model logic centralised, and
-  the MTI question settled with a measurement recorded next to the code.
-- **Medium blocks A, B and C** (2026-08-10) — the `env` template filter restricted to an
-  allowlist, which had made `{{ "DJANGO_SECRET_KEY"|env }}` render the secret; dead model
-  properties removed; presentation moved out of the models into `soccertime/rendering.py`;
-  cache configuration fixed; the triplicated upsert in `scrapit` collapsed.
-- **Production hardening and two self-inflicted outages** (2026-08-10) — `width_field` on
-  an `ImageField` and `SECURE_SSL_REDIRECT` without an exemption for the health check each
-  took the site down; both are now covered by regression tests and recorded in `CLAUDE.md`.
-  The deploy verifies itself from outside the server, the production operations live in
-  the `Makefile`, and the 49 missing flag images were restored and their loss explained.
-- **Performance round** (2026-08-10) — `Event.Meta.ordering` reduced from two JOINs and a
-  date cast to none, with listing order moved to `chronological()`; image dimensions read
-  from the database instead of opening every file, 13.53 ms → 1.68 ms per 40 images.
-- **Earlier reviews** — the Opus 4.6 round (N+1s in the global context, the admin and the
-  scraping command; implicit `with_related()`; prefetch invalidation) and the Opus 5 round
-  (a `ChannelLinkSource` deletion wiping unrelated links, a crashing reverse M2M edit, a
-  500 on a malformed date parameter, duplicated favourites, a scrape aborting on a missing
-  crest URL, a lost unique constraint, and per-request messages leaking into cached pages).
+- **Responses are compressed** (0.8.0, 2026-08-13) — `/competitions/` travels at 28 KB
+  instead of 338; a test pins that revalidation still answers an empty 304.
+- **The `[project]` table left `pyproject.toml`** (0.8.0, 2026-08-13) — its version said
+  0.3.0 four releases after v0.7.0, and nothing read it.
+- **Favourites belong to the visitor** (0.7.0, 2026-08-13) — a star on each entity's page,
+  a signed cookie, filtered and paginated on the server; the admin's curated table is the
+  default for everybody who chooses nothing. Two designs were discarded first, and the
+  audit of the branch left the site faster than before the feature: `/competitions/`
+  2.56s → 0.29s, a competition page 1.64s → 0.03s.
+- **The agenda opens at the present and marks what is on** (0.6.0, 2026-08-12) — nothing
+  hidden, the badge computed in the browser. Still true and load-bearing: every event has
+  `duration = NULL`, so only "started recently" can ever be asserted about event state.
+- **The five LOW findings of the review** (0.5.3, 2026-08-12) — including the health probe
+  that was 97% of the access log.
+- **DNS rebinding in the image downloader** (0.5.2, 2026-08-12) — connections pinned to
+  the vetted address, per redirect hop.
+- **The upsert window merged real fixtures** (0.5.1, 2026-08-12) — identity exact, date
+  changes reconciled per unit with a two-miss grace; its validation task sits in Pending.
+- **The deploy relay and the remote targets assumed one container** (0.5.0, 2026-08-12) —
+  `scripts/relay.sh` shared with the replica, every remote target iterates.
+- **`docker compose pull` failed on the host** (2026-08-12) — `pull_policy: never` on the
+  images built there, `make remote-pull` for the rest.
+- **The site hid the channel it knew about** (0.4.x, 2026-08-11) — the column names the
+  channel for 25 rows of 25 now; its mobile half is still open, in Pending above.
+- **The times were right by accident** (2026-08-11) — Spanish wall clock labelled UTC;
+  52,133 rows migrated, 287 events verified unmoved across both deploys.
+- **The logs were unreadable and the replica had two silent traps** (2026-08-11) —
+  `make remote-logs`, `remote-error-check`, and the replica's Traefik rule and UID fixed.
+- **500 on non-numeric ids, and a search blind to competitions** (2026-08-11) — `<int:>`
+  routes; search covers competition and sport now.
+- **Security audit of 2026-08-11, all findings** — closed the same day, Critical to Low:
+  Pillow and Django CVE updates, stored XSS through channel link schemes, the image
+  downloader hardened (SSRF, size caps, content-derived names), `ALLOWED_HOSTS` tightened
+  without breaking the health check, the admin switched off in production behind
+  `make remote-admin-on/-off` with a proxy rate limit, `.env.production` out of the image
+  and the key rotated, insecure image defaults flipped with a deploy-time gate, dev
+  tooling out of the production image, `lxml` pinned, the CSP added without nonces (inline
+  moved to static files, Bootstrap off the CDN), and django-bootstrap5 replaced by
+  `{% querystring %}` after its pagination dropped the search.
+- **Channel matching** (0.2.1, 2026-08-10) — 1,236 queries and 638 ms down to 1 query and
+  11 ms, behind 41 characterization tests that first caught two silent bugs.
+- **Scraper reporting** (0.3.0, 2026-08-10) — unannounced times counted and named.
+- **UI fixes** (0.3.1, 2026-08-11) — crest strip fits one row; expander hides when empty.
+- **Production hardening and two self-inflicted outages** (2026-08-10) — `width_field` and
+  `SECURE_SSL_REDIRECT`; both carry regression tests and are recorded in `CLAUDE.md`.
+- **Performance round** (2026-08-10) — `Event.Meta.ordering` stripped bare; image
+  dimensions read from the database, 13.53 ms → 1.68 ms per 40 images.
+- **Type hints** (0.2.0, 2026-08-10) — 188 functions annotated, mypy and ruff ANN behind
+  them; `channel_matchers.py` deleted.
+- **Review blocks A-F** (2026-08-10) — the `env` filter allowlisted, presentation out of
+  the models, cache configuration fixed, the triplicated upsert collapsed, MTI settled by
+  measurement.
+- **Earlier reviews** (Opus 4.6 and Opus 5 rounds) — N+1s, prefetch invalidation, a
+  cascade deletion bug, duplicated favourites, and per-request messages leaking into
+  cached pages: the incident the caching rules in `CLAUDE.md` descend from.
