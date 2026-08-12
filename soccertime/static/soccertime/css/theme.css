@@ -74,6 +74,21 @@ header, .bg-dark-blue {
    #a29d9b is 6.9:1 against the site's #131313, comfortably past AA's 4.5:1 — measured, not
    picked by eye, where a dimmer #6f6a68 came out at 3.5:1 and was rejected. The cyan badge
    beside it sits at 11.6:1, which is what makes the two tell apart at a glance. */
+/* An event that is on right now. The neon primary is the site's loudest colour and this is
+   the loudest thing the agenda can say — `live_state.js` reveals it in the browser, because
+   pages are cached for an hour and a badge decided here would outlive the event. */
+.badge.live-badge {
+    background-color: var(--bs-primary);
+    color: #003907;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+}
+
+tr.event-live > th[scope="row"] {
+    font-weight: 700;
+}
+
 .badge.channel-unlinked {
     background-color: transparent;
     border: 1px solid #4a4a4a;

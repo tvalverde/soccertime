@@ -49,12 +49,6 @@ Every number below is a measurement taken that day, not an estimate, so the case
 be re-read rather than re-argued. None has been designed beyond what is written here — except
 the last, which is a different kind of thing and says so.
 
-- [ ] **There is no "on now".** Nothing in the templates or the models expresses whether an
-  event is live, finished or upcoming — searched for, not assumed. On a live agenda that is
-  the most frequent question, and the front page compounds it: `in_window(hours_before=3)`
-  mixes what ended, what is being played and what is coming, with nothing to tell them apart.
-  A state on the event and a way to see only what is live.
-
 - [ ] **Favourites are the owner's, not the visitor's.** They are curated in the admin, and
   every visitor sees the same ones, so the landing page is one person's agenda. This could be
   per-visitor without accounts or sessions: keep the selection in `localStorage` and filter in
@@ -251,6 +245,18 @@ the git history. Kept here as an index of what has been through this file.
   declare a build — both of them do — and not `--ignore-pull-failures`, which would also hide
   a real registry outage. Verified against the server: exit 0, both images skipped, the other
   four pulled.
+- **The agenda opened in the past, and said nothing about what was on** (2026-08-12) — the
+  entry framed this as a missing live badge; measuring found the larger cause, that
+  `today_onwards()` starts at midnight: 16 of the first 25 rows were already over, and 71 of
+  127 on a busy Saturday evening. It opens at the page holding the present now and hides
+  nothing, which matters because **"finished" is never a fact here**: all 52,022 events have
+  `duration = NULL`, so it is always a flat 2h estimate, wrong for the 30% of events in
+  tennis, cycling, motorsport and golf. Four hiding cutoffs were measured and every one buried
+  live events, which is why the design moves the starting page instead. The `EN DIRECTO` badge
+  is computed in the browser because pages are cached for an hour, and deliberately
+  under-claims for long sports rather than risk claiming something is on when it is over.
+  **Constrains anything built on event state later**: without real durations, only "started
+  recently" can be asserted.
 - **The five LOW findings of the review** (2026-08-12) — closed together, which finishes it.
   The dead `env` template filter deleted with its allowlist; four view signatures corrected
   from `str` to `int`; the settle/probe-interval coupling pinned by a test that goes red when

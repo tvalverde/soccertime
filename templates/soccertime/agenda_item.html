@@ -1,9 +1,13 @@
 {% load soccertime_tags %}
 {% load l10n %}
 {% load i18n %}
-<tr{% if event.is_favorite_event and "favorites" not in request.path %} class="favorite-event"{% endif %}>
+{# `data-starts-at` carries the instant so `live_state.js` can mark what is on now in the #}
+{# browser. It has to be decided there: pages are cached for an hour, so a badge rendered #}
+{# here would keep claiming an event is live up to sixty minutes after it ended.          #}
+<tr data-starts-at="{{ event.date|date:'c' }}"{% if event.is_favorite_event and "favorites" not in request.path %} class="favorite-event"{% endif %}>
   <th scope="row">
     {{ event.date|date:'H:i' }}
+    <span class="live-badge badge rounded-pill d-none">{% translate "EN DIRECTO" %}</span>
   </th>
   <td class="text-start">
     <a href="{% url "competition-events" event.competition.pk %}" class="link-styled" aria-label="{% translate "Ver eventos de" %} {{ event.competition }}">{{ event.competition.flag|render_image_markup }} {{ event.competition }}</a><br>

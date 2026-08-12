@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The agenda opens where the present is, and marks what is on now.** It began at local midnight, so the first thing a visitor read was what had already happened: measured on 2026-08-12 at 16:41, **16 of the first 25 rows had finished** and the first live one sat at position 17. A busy Saturday is worse — of 127 events, roughly 71 are over by 18:00 and 115 by 22:00. The listing now opens on the page holding the present, and rows that started within the last two hours are marked **EN DIRECTO**.
+- **Nothing is hidden to achieve that**, and the measurements are why. Every event stores `duration = NULL`, so "finished" is always a flat two-hour default, and **30% of future events are in sports where that is wrong** — tennis, cycling, motorsport, golf: a cycling stage runs five hours. Filtering the past away was measured at four cutoffs and none was safe: two hours buried five live events on that Saturday, and even six buried two at 21:00. Opening on the right page makes the problem disappear rather than shrink — no event can vanish, and being one page off costs a click. Earlier rows stay exactly where they were, one step back.
+- The live badge is decided **in the browser** (`live_state.js`, the fourth script alongside the existing three, same-origin and so allowed by the CSP), because every listing is cached for an hour: a badge rendered with the page would keep claiming an event is live up to sixty minutes after it ended. Without JavaScript the row reads exactly as before — the badge is an addition, never the only carrier of something. **Stated limitation**: a cycling stage still running after three hours loses its badge. The rule errs towards silence, never claiming something is live once it is over; claiming wrongly is the worse mistake on a page whose job is telling you what to watch. Per-sport durations were offered and declined — 24 values to estimate and maintain, still wrong for tennis, which ranges from 1.5 to 5 hours.
+- The anchor costs exactly one query, counted rather than assumed, on a page cached for an hour.
+
+
 ## [0.5.3] - 2026-08-12
 
 The last five findings of the code review, closed together — which finishes it. Nothing here

@@ -111,10 +111,39 @@ def parse_requested_date(value: str | None) -> datetime.date | None:
         return None
 
 
-def paginate_queryset(queryset: QuerySet[Any], request: HttpRequest, per_page: int = 25) -> Page[Any]:
-    """Paginate a queryset consistently across views."""
+def paginate_queryset(
+    queryset: QuerySet[Any], request: HttpRequest, per_page: int = 25, default_page: int = 1
+) -> Page[Any]:
+    """Paginate a queryset consistently across views.
+
+    `default_page` is what the listing opens on when the request names none. An explicit
+    `?page=` always wins, so every link the pagination widget builds keeps working.
+    """
     paginator = Paginator(queryset, per_page)
-    return paginator.get_page(request.GET.get("page"))
+    return paginator.get_page(request.GET.get("page") or default_page)
+
+
+# How far back the agenda still counts as "the present" when deciding which page to open on.
+# An anchor, not a filter: nothing is hidden, so being wrong costs a click rather than an
+# event. Two hours because something that started within them is very likely still on, and
+# opening past a match in progress is the one outcome worth avoiding.
+#
+# Filtering the past away instead was measured and rejected. Every event has `duration = NULL`,
+# so "finished" is always the flat two-hour default, and 30% of future events are in sports
+# where that is wrong — a cycling stage runs five hours, golf all day. No cutoff both hid
+# enough and never hid something live: six hours still buried two live events at 21:00.
+AGENDA_LOOKBACK = datetime.timedelta(hours=2)
+
+
+def page_holding_the_present(queryset: QuerySet[Any], per_page: int = 25) -> int:
+    """The page where a chronological listing reaches the present.
+
+    The agenda begins at local midnight, so a visitor arriving in the evening used to read
+    what had already happened: measured on a busy Saturday, roughly 71 of 127 rows were over
+    by 18:00 and 115 by 22:00. This moves where the listing opens, and nothing else.
+    """
+    already_over = queryset.filter(date__lt=timezone.now() - AGENDA_LOOKBACK).count()
+    return already_over // per_page + 1
 
 
 def empty_state(message: "str | Promise" = NO_EVENTS_MESSAGE, level: str = "info") -> dict[str, Any]:
@@ -167,9 +196,13 @@ def agenda(request: HttpRequest) -> HttpResponse:
     queryset = queryset.chronological()
 
     context = get_base_context(with_teams=True)
+    # Asking for a specific day is asking for the whole of it, from its beginning; only the
+    # rolling "today onwards" listing needs to be told where the present is.
+    default_page = 1 if requested_date else page_holding_the_present(queryset)
+
     context.update(
         {
-            "events": paginate_queryset(queryset, request),
+            "events": paginate_queryset(queryset, request, default_page=default_page),
             "max_date": max_date,
             "only_watchable": only_watchable,
             "total_events": total_events,

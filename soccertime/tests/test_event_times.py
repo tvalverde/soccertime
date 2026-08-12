@@ -38,9 +38,15 @@ WINTER = datetime.datetime(2026, 12, 20, 22, 0, tzinfo=MADRID)
 
 
 def time_cell(event):
-    """The clock the agenda actually prints, not merely a substring of the whole row."""
+    """The clock the agenda actually prints, not merely a substring of the whole row.
+
+    The time is read out of its cell rather than the cell being compared whole: the same
+    `<th>` also carries the live badge, which `live_state.js` reveals in the browser, and
+    this test is about the clock.
+    """
     rendered = render_to_string("soccertime/agenda_item.html", {"event": event, "parent_event": event})
-    return re.search(r'<th scope="row">\s*(.*?)\s*</th>', rendered, re.S).group(1)
+    cell = re.search(r'<th scope="row">(.*?)</th>', rendered, re.S).group(1)
+    return re.search(r"\d{2}:\d{2}", cell).group(0)
 
 
 def day_header(event):
