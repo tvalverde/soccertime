@@ -273,7 +273,7 @@ remote_deploy:
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) run --rm --no-deps \
 			-u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) \
 			python manage.py collectstatic --noinput && \
-		echo "--- Preparation done; handing over is the relay script's job ---" \
+		echo "--- Preparation done; the relay script takes it from here ---" \
 	'
 	@echo "--- Handing the service over to the new image ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
