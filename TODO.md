@@ -49,14 +49,6 @@ Every number below is a measurement taken that day, not an estimate, so the case
 be re-read rather than re-argued. None has been designed beyond what is written here — except
 the last, which is a different kind of thing and says so.
 
-- [ ] **Favourites are the owner's, not the visitor's.** They are curated in the admin, and
-  every visitor sees the same ones, so the landing page is one person's agenda. This could be
-  per-visitor without accounts or sessions: keep the selection in `localStorage` and filter in
-  the browser. That fits the architecture rather than fighting it — pages stay cached for an
-  hour and shared by everyone, which is exactly the constraint that made a per-request message
-  leak into the shared cache once before. **This is a product decision, not a defect**: it
-  turns a personal agenda into everybody's, and that may not be what the site is for.
-
 - [ ] **A shared link says nothing about itself.** No `og:title`, no `og:image`, no
   `twitter:card`, no JSON-LD, no canonical, no sitemap — checked against the live response.
   This is a site people paste into WhatsApp and Telegram, and those links arrive bare. The
@@ -194,6 +186,17 @@ the last, which is a different kind of thing and says so.
 
 Detail for each of these is in `CHANGELOG.md` under the version that shipped it, and in
 the git history. Kept here as an index of what has been through this file.
+
+- **Favourites belong to the visitor** (0.7.0, 2026-08-13) — a star on each team's and
+  competition's page, the selection in a signed cookie, filtered and paginated on the
+  server. Not the `localStorage` design this entry originally sketched: that was built and
+  thrown away when it turned out to require shipping the whole window (437 KB) and made
+  pagination impossible. The entry's product question was answered *both*: visitors get
+  their own, and the admin's curated table stays as what everybody else sees. The audit of
+  the branch also made the site faster than before the feature: `/competitions/` 2.56s to
+  0.29s, a competition page 1.64s to 0.03s.
+- **Responses are compressed** (2026-08-13) — `/competitions/` travels at 28 KB instead of
+  338. The transfer half of the "big pages" entry above; its rendering half remains open.
 
 - **Channel matching** (0.2.1, 2026-08-10) — pinned `match_channels` with 41
   characterization tests, then rewrote it: 1236 queries and 638 ms down to 1 query and
