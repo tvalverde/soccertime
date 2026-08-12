@@ -21,22 +21,46 @@ verified — reproduced in the replica, measured against the data, or proven fro
 before being written down; the two worst were both confirmed by demonstration.
 
 - [ ] **Validate the reconciliation's removals over several days** — for the assistant to
-  run, starting 2026-08-13. The presence reconciliation shipped in 0.5.1 removes a future
+  run, started 2026-08-13. The presence reconciliation shipped in 0.5.1 removes a future
   event after two consecutive successful scrapes stop listing it. The healthy signature is
   small `first_miss` counts that reset on the next pass and near-zero
   `removed_after_2_misses`; the failure signature is a sport steadily accumulating removals,
   which would mean one of the source's pages does not list its own coverage stably — the
   exact fissure the two-miss grace exists to absorb, and the one thing the design could not
-  measure in advance. Check on 3–4 different days (the hourly production scrape logs a
-  `Reconciled:` line per unit, `make remote-logs GREP=Reconciled` shows them; note the log
-  rotates at 10 MB×3, so check within a few hours of scrapes, not once a week):
+  measure in advance. Check on 3–4 different days:
 
   1. Per sport and per day: totals of `superseded`, `first_miss`, `removed_after_2_misses`.
-  2. For a sample of removed events: is the pairing listed elsewhere (moved — fine), gone
-     from the live page (cancelled/de-listed — fine), or **still on the live page**
-     (wrongly pruned — the bug this validation exists to catch)?
+  2. For the rows sitting at `missing_scrapes>0` (tomorrow's potential removals, and the
+     only ones that can be checked before they vanish): is the pairing listed elsewhere
+     (moved — fine), gone from the live page (cancelled/de-listed — fine), or **still on
+     the live page** (wrongly pruned — the bug this validation exists to catch)?
   3. Cross-check volume: future-event count per sport should not drift downward without the
      stats explaining it.
+
+  **How to actually read the numbers — the original note here was wrong twice.** The
+  `Reconciled:` lines never reach `docker compose logs`: the cron runs `scrapit` through
+  `docker compose exec`, whose stdout goes to the caller, and the crontab appends it to
+  `~/scrapit.log` on the host — so `grep Reconciled ~/scrapit.log` there, not
+  `make remote-logs`. And the scrape is **every 4 hours** (`4 */4 * * *`), not hourly, so a
+  first_miss becomes a removal in 8 hours, not 2. That file does not rotate; it has held
+  every run since February.
+
+  **Day 1 (2026-08-13, pass run at 00:30 UTC):**
+  - Runs 2026-08-12 16:04 / 20:04 and 2026-08-13 00:04. At 16:04 — the first run with two
+    misses accumulable — the backlog cleared: Fútbol removed=3, Tenis removed=4, Ciclismo
+    removed=4. At 20:04: Fútbol first_miss=1, Ciclismo superseded=2, no removals. At
+    00:04: nothing to report at all, every counter zero.
+  - The one row at `missing_scrapes=1`: a friendly, Valencia-Mestalla – Teruel, 20:30
+    local, de-listed by the source 26 minutes before kick-off. The grace held — one miss,
+    not removed — and the event then started, ageing out of the candidate window. Exactly
+    the behaviour the two-miss design promised.
+  - Volume, replica snapshot of 12th 18:00 → production 13th 00:30: Baloncesto 763=763,
+    Fútbol 755→758, Tenis 288=288, Ciclismo 146→147, Motociclismo 144=144, Automovilismo
+    85=85, Golf 11=11. No downward drift; total future 2,196 against 2,148 on the 11th.
+  - **Verdict so far: healthy.** One limitation found: the log records *counts*, not which
+    events were removed, so the 11 removals of the 16:04 run can never be audited against
+    the live page. If a later pass shows a sport accumulating removals, the first move is
+    to make `scrapit` name what it deletes.
 
   If a page turns out to list unstably, the options already considered: raise
   `MISSES_BEFORE_REMOVAL` for that unit kind, or narrow that unit's declared coverage.
