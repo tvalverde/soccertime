@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-08-12
+
+The last five findings of the code review, closed together — which finishes it. Nothing here
+is visible from a browser; it is the instrumentation and the small lies that had accumulated
+underneath.
+
+The substantial one is the access log. Two health probes were writing 89,280 lines a day
+between them, **97% of everything logged**, against a driver that keeps 30 MB — so a genuine
+error was pushed out of `docker logs` long before anyone would look for it, and the deploy's
+own error check was reading almost pure noise. The probe is filtered out now, but only while
+it is passing: a health check answering 500 while the container still reports healthy is
+exactly how this site went down twice, so the noise goes and the evidence stays.
+
+Two bugs surfaced while building that, and **neither was caught by a unit test**. Declaring
+the filter in Django's `LOGGING` silenced the entire access log, because `dictConfig` resets
+a named logger's unspecified keys and so cleared uvicorn's handler. And anchoring the path
+match at the start matched nothing in production, because `--root-path` puts
+`/soccertime/healthz/` in the line. Sixteen unit tests passed with the log completely broken;
+running it against the replica is what showed both. They have tests now.
+
+The rest: a dead template filter deleted, four view signatures corrected, and the deploy's
+settle time tied by a test to the probe interval it silently depends on. `collectstatic`
+accumulation was measured at 6.4 MB and deliberately left unpruned — adding machinery to the
+deploy is not worth reclaiming megabytes that are not scarce — with the size now reported so
+the day it matters is visible.
+
 ### Fixed
 - **The access log is about visitors again.** Traefik probes `/healthz/` every second — which is what lets a deploy hand over between containers without dropping requests — and the container health check adds one every thirty. Measured on production: **89,280 lines a day, 97% of the access log**, against a json-file driver rotating at 10 MB × 3, so a real error left `docker logs` far sooner than it should and `make remote-error-check` scanned mostly probe traffic. (The review had estimated ~170k; the measurement halved it and the proportion is the number that matters.) A filter now drops the probe's line **only while it is passing** — a health check answering 500 is how this site went down twice with the container still reporting healthy, so the noise goes and the evidence stays.
 - Four view signatures said `str` where the URL converter has delivered `int` since 0.4.2. mypy passed because the value is only forwarded, so nothing caught the lie; `team_events`, `channel_events`, `sport_events` and `competition_events` now say what they mean. The queryset helpers keep `int | str`, which is honest — the ORM accepts both.
