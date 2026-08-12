@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+MAKEFILE = ROOT / "Makefile"
 DEVELOPMENT = ROOT / "compose.yaml"
 PRODUCTION = ROOT / "compose.production.yaml"
 REPLICA = ROOT / "compose.production.local.yaml"
@@ -189,3 +190,45 @@ class TestTheImageIsNeverPulled:
     def test_the_service_still_declares_how_to_build_it(self):
         """Guards the test above: `never` with nothing to build would be a dead service."""
         assert "build:" in PRODUCTION.read_text()
+
+
+def seconds(value):
+    """`2s` or `500ms` as a float of seconds — the durations Traefik labels accept."""
+    if value.endswith("ms"):
+        return float(value[:-2]) / 1000
+    return float(value.rstrip("s"))
+
+
+def probe_interval():
+    match = re.search(
+        r"loadbalancer\.healthcheck\.interval=([\d.]+m?s)", PRODUCTION.read_text()
+    )
+    return seconds(match.group(1)) if match else None
+
+
+def settle_seconds():
+    match = re.search(r"(?m)^PROXY_SETTLE_SECONDS \?= *(\d+)", MAKEFILE.read_text())
+    return float(match.group(1)) if match else None
+
+
+# The wait exists because Traefik 3 marks a newly discovered server DOWN until its first probe
+# succeeds. Five intervals is the margin that removed the 404 window, measured.
+INTERVALS_OF_MARGIN = 5
+
+
+class TestTheHandoverWaitCoversTheProbe:
+    """The deploy's settle time is five probe intervals, in two different files.
+
+    Raise the interval without raising the wait and the handover retires the old container
+    before Traefik has accepted the new one — 502, then the router withdrawn and every path
+    answering 404. That is the failure 0.5.1 measured shut, and only a comment connected the
+    two numbers across the file boundary. This connects them.
+    """
+
+    def test_the_parser_finds_both_numbers(self):
+        """Guards the assertion below: two regexes matching nothing would assert nothing."""
+        assert probe_interval() is not None, "no healthcheck interval in compose.production.yaml"
+        assert settle_seconds() is not None, "no PROXY_SETTLE_SECONDS in the Makefile"
+
+    def test_the_wait_covers_five_probe_intervals(self):
+        assert settle_seconds() >= INTERVALS_OF_MARGIN * probe_interval()

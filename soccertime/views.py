@@ -181,7 +181,7 @@ def agenda(request: HttpRequest) -> HttpResponse:
 
 
 @cached_page
-def team_events(request: HttpRequest, team: str) -> HttpResponse:
+def team_events(request: HttpRequest, team: int) -> HttpResponse:
     team_obj = get_object_or_404(Team, pk=team)
     queryset = Event.objects.for_team(team).in_progress_or_upcoming().with_related().chronological()
 
@@ -226,7 +226,7 @@ def team_events(request: HttpRequest, team: str) -> HttpResponse:
 
 
 @cached_page
-def channel_events(request: HttpRequest, channel: str) -> HttpResponse:
+def channel_events(request: HttpRequest, channel: int) -> HttpResponse:
     channel_obj = get_object_or_404(Channel, pk=channel)
     queryset = Event.objects.for_channel(channel).in_progress_or_upcoming().with_related().chronological()
 
@@ -242,7 +242,7 @@ def channel_events(request: HttpRequest, channel: str) -> HttpResponse:
 
 
 @cached_page
-def sport_events(request: HttpRequest, sport: str) -> HttpResponse:
+def sport_events(request: HttpRequest, sport: int) -> HttpResponse:
     sport_obj = get_object_or_404(Sport, pk=sport)
     queryset = Event.objects.for_sport(sport).in_progress_or_upcoming().with_related().chronological()
 
@@ -258,7 +258,7 @@ def sport_events(request: HttpRequest, sport: str) -> HttpResponse:
 
 
 @cached_page
-def competition_events(request: HttpRequest, competition: str) -> HttpResponse:
+def competition_events(request: HttpRequest, competition: int) -> HttpResponse:
     competition_obj = get_object_or_404(Competition, pk=competition)
     queryset = Event.objects.for_competition(competition).in_progress_or_upcoming().with_related().chronological()
 

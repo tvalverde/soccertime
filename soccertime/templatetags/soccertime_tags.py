@@ -1,4 +1,3 @@
-import os
 from typing import Any
 
 from django.core.paginator import Paginator
@@ -6,26 +5,6 @@ from django.template.defaulttags import register
 from django.utils.safestring import SafeString
 
 from soccertime.rendering import image_markup
-
-ENV_ALLOWLIST = frozenset({"DJANGO_DEBUG"})
-
-
-@register.filter
-def env(key: str, default: str = "") -> bool | str:
-    """Read an allowlisted environment variable, returning the default for anything else.
-
-    The filter is reachable from every template, so without the allowlist a single
-    `{{ "DJANGO_SECRET_KEY"|env }}` would render the secret into a page.
-    """
-    if key not in ENV_ALLOWLIST:
-        return default
-    value = os.environ.get(key)
-    if isinstance(value, str):
-        if value.lower() == "true":
-            return True
-        elif value.lower() == "false":
-            return False
-    return value or default
 
 
 @register.filter

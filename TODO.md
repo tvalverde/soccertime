@@ -42,32 +42,6 @@ before being written down; the two worst were both confirmed by demonstration.
   `MISSES_BEFORE_REMOVAL` for that unit kind, or narrow that unit's declared coverage.
   Record the verdict here either way, with the numbers.
 
-- [ ] **LOW — The `env` template filter is now dead code.** Its last caller went with the
-  `DJANGO_DEBUG` branch in `channels_list.html`, so a security-sensitive surface (an
-  allowlisted environment reader reachable from any template) survives with no users.
-  Delete it, and `ENV_ALLOWLIST` with it.
-
-- [ ] **LOW — The Traefik probe writes ~170k access-log lines a day.** One line per second
-  per server in uvicorn's log, on top of the container health check. The json-file driver
-  rotates at 10 MB×3, so real errors get pushed out of `docker logs` noticeably sooner, and
-  `remote-error-check` scans a log that is mostly probe noise. Uvicorn can exclude paths
-  from access logging, or the probe could hit a lighter target.
-
-- [ ] **LOW — `PROXY_SETTLE_SECONDS=5` is silently coupled to `healthcheck.interval=1s`.**
-  The five-second wait is five probe intervals; raise the interval without raising the wait
-  and the 404 window reopens with nothing pointing at why. A comment ties them; a derived
-  value or a shared variable would tie them properly.
-
-- [ ] **LOW — `collectstatic` accumulates forever.** Hashed filenames mean every deploy adds
-  files and nothing prunes superseded ones — the static volume only grows. Harmless for
-  years at this size, but `collectstatic --clear` cannot be used naively either: the old
-  container's manifest is in memory but its files must survive until it is retired. Prune
-  after the swap instead.
-
-- [ ] **LOW — Four view signatures still say `team: str` while the URLs now deliver `int`.**
-  Cosmetic lie left over from the `<str:>`→`<int:>` fix; mypy passes because the value is
-  only forwarded, but the annotation misdescribes the contract.
-
 ### Improvements
 
 Ordered by the utility each would add, judged against the site and its data on 2026-08-11.
@@ -277,6 +251,19 @@ the git history. Kept here as an index of what has been through this file.
   declare a build — both of them do — and not `--ignore-pull-failures`, which would also hide
   a real registry outage. Verified against the server: exit 0, both images skipped, the other
   four pulled.
+- **The five LOW findings of the review** (2026-08-12) — closed together, which finishes it.
+  The dead `env` template filter deleted with its allowlist; four view signatures corrected
+  from `str` to `int`; the settle/probe-interval coupling pinned by a test that goes red when
+  either side moves alone; and the health probe filtered out of the access log, where it was
+  **89,280 lines a day and 97% of the traffic** — measured, half the review's estimate —
+  suppressed only while passing, so a failing probe still shows. `collectstatic` accumulation
+  was measured (6.4 MB, 300 files, ~2 MB a year) and deliberately left unpruned: adding
+  machinery to the deploy is not worth megabytes, so `make remote-ps` reports the size
+  instead. Two bugs surfaced during the work and neither was caught by unit tests: declaring
+  the filter in `LOGGING` silenced the **entire** access log, because `dictConfig` resets a
+  named logger's unspecified keys and cleared uvicorn's handler; and anchoring the path match
+  at the start matched nothing, because `--root-path` puts `/soccertime/healthz/` in the log.
+  Both were found by running it against the real stack, and both now have tests.
 - **DNS rebinding bypassed the image downloader's address check** (2026-08-12) — the host was
   resolved by the check and again by `requests`, so a short-TTL DNS could answer public then
   internal. Resolved once now and the connection pinned to the vetted IP via urllib3's

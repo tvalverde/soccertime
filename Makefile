@@ -707,6 +707,9 @@ remote-ps:
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		cd $(REMOTE_DOCKER_PATH); \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps --format "table {{.Name}}\t{{.Image}}\t{{.Status}}"; \
+		echo; echo "--- Static volume ---"; \
+		docker run --rm -v $(REMOTE_STATIC_VOLUME):/data alpine \
+			sh -c "printf \"   %s in %s files\\n\" \$$(du -sh /data | cut -f1) \$$(find /data -type f | wc -l)"; \
 		echo; echo "--- Proxy in front of it ---"; \
 		docker inspect -f "{{.Config.Image}}" traefik 2>/dev/null; \
 		docker exec traefik traefik version 2>/dev/null | head -2; \

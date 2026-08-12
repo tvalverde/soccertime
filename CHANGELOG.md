@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The access log is about visitors again.** Traefik probes `/healthz/` every second — which is what lets a deploy hand over between containers without dropping requests — and the container health check adds one every thirty. Measured on production: **89,280 lines a day, 97% of the access log**, against a json-file driver rotating at 10 MB × 3, so a real error left `docker logs` far sooner than it should and `make remote-error-check` scanned mostly probe traffic. (The review had estimated ~170k; the measurement halved it and the proportion is the number that matters.) A filter now drops the probe's line **only while it is passing** — a health check answering 500 is how this site went down twice with the container still reporting healthy, so the noise goes and the evidence stays.
+- Four view signatures said `str` where the URL converter has delivered `int` since 0.4.2. mypy passed because the value is only forwarded, so nothing caught the lie; `team_events`, `channel_events`, `sport_events` and `competition_events` now say what they mean. The queryset helpers keep `int | str`, which is honest — the ORM accepts both.
+
+### Removed
+- The `env` template filter and its allowlist. Its last caller went with the `DJANGO_DEBUG` branch of `channels_list.html` when the channel column was rewritten, leaving an environment reader reachable from any template with no users at all — a security-sensitive surface earning nothing.
+
+### Added
+- A test tying `PROXY_SETTLE_SECONDS` in the `Makefile` to `healthcheck.interval` in `compose.production.yaml`. The five-second settle is five probe intervals, and only a comment connected the two across a file boundary: raise the interval alone and the handover retires the old container before Traefik has accepted the new one, reopening the 404 window 0.5.1 measured shut. Verified by mutation — changing the interval to `2s` turns the suite red.
+- `make remote-ps` reports the static volume's size. `collectstatic` accumulates superseded hashed files forever — **6.4 MB in 300 files today**, growing a few KB per deploy that touches a static file, roughly 2 MB a year. Pruning was considered and **deliberately not built**: it would add machinery to the deploy, which is the part of this system that has caused two real outages, to reclaim megabytes that are not scarce. Reporting the size means the day it stops being trivial is visible without anyone having to remember to look.
+
+
 ## [0.5.2] - 2026-08-12
 
 DNS rebinding closed in the image downloader: it vetted a scraped URL's host against the

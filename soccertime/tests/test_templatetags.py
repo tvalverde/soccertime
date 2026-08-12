@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from soccertime.templatetags.soccertime_tags import (
-    env,
     normalize_subcategory,
     sort_by_list_length,
     sort_categories_by_total_links,
@@ -15,32 +14,6 @@ from soccertime.templatetags.soccertime_tags import (
 def group(name, size):
     """A regroup result: an object with a grouper and a list."""
     return SimpleNamespace(grouper=name, list=list(range(size)))
-
-
-class TestEnv:
-    @pytest.mark.parametrize("value,expected", [("true", True), ("True", True), ("false", False), ("FALSE", False)])
-    def test_reads_an_allowlisted_variable_as_a_boolean(self, monkeypatch, value, expected):
-        monkeypatch.setenv("DJANGO_DEBUG", value)
-        assert env("DJANGO_DEBUG") is expected
-
-    def test_refuses_anything_outside_the_allowlist(self, monkeypatch):
-        """The filter reaches every template, so a secret must not be readable."""
-        monkeypatch.setenv("DJANGO_SECRET_KEY", "super-secret")
-
-        assert env("DJANGO_SECRET_KEY") == ""
-        assert "super-secret" not in str(env("DJANGO_SECRET_KEY", "fallback"))
-
-    def test_returns_the_default_for_a_disallowed_name(self, monkeypatch):
-        monkeypatch.setenv("DJANGO_SECRET_KEY", "super-secret")
-        assert env("DJANGO_SECRET_KEY", "fallback") == "fallback"
-
-    def test_returns_the_default_when_the_variable_is_unset(self, monkeypatch):
-        monkeypatch.delenv("DJANGO_DEBUG", raising=False)
-        assert env("DJANGO_DEBUG", "fallback") == "fallback"
-
-    def test_non_boolean_values_pass_through(self, monkeypatch):
-        monkeypatch.setenv("DJANGO_DEBUG", "maybe")
-        assert env("DJANGO_DEBUG") == "maybe"
 
 
 class TestSortByListLength:
