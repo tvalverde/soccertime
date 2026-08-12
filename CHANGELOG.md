@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-12
+
+The first improvement from the list, and the first release in a while that a visitor can
+actually see: the agenda stops opening in the past.
+
+It began at local midnight, so arriving in the evening meant reading what had already
+happened — 16 of the first 25 rows were over when this was measured, and on a busy Saturday
+roughly 71 of 127 by six o'clock. It opens at the page holding the present now, and what
+started in the last two hours is marked as on.
+
+Nothing is hidden to get there, and that is the part worth knowing. Every event stores no
+duration at all, so "finished" is always a flat two-hour guess — wrong for the 30% of events
+in tennis, cycling, motorsport and golf, where a stage runs five hours. Four different cutoffs
+were measured against a real Saturday and every one of them buried events that were still on.
+Moving where the listing opens makes that problem disappear rather than shrink: being a page
+off costs a click, hiding a match that is on does not.
+
+The badge is decided in the browser for the same reason the times and the favourites were:
+pages are cached for an hour, and one rendered with the page would still be claiming an event
+is live an hour after it ended.
+
 ### Added
 - **The agenda opens where the present is, and marks what is on now.** It began at local midnight, so the first thing a visitor read was what had already happened: measured on 2026-08-12 at 16:41, **16 of the first 25 rows had finished** and the first live one sat at position 17. A busy Saturday is worse — of 127 events, roughly 71 are over by 18:00 and 115 by 22:00. The listing now opens on the page holding the present, and rows that started within the last two hours are marked **EN DIRECTO**.
 - **Nothing is hidden to achieve that**, and the measurements are why. Every event stores `duration = NULL`, so "finished" is always a flat two-hour default, and **30% of future events are in sports where that is wrong** — tennis, cycling, motorsport, golf: a cycling stage runs five hours. Filtering the past away was measured at four cutoffs and none was safe: two hours buried five live events on that Saturday, and even six buried two at 21:00. Opening on the right page makes the problem disappear rather than shrink — no event can vanish, and being one page off costs a click. Earlier rows stay exactly where they were, one step back.
