@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Favourites belong to the visitor now.** They were curated in the admin and everybody saw the same ones, so the landing page was one person's agenda. Each visitor picks their own with a star on a team's or a competition's page, and the landing page answers with theirs. **Nothing changes for anyone who chooses nothing**: no cookie, no difference, the same curated page from the same shared cache — which is every first visit and every crawler.
+- **The selection is filtered on the server**, carried in a signed cookie. That is what lets the page paginate, and pagination is why the first design was thrown away: filtering in the browser meant shipping the whole window for a script to sift — **437.1 KB against 36.6 KB**, measured on a copy of the production database — and the server would then have been paginating events the visitor never asked for, so their own could land on page three while page one looked empty.
+- **No JavaScript at all.** The star is a plain form, its pressed state is `aria-pressed`, and which of the two icons is drawn follows from that in `theme.css`. Nothing to allow in the Content-Security-Policy, and it works with scripting switched off.
+- A visitor's own star reads a competition as covering **its matches**, where the curated rule counts a competition only for races and simple events. That asymmetry is right for a hand-picked list, which would be swamped, and wrong for somebody who pressed the star on La Liga's own page. The curated default is untouched and a test pins it.
+
+### Security
+- **A form cannot live in a shared cache, and that decided the whole shape.** Rendering `{% csrf_token %}` makes Django set `Set-Cookie: csrftoken`; stored in a cache shared by everybody, that response hands the same token and the same cookie to every other visitor, undoing exactly what the token is for. It is the shape of the per-request message that leaked into the page cache once before, with a security token in place of a notice. So the pages carrying a star are served fresh and marked `private`, the competition listing keeps its cache and its stars off — it is the heaviest page on the site — and two tests assert that **no cached page renders a token or sets a cookie**.
+- The visitor's page is never put in the shared cache either. Keying the cache by cookie was rejected: anyone could then mint entries and push the real pages out of a store that holds three hundred. Visitors carrying a selection are simply served fresh, and a test proves a stranger arriving next still gets the curated page.
+- The selection lives in a **signed cookie rather than a session row**, so a stranger posting a thousand times leaves nothing behind but their own cookie. Django's session framework is deliberately untouched: switching `SESSION_ENGINE` would have moved the admin login to cookies too, and an auth session that cannot be revoked server-side is a worse thing to own than a list of teams. A tampered or unsigned cookie reads as no selection at all.
+- **The star is the only write this site accepts without a login**, so it carries the guards to match: POST only — over GET every crawler walking the site would press it — the entity looked up before anything is stored, a redirect built from that entity rather than from a parameter, so there is no open redirect, `HttpOnly` and `SameSite=Lax` on the cookie, a cap of 50 per kind that bounds the cookie against the browser's 4 KB ceiling and the page against its own length, and a Traefik rate limit on a router of its own — the same mechanism already measured on the admin. The prefix is `/soccertime/favorite/`, one letter away from the landing page it must not throttle.
+
+### Known limits
+- The crest and flag strips at the top of every page, and the gold border marking a favourite in the other listings, still show the **owner's** favourites. They sit on pages that stay in the shared cache, which is what keeps the site fast for everyone who has chosen nothing, and per-visitor content cannot go there.
+
 ## [0.6.0] - 2026-08-12
 
 The first improvement from the list, and the first release in a while that a visitor can

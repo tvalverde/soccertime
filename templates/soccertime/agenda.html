@@ -13,7 +13,9 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 {% block content %}
 {% if events_title %}
 <div class="py-3 text-center">
-  <h2 class="m-0 text-light">{{ events_title }}</h2>
+  {# Inline flex rather than the plain heading so the star sits on the title's centre line #}
+  {# instead of its baseline, and the pair stays centred inside the block.                 #}
+  <h2 class="m-0 text-light d-inline-flex align-items-center gap-2">{{ events_title }}{% if star_action %}{% include "soccertime/favorite_star.html" %}{% endif %}</h2>
 </div>
 {% endif %}
 {% if competition_teams %}

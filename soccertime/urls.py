@@ -33,6 +33,8 @@ from soccertime.views import (
     healthz,
     sport_events,
     team_events,
+    toggle_favorite_competition,
+    toggle_favorite_team,
 )
 
 
@@ -63,6 +65,15 @@ site_urlpatterns: list[URLPattern | URLResolver] = [
     path("events/competition/<int:competition>/", competition_events, name="competition-events"),
     path("channels/", channels, name="channels"),
     path("competitions/", competitions, name="competitions"),
+    # The only writes the site accepts without a login, under a prefix of their own so the
+    # proxy can rate-limit exactly these and nothing else. `/favorites/` is the landing page
+    # and must not be caught by that rule, which is why this is not under it.
+    path("favorite/toggle/team/<int:team>/", toggle_favorite_team, name="toggle-favorite-team"),
+    path(
+        "favorite/toggle/competition/<int:competition>/",
+        toggle_favorite_competition,
+        name="toggle-favorite-competition",
+    ),
 ]
 
 urlpatterns: list[URLPattern | URLResolver] = []

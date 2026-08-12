@@ -237,6 +237,31 @@ a {
     border-left: 4px solid var(--bs-warning) !important;
 }
 
+/* The star that adds a team or a competition to the visitor's own favourites. Which of the
+   two icons is drawn follows from the pressed state alone, so the whole control is a form
+   and a stylesheet — no script decides anything here.
+
+   #a29d9b unpressed rather than `--bs-secondary`, which is this theme's cyan and the second
+   loudest colour on the site: an offer to do something should not shout louder than the
+   agenda it sits above. It is the same grey the unwatchable channel badge uses, measured at
+   6.9:1 against the background there, and the jump from it to the warning gold is what makes
+   pressed and unpressed tell apart at a glance rather than by comparison. */
+.favorite-star {
+    color: #a29d9b;
+    line-height: 1;
+}
+
+.favorite-star:hover,
+.favorite-star:focus-visible,
+.favorite-star[aria-pressed="true"] {
+    color: var(--bs-warning);
+}
+
+.favorite-star[aria-pressed="true"] .star-outline,
+.favorite-star:not([aria-pressed="true"]) .star-filled {
+    display: none;
+}
+
 /* The header search, which has to fit three different amounts of room.
    The `.container` inside the header is 720px from 768px up, 960px from 992 and 1140px
    from 1200, while the logo takes 170px and the menu 435px. So below lg only a button

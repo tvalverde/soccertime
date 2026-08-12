@@ -118,6 +118,21 @@ services:
       - "traefik.http.middlewares.soccertime-admin-rate-limit.ratelimit.average=30"
       - "traefik.http.middlewares.soccertime-admin-rate-limit.ratelimit.period=1m"
       - "traefik.http.middlewares.soccertime-admin-rate-limit.ratelimit.burst=15"
+      # Marking a favourite is the only write this site accepts without a login, so it gets
+      # the same treatment on a router of its own. The prefix is `/soccertime/favorite/` and
+      # not `/soccertime/favorites/`, which is the landing page and must stay unthrottled —
+      # the two names differ by one letter on purpose, and that is why the endpoints do not
+      # live under the page. Generous for a person pressing stars and mean for anything
+      # hammering the endpoint to churn the page cache.
+      - "traefik.http.routers.soccertime-favorite.rule=${TRAEFIK_HOST_RULE} && PathPrefix(`/soccertime/favorite/toggle`)"
+      - "traefik.http.routers.soccertime-favorite.priority=1400"
+      - "traefik.http.routers.soccertime-favorite.entrypoints=websecure"
+      - "traefik.http.routers.soccertime-favorite.tls=true"
+      - "traefik.http.routers.soccertime-favorite.middlewares=soccertime-favorite-rate-limit,soccertime-app-strip-prefix"
+      - "traefik.http.routers.soccertime-favorite.service=soccertime-app-service"
+      - "traefik.http.middlewares.soccertime-favorite-rate-limit.ratelimit.average=60"
+      - "traefik.http.middlewares.soccertime-favorite-rate-limit.ratelimit.period=1m"
+      - "traefik.http.middlewares.soccertime-favorite-rate-limit.ratelimit.burst=20"
       - "traefik.http.services.soccertime-app-service.loadbalancer.server.port=8000"
       # Traefik routes to a container the moment it starts, without waiting for the process
       # inside to listen — so a deploy that overlaps two containers would send half its

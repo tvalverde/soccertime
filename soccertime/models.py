@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import io
+from collections.abc import Sequence
 from typing import Any, ClassVar, Self, cast
 from urllib.parse import urlparse
 
@@ -427,6 +428,25 @@ class EventQuerySet(models.QuerySet):
             | Q(match__visitor__favorite__isnull=False)
             | Q(race__competition__favorite__isnull=False)
             | Q(simpleevent__competition__favorite__isnull=False)
+        ).distinct()
+
+    def for_selection(self, team_ids: Sequence[int], competition_ids: Sequence[int]) -> Self:
+        """Events a visitor's own favourites cover.
+
+        A competition counts for its matches here, which is the one place this parts company
+        with `favorites()` above. That asymmetry is right for a hand-curated list — marking
+        La Liga a favourite there would swamp a page meant to hold a handful — and wrong for
+        somebody who pressed the star on La Liga's own page and expects its matches. This
+        listing is paginated, so a broad choice costs pages rather than a page.
+
+        An empty selection matches nothing, deliberately: a visitor who removed their last
+        favourite chose an empty agenda and gets told so, rather than being handed the
+        owner's.
+        """
+        return self.filter(
+            Q(match__local__pk__in=team_ids)
+            | Q(match__visitor__pk__in=team_ids)
+            | Q(competition__pk__in=competition_ids)
         ).distinct()
 
     def for_team(self, team_id: int | str) -> Self:

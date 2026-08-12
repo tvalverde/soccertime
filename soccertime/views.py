@@ -6,12 +6,15 @@ from django.conf import settings
 from django.core.paginator import Page, Paginator
 from django.db.models import Count, Exists, Max, OuterRef, Q, QuerySet
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.cache import patch_vary_headers
 from django.utils.dateparse import parse_date
 from django.utils.functional import Promise
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import cache_control, cache_page
+from django.views.decorators.http import require_POST
 
 from soccertime.models import (
     CHANNEL_LINK_ORDERING,
@@ -24,6 +27,7 @@ from soccertime.models import (
     Sport,
     Team,
 )
+from soccertime.visitor_favorites import COOKIE_NAME, EntityKind, Selection, read_selection, write_selection
 
 
 def cached_page(view: Any) -> Any:
@@ -58,6 +62,32 @@ def cached_page(view: Any) -> Any:
     return wrapped
 
 
+def cached_unless_personalised(view: Any) -> Any:
+    """Cache the page for everybody who has chosen nothing, and nobody else.
+
+    The shared cache is keyed by URL, so a page that differs per visitor cannot go in it.
+    Rather than key it by cookie — which would let anyone mint entries by sending cookies
+    and push the real pages out of a store that holds three hundred — the visitors who carry
+    a selection are simply served fresh. They are the few; everybody arriving without one,
+    which includes every crawler, shares the single cached copy exactly as before.
+
+    `Vary: Cookie` is sent either way, so no proxy in between reuses one visitor's page for
+    another. The stored copy is learnt from a request that carried no cookie, so the key
+    stays the plain URL and the entry cannot fragment.
+    """
+
+    @wraps(view)
+    def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        if COOKIE_NAME in request.COOKIES:
+            response = view(request, *args, **kwargs)
+        else:
+            response = cached_page(view)(request, *args, **kwargs)
+        patch_vary_headers(response, ("Cookie",))
+        return response
+
+    return wrapped
+
+
 # The site is served in Spanish; these are wrapped so a future locale can translate them.
 NO_EVENTS_MESSAGE = _("No hay eventos a la vista :)")
 NO_FAVOURITE_EVENTS_MESSAGE = _("No hay eventos a la vista :(")
@@ -87,6 +117,43 @@ def get_favorite_teams() -> QuerySet[Team]:
         .exclude(Q(crest__isnull=True) | Q(crest=""))
         .order_by("favorite__order")
     )
+
+
+def personalised(view: Any) -> Any:
+    """A page that shows the visitor their own state, and therefore never enters the cache.
+
+    These carry the star, and a star is a form, and a form carries a CSRF token. Django sets
+    `Set-Cookie: csrftoken` on the response that renders one — stored in a cache shared by
+    everybody, that token and that cookie would be handed to every other visitor, which is
+    precisely what the protection exists to prevent. It is the same shape as the per-request
+    message that leaked into the shared cache once before, with a security token in the
+    place of a notice. A test asserts that no cached page renders one.
+
+    `private` is the half that matters to everything between here and the visitor: without a
+    Cache-Control header at all, a proxy is free to store what it likes and hand it on. The
+    rest matches the shared pages, so the browser still revalidates and still gets a 304.
+    """
+
+    @wraps(view)
+    def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        decorated = cache_control(private=True, max_age=0, must_revalidate=True)(view)
+        response = decorated(request, *args, **kwargs)
+        patch_vary_headers(response, ("Cookie",))
+        return response
+
+    return wrapped
+
+
+def get_star_context(kind: EntityKind, entity_id: int, selection: Selection | None) -> dict[str, Any]:
+    """What a page needs to offer its own team or competition as a favourite.
+
+    The destination is built from the entity rather than taken from the request, so there is
+    no parameter naming where to go afterwards and no open redirect to get wrong.
+    """
+    return {
+        "star_action": reverse(f"toggle-favorite-{kind}", args=[entity_id]),
+        "star_is_favorite": selection is not None and selection.holds(kind, entity_id),
+    }
 
 
 def get_base_context(with_teams: bool = False) -> dict[str, Any]:
@@ -163,12 +230,24 @@ def healthz(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"status": "ok"})
 
 
-@cached_page
+@cached_unless_personalised
 def favorites(request: HttpRequest) -> HttpResponse:
-    queryset = Event.objects.favorites().in_window(hours_before=3, days_ahead=3).with_related().chronological()
+    """The landing page: the visitor's own favourites, or the owner's when they have none.
+
+    Filtered here rather than in the browser, which is what lets it paginate. A page that
+    shipped the whole window for a script to sift could not: the server would be paginating
+    events the visitor never wanted, so their own could land on page three and the first
+    would look empty.
+    """
+    selection = read_selection(request)
+    window = Event.objects.in_window(hours_before=3, days_ahead=3)
+    if selection is None:
+        window = window.favorites()
+    else:
+        window = window.for_selection(selection.teams, selection.competitions)
 
     context = get_base_context()
-    context.update({"events": queryset})
+    context.update({"events": paginate_queryset(window.with_related().chronological(), request)})
     context.update(empty_state(NO_FAVOURITE_EVENTS_MESSAGE, "warning"))
     return render(request, "soccertime/agenda.html", context)
 
@@ -213,7 +292,7 @@ def agenda(request: HttpRequest) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
-@cached_page
+@personalised
 def team_events(request: HttpRequest, team: int) -> HttpResponse:
     team_obj = get_object_or_404(Team, pk=team)
     queryset = Event.objects.for_team(team).in_progress_or_upcoming().with_related().chronological()
@@ -252,6 +331,7 @@ def team_events(request: HttpRequest, team: int) -> HttpResponse:
             "events": queryset,
             "events_title": team_obj.name,
             "competition_teams": competition_teams,
+            **get_star_context("team", team_obj.pk, read_selection(request)),
             **empty_state(),
         }
     )
@@ -290,7 +370,7 @@ def sport_events(request: HttpRequest, sport: int) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
-@cached_page
+@personalised
 def competition_events(request: HttpRequest, competition: int) -> HttpResponse:
     competition_obj = get_object_or_404(Competition, pk=competition)
     queryset = Event.objects.for_competition(competition).in_progress_or_upcoming().with_related().chronological()
@@ -300,6 +380,7 @@ def competition_events(request: HttpRequest, competition: int) -> HttpResponse:
         {
             "events": queryset,
             "events_title": competition_obj.name,
+            **get_star_context("competition", competition_obj.pk, read_selection(request)),
             "competition_teams": Team.objects.filter(
                 Q(home_matches__competition=competition_obj) | Q(away_matches__competition=competition_obj)
             )
@@ -310,6 +391,33 @@ def competition_events(request: HttpRequest, competition: int) -> HttpResponse:
         }
     )
     return render(request, "soccertime/agenda.html", context)
+
+
+def _toggle_favorite(request: HttpRequest, kind: EntityKind, entity_id: int, destination: str) -> HttpResponse:
+    """Add or remove one entity from this visitor's own favourites.
+
+    POST only, and answered with a redirect. A star that worked over GET would be pressed by
+    every crawler that walked the site, and the redirect is what stops a reload from undoing
+    what the visitor just did.
+
+    The entity is looked up before anything is written, so an id that names nothing is a 404
+    rather than a number stored in a cookie forever.
+    """
+    selection = read_selection(request) or Selection()
+    response = redirect(destination, entity_id)
+    return write_selection(response, selection.toggled(kind, entity_id))
+
+
+@require_POST
+def toggle_favorite_team(request: HttpRequest, team: int) -> HttpResponse:
+    get_object_or_404(Team, pk=team)
+    return _toggle_favorite(request, "team", team, "team-events")
+
+
+@require_POST
+def toggle_favorite_competition(request: HttpRequest, competition: int) -> HttpResponse:
+    get_object_or_404(Competition, pk=competition)
+    return _toggle_favorite(request, "competition", competition, "competition-events")
 
 
 @cached_page
