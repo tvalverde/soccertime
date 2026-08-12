@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `docker compose pull` on the host no longer fails. `soccertime:latest` is built there and published nowhere, so a pull asked a registry for it and got `pull access denied … repository does not exist`, which failed the whole command — the four images that genuinely are remote were fetched, and the command still reported failure. The service now declares `pull_policy: never`, which states what is true and needs nobody to remember a flag. `pull_policy: build` was tried first and rejected although it also silences the error: it makes every `up` rebuild the image, which would put a build, and a `docker/dockerfile:1` download, inside the container hand-over that exists to keep a deploy from interrupting the site.
+
+### Added
+- `make remote-pull` refreshes the host's images with `--ignore-buildable`, which skips exactly the services declaring a `build:` — this project's and the neighbouring stack's `frankenshop`, the other half of the same failure and a file this repository does not own. Deliberately not `--ignore-pull-failures`, which would also swallow a real registry outage for the images that matter. Verified against the server: exit 0, both built images skipped, the other four pulled.
+- `make remote-ps` now reports the compose version and which services would have to be built rather than pulled, which is how both halves of the above were identified.
+
+
 ## [0.5.0] - 2026-08-12
 
 The site starts telling people where the match is on, and deploying it stops interrupting

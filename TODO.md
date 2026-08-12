@@ -109,34 +109,6 @@ the last, which is a different kind of thing and says so.
 
 ### Maintenance
 
-- [ ] **`docker compose pull` on the server fails.** Raised on 2026-08-12 from a manual run on
-  the host, to be looked at properly next session.
-
-  ```
-  ! Image frankenshop:latest   pull access denied … or may require 'docker login'
-  ! Image soccertime:latest    pull access denied … or may require 'docker login'
-  Error response from daemon: pull access denied for soccertime
-  Error response from daemon: pull access denied for frankenshop
-  ```
-
-  1. **`soccertime:latest` is built on the host, not published**, so `pull` asks a registry for
-     something that only exists locally and the command exits non-zero. Anything scripted
-     around `pull` stops there. `--ignore-pull-failures`, a `build:` section that tells compose
-     not to try, or actually publishing the image — worth deciding rather than tolerating.
-  2. **`frankenshop:latest` is the same problem in a neighbour's stack.** The server's
-     `docker-compose.yml` includes `./yodefresa/docker-compose.yml` alongside this project's
-     `compose.production.yaml`, so one `pull` covers both and either one failing fails the
-     command. Whatever is decided has to hold for a file this repository does not own.
-
-  **The ask is narrow: make `pull` stop erroring on these two.** Starting hypothesis, to be
-  checked rather than assumed — `compose.production.yaml` already declares `build:` for
-  `soccertime-web`, and `docker compose pull` still tries to fetch it because plain `pull`
-  ignores that. Compose has `pull --ignore-buildable` for exactly this, which would cover
-  `soccertime` if the server's own file keeps the build section, and leave `frankenshop` to be
-  handled where it is declared. `--ignore-pull-failures` would silence both but also hide a
-  genuine registry failure for the four images that really are pulled, so it is the fallback
-  rather than the answer.
-
 - [ ] **Production's proxy floats and the replica's is pinned.** The server runs
   `traefik:latest`, today 3.7.10; `compose.production.local.yaml` names an exact version so
   the replica rehearses the real thing. That pin has to be updated by hand when the server
@@ -241,6 +213,16 @@ the git history. Kept here as an index of what has been through this file.
   entry about the 857 `Canal por confirmar` rows: they are named now, so an empty cell no
   longer has to be guessed at. **Left open**: on a phone the channel column still sits past the
   horizontal scroll, so the gain is a desktop one until the mobile layout is revisited.
+- **`docker compose pull` failed on the host** (2026-08-12) — `soccertime` and `frankenshop`
+  are built there and exist in no registry, so a pull asked for them, was denied and exited
+  non-zero, taking the four genuinely remote images down with it. Ours now declares
+  `pull_policy: never`, which states the fact and needs no flag; `build` was tried first and
+  rejected because it makes every `up` rebuild, which would put a build and a
+  `docker/dockerfile:1` download inside a deploy's container hand-over. `make remote-pull`
+  covers the whole host with `--ignore-buildable`, which skips exactly the services that
+  declare a build — both of them do — and not `--ignore-pull-failures`, which would also hide
+  a real registry outage. Verified against the server: exit 0, both images skipped, the other
+  four pulled.
 - **Type hints** (0.2.0, 2026-08-10) — annotated 188 functions across 19 modules, put
   mypy and ruff's ANN rules behind them, and fixed the genuine type errors that surfaced.
   Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.

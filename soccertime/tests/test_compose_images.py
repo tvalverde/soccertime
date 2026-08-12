@@ -60,6 +60,7 @@ def services(path):
             ("image", r'\s+image:\s*"?([^"\s]+)"?'),
             ("install_dev", r'\s+INSTALL_DEV:\s*"?(\w+)"?'),
             ("healthcheck_host", r'\s+- "traefik\.http\.services\.[\w-]+\.loadbalancer\.healthcheck\.hostname=([^"]+)"'),
+            ("pull_policy", r"\s+pull_policy:\s*(\w+)"),
         ):
             match = re.fullmatch(pattern, line.rstrip())
             if match:
@@ -167,3 +168,24 @@ class TestTheTraefikHealthCheck:
 
         assert replica
         assert replica != services(PRODUCTION)["soccertime-web"]["healthcheck_host"]
+
+
+class TestTheImageIsNeverPulled:
+    """`soccertime:latest` is built on the host and published nowhere.
+
+    Without saying so, `docker compose pull` asked a registry for it, was denied, and exited
+    non-zero — taking down a command whose real job is refreshing the four images that *are*
+    remote. `never` states the fact.
+
+    Pinned rather than left to a comment because the obvious alternative, `build`, also
+    silences the pull and looks equivalent: it makes every `up` rebuild the image, which would
+    put a build — and a `docker/dockerfile:1` download — inside the container hand-over that
+    exists to keep a deploy from interrupting the site.
+    """
+
+    def test_production_never_tries_to_fetch_an_image_it_builds(self):
+        assert services(PRODUCTION)["soccertime-web"].get("pull_policy") == "never"
+
+    def test_the_service_still_declares_how_to_build_it(self):
+        """Guards the test above: `never` with nothing to build would be a dead service."""
+        assert "build:" in PRODUCTION.read_text()

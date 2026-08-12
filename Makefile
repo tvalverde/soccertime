@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape replica-manage replica-migrate remote-check remote-ps remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape replica-manage replica-migrate remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -27,6 +27,7 @@ help:
 	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo "  remote-check         Run Django's deployment checks on production"
+	@echo "  remote-pull          Refresh remote images, skipping the ones built on the host"
 	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200)"
 	@echo "  replica-migrate      Migrate the local production replica as its database owner"
 	@echo "  remote-smoke-test    Verify a live deploy from outside (health + public pages)"
@@ -645,6 +646,23 @@ replica-manage:
 replica-migrate:
 	@$(MAKE) --no-print-directory replica-manage MANAGE=migrate
 
+# Refresh the images the host really does fetch. Plain `docker compose pull` fails there:
+# `soccertime` and `frankenshop` are built on the host and exist in no registry, so it asks
+# for them, is denied, and exits non-zero — the four images that are genuinely remote get
+# pulled but the command still reports failure.
+#
+# `--ignore-buildable` skips exactly the services that declare a `build:`, which both of those
+# do, and nothing else. Not `--ignore-pull-failures`, which would also swallow a real registry
+# outage for the images that matter. This project's own service additionally sets
+# `pull_policy: never`, so a bare `pull` no longer trips over it; the flag is what covers the
+# neighbouring stack the host includes and this repository does not own.
+remote-pull:
+	@echo "--- Pulling the images the host fetches, skipping the ones it builds ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) pull --ignore-buildable \
+	'
+
 # What is actually running out there, containers and images. Read-only, and here rather than
 # in an ad-hoc SSH command for the same reason as everything else: so it is reviewable.
 remote-ps:
@@ -654,7 +672,11 @@ remote-ps:
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps --format "table {{.Name}}\t{{.Image}}\t{{.Status}}"; \
 		echo; echo "--- Proxy in front of it ---"; \
 		docker inspect -f "{{.Config.Image}}" traefik 2>/dev/null; \
-		docker exec traefik traefik version 2>/dev/null | head -2 \
+		docker exec traefik traefik version 2>/dev/null | head -2; \
+		echo; echo "--- Compose, and which services it would have to build rather than pull ---"; \
+		docker compose version --short; \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) config --format json \
+			| python3 -c "import json,sys; s=json.load(sys.stdin)[\"services\"]; [print(\"  \", n, \"build\" if \"build\" in v else \"pull\", v.get(\"image\",\"\")) for n,v in s.items()]" \
 	'
 
 # Read the application's own logs. `CLAUDE.md` requires checking them for 500s after every
