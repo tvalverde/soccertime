@@ -676,7 +676,7 @@ remote-ps:
 		echo; echo "--- Compose, and which services it would have to build rather than pull ---"; \
 		docker compose version --short; \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) config --format json \
-			| python3 -c "import json,sys; s=json.load(sys.stdin)[\"services\"]; [print(\"  \", n, \"build\" if \"build\" in v else \"pull\", v.get(\"image\",\"\")) for n,v in s.items()]" \
+			| python3 -c "import json,sys; s=json.load(sys.stdin)[\"services\"]; [print(\"  \", n, \"build\" if \"build\" in v else \"pull\", v.get(\"image\",\"\"), \"pull_policy=\" + v.get(\"pull_policy\",\"(default)\")) for n,v in s.items()]" \
 	'
 
 # Read the application's own logs. `CLAUDE.md` requires checking them for 500s after every
