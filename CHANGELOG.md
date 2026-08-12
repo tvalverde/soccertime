@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-12
+
+The code review's findings, closed from the top down — and every one of them was confirmed
+by demonstration before it was fixed, which is how two of the fixes found bugs nobody was
+looking for.
+
+The deploy relay could report success having deployed nothing: with two containers left by
+an interrupted run it mistook the second old container for the new one, and with zero it
+started two and seeded that state for every deploy after. It now heals what it finds and
+asserts, by image id, that what serves is what was built — exit 0 means deployed. The
+rehearsal runs the same script as production, in all four states.
+
+The scraper's ±2-day duplicate window merged real fixtures: an ACB doubleheader on the same
+court cannot be told from a duplicate by any window, because closeness is ambiguous by
+nature — 99 of the 219 close pairs in the data sit under three hours apart. Identity is
+exact now and date changes are observed instead of guessed, per scrape unit, with moves
+pruned at once and ambiguity given two consecutive misses. The first real run then caught a
+bug on its own: the phase text sat inside race identity and had quietly accumulated 234
+duplicate rows in production, visible as doubled listings. All healed, by rule and by a
+one-shot migration.
+
+Around them, the smaller closures: every remote target now acts on every container instead
+of assuming one; migrations run before the handover, which this very release needed —
+it adds columns, and the old order would have served 500s while migrating; and
+`docker compose pull` on the host stopped failing over the two images that are built there
+and published nowhere.
+
 ### Fixed
 - **A second fixture of the same pairing can be stored again.** The scraper's ±2-day window treated any event of the same (competition, local, visitor) within two days as the same event and realigned it, so an ACB doubleheader on the same court or an NBA back-to-back collapsed into one row whose date followed the latest scrape: 219 such pairs exist in rows written before the window landed, zero after it. No smaller window helps — 99 of those pairs sit under three hours apart — and the source offers no round number or stable id. Closeness is ambiguous by nature; only what the source lists *today* can tell a duplicate from two real games. So identity is now exact — (competition, teams or name, datetime) — and date changes are **observed, not guessed**: each scrape unit declares what it covered (a sport's agenda, a team's fixtures, the date range it showed), and a stored future event inside that coverage that was not listed is what a move or a cancellation looks like. A move brings its replacement in the same scrape — seen reaching what was already stored — and is pruned at once, at any scrape frequency; anything short of that is an omission or a cancellation, indistinguishable today, and falls only after **two consecutive misses**, counted in successful scrapes rather than hours so the rule keeps its meaning if the frequency changes. A doubleheader lists both rows and is never touched; a page that yields nothing, or dies mid-parse, judges nothing.
 - **The phase text was part of a race's identity, and it duplicated events.** `details` ("Liga Regular", "1ª Ronda") sat inside the lookup, so every time the source rephrased it a second row landed in the same (competition, name, instant) slot: **234 such rows existed in production**, rendering as visibly duplicated listings. Found not by reading but by the first real reconciliation run flagging `Vuelta a España Etapa 1` as missing while the page clearly listed it — the listed row was matching a different twin. The text is data now, updated in place; an unseen row whose exact slot a seen row occupies is deleted as a duplicate by definition; and a data migration collapses the accumulated twins once, keeping the freshest, since slots the pages no longer cover would otherwise keep theirs forever.
