@@ -20,6 +20,28 @@ Findings from reviewing every change since `1e70080`, ordered by criticality. Ea
 verified — reproduced in the replica, measured against the data, or proven from the code —
 before being written down; the two worst were both confirmed by demonstration.
 
+- [ ] **Validate the reconciliation's removals over several days** — for the assistant to
+  run, starting 2026-08-13. The presence reconciliation shipped in 0.5.1 removes a future
+  event after two consecutive successful scrapes stop listing it. The healthy signature is
+  small `first_miss` counts that reset on the next pass and near-zero
+  `removed_after_2_misses`; the failure signature is a sport steadily accumulating removals,
+  which would mean one of the source's pages does not list its own coverage stably — the
+  exact fissure the two-miss grace exists to absorb, and the one thing the design could not
+  measure in advance. Check on 3–4 different days (the hourly production scrape logs a
+  `Reconciled:` line per unit, `make remote-logs GREP=Reconciled` shows them; note the log
+  rotates at 10 MB×3, so check within a few hours of scrapes, not once a week):
+
+  1. Per sport and per day: totals of `superseded`, `first_miss`, `removed_after_2_misses`.
+  2. For a sample of removed events: is the pairing listed elsewhere (moved — fine), gone
+     from the live page (cancelled/de-listed — fine), or **still on the live page**
+     (wrongly pruned — the bug this validation exists to catch)?
+  3. Cross-check volume: future-event count per sport should not drift downward without the
+     stats explaining it.
+
+  If a page turns out to list unstably, the options already considered: raise
+  `MISSES_BEFORE_REMOVAL` for that unit kind, or narrow that unit's declared coverage.
+  Record the verdict here either way, with the numbers.
+
 - [ ] **MEDIUM — DNS rebinding gets through the image downloader's address check.**
   `_reject_unroutable_host` resolves the name and vets every address, then `requests.get`
   resolves it *again* — a host whose DNS answers public on the first lookup and private on
