@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-12
+
+DNS rebinding closed in the image downloader: it vetted a scraped URL's host against the
+private ranges, then handed the URL to `requests`, which resolved the name **again** to
+connect — nothing forced the two lookups to agree, so a hostile DNS with a short TTL could
+answer public to the check and internal to the fetch, reaching a neighbour on `nassut-net`
+that is not reachable from outside. The connection is now pinned to the address the check
+itself resolved, so the name is never looked up a second time and the internal host never
+receives even a TCP handshake. The payoff was only a blind request whose response gets
+decoded as an image and discarded, so this closes a real gap in an existing safeguard
+rather than a live exploit. Two independent reviews of the fix found nothing to change.
+
 ### Security
 - The image downloader connects only to the address it vetted, closing a DNS-rebinding hole. It resolved a scraped image URL's host and checked every address against the private ranges, then handed the URL to `requests`, which resolved the name **again** to connect — with nothing forcing the two lookups to agree. A hostile DNS with a short TTL could answer public to the check and internal to the fetch, reaching a neighbour on `nassut-net` (Traefik, the databases) that is not reachable from outside. The name is now resolved once: `_reject_unroutable_host` returns the vetted address, and the connection is pinned to it for the duration of the request through urllib3's `create_connection` hook, so the internal host never receives even a TCP handshake. The hostname still travels for the Host header and TLS SNI, so certificate validation is unchanged — verified live against the real source, and each redirect hop is separately resolved, vetted and pinned. The payoff was only a blind request whose response is decoded as an image and discarded, so this is a bounded gap in an existing safeguard rather than a live exploit — MEDIUM finding of the 2026-08-12 review. Pinned by a test that fails without the pin (the socket goes to the vetted IP, never a second lookup's result), mutation-checked, and covering SNI preservation, redirect hops and IPv6.
-
 
 ## [0.5.1] - 2026-08-12
 
