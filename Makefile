@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape replica-manage replica-migrate remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -30,6 +30,7 @@ help:
 	@echo "  remote-pull          Refresh remote images, skipping the ones built on the host"
 	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200)"
 	@echo "  replica-migrate      Migrate the local production replica as its database owner"
+	@echo "  replica-relay        Rehearse the deploy handover against the replica"
 	@echo "  remote-smoke-test    Verify a live deploy from outside (health + public pages)"
 	@echo "  remote-clear-cache   Drop the rendered page cache on production"
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
@@ -272,28 +273,19 @@ remote_deploy:
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) run --rm --no-deps \
 			-u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) \
 			python manage.py collectstatic --noinput && \
-		echo "--- Starting the new container beside the one still serving ---" && \
-		old=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps -q $(REMOTE_SOCCERTIME_SERVICE) | head -1) && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --no-recreate --remove-orphans \
-			--scale $(REMOTE_SOCCERTIME_SERVICE)=2 $(REMOTE_SOCCERTIME_SERVICE) && \
-		new=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps -q $(REMOTE_SOCCERTIME_SERVICE) | grep -v "$${old:-nothing}" | head -1) && \
-		echo "--- Waiting for it to answer before retiring the old one ---" && \
-		deadline=$$(( $$(date +%s) + $(HEALTH_TIMEOUT) )); \
-		until docker exec $$new python -c "import urllib.request; urllib.request.urlopen(\"http://localhost:8000/healthz/\")" >/dev/null 2>&1; do \
-			if [ $$(date +%s) -ge $$deadline ]; then \
-				echo "  the new container never answered; removing it and leaving the old one serving"; \
-				docker rm -f $$new >/dev/null; exit 1; \
-			fi; \
-			sleep 1; \
-		done && \
-		echo "  the new container is serving, giving Traefik time to see that too" && \
-		sleep $(PROXY_SETTLE_SECONDS) && \
-		if [ -n "$$old" ]; then \
-			echo "--- Retiring the previous container ---" && \
-			docker stop -t 20 $$old >/dev/null && docker rm $$old >/dev/null; \
-		fi && \
-		echo "--- Applying database migrations ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput \
+		echo "--- Preparation done; handing over is the relay script's job ---" \
+	'
+	@echo "--- Handing the service over to the new image ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH) && \
+		COMPOSE_CMD="docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE)" \
+		HEALTH_TIMEOUT=$(HEALTH_TIMEOUT) PROXY_SETTLE_SECONDS=$(PROXY_SETTLE_SECONDS) \
+		sh -s $(REMOTE_SOCCERTIME_SERVICE) $(APP_NAME):latest \
+	' < scripts/relay.sh
+	@echo "--- Applying database migrations ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		cd $(REMOTE_DOCKER_PATH) && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput \
 	'
 
 # Target to clean up local temporary archive after upload
@@ -645,6 +637,14 @@ replica-manage:
 
 replica-migrate:
 	@$(MAKE) --no-print-directory replica-manage MANAGE=migrate
+
+# The same relay production runs, against the local replica — one file, two callers, so the
+# rehearsal cannot diverge from the real thing. Run it from any state: one container is the
+# normal handover, two rehearses healing an interrupted deploy, zero a cold start.
+replica-relay:
+	@COMPOSE_CMD="docker compose $(REPLICA_COMPOSE)" \
+	HEALTH_TIMEOUT=$(HEALTH_TIMEOUT) PROXY_SETTLE_SECONDS=$(PROXY_SETTLE_SECONDS) \
+	sh -s $(REPLICA_SERVICE) soccertime:replica < scripts/relay.sh
 
 # Refresh the images the host really does fetch. Plain `docker compose pull` fails there:
 # `soccertime` and `frankenshop` are built on the host and exist in no registry, so it asks

@@ -20,16 +20,6 @@ Findings from reviewing every change since `1e70080`, ordered by criticality. Ea
 verified — reproduced in the replica, measured against the data, or proven from the code —
 before being written down; the two worst were both confirmed by demonstration.
 
-- [ ] **HIGH — The deploy relay silently deploys nothing if the container count is not
-  exactly 1.** Demonstrated in the replica with the Makefile's own commands: with two
-  containers left behind (an interrupted deploy, an SSH drop between scale-up and retire),
-  `up -d --no-recreate --scale=2` creates nothing, `new` resolves to the *second old
-  container*, which answers `/healthz/` immediately, the first old one is retired, and the
-  deploy reports success **with the new image never having run**. The zero-container case
-  seeds it: `--scale=2` starts two, none is retired, and every deploy after that hits the
-  two-container case. Fix directions: assert the count is 1 before starting (fail loudly),
-  or select `new` by image id rather than by exclusion, or retire all-but-newest.
-
 - [ ] **HIGH — `upsert_event`'s ±2-day window makes a second fixture of the same pairing
   impossible to store.** `Match` lookup is (competition, local, visitor); any candidate
   within ±2 days is treated as the same event and *realigned*, and `get_or_create` only runs
@@ -298,6 +288,13 @@ the git history. Kept here as an index of what has been through this file.
   declare a build — both of them do — and not `--ignore-pull-failures`, which would also hide
   a real registry outage. Verified against the server: exit 0, both images skipped, the other
   four pulled.
+- **The deploy relay could silently deploy nothing** (2026-08-12) — with two containers left
+  by an interrupted deploy it created nothing, mistook the second old container for the new
+  one and reported success with the built image never running; with zero it started two and
+  seeded that state. Extracted to `scripts/relay.sh`, shared verbatim between production
+  (`ssh 'sh -s'`) and `make replica-relay`, healing anomalous states loudly and asserting by
+  image id that what serves is what was built. Rehearsed in all four states; the sibling
+  finding that other remote targets assume one container remains open.
 - **Type hints** (0.2.0, 2026-08-10) — annotated 188 functions across 19 modules, put
   mypy and ruff's ANN rules behind them, and fixed the genuine type errors that surfaced.
   Deleted `channel_matchers.py`, 320 dead lines Django was advertising as a command.
