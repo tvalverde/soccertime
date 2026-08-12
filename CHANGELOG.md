@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-13
+
+Housekeeping with one visible effect: the site travels at a tenth of its former weight.
+Nothing compressed responses — a fact found while sizing the favourites work, when a page
+measured twelve times heavier turned out to cost the same bytes as before once gzip was in
+front of it. The middleware had been written and set aside then; this release lands it,
+with the tests aimed at the one interaction that could break: a browser that received a
+compressed page must still get its empty 304 back, because the hour-long page cache leans
+on cheap revalidation. And `pyproject.toml` stops declaring a version nobody reads, which
+had drifted four releases behind the tags.
+
 ### Added
 - **Responses are compressed now.** Nothing was — not Django, not nginx, not Traefik — so the page sizes in this file were what actually travelled: `/competitions/` sent 338 KB that gzip turns into **28 KB**, `/channels/` 186 into **11**, the agenda 103 into **11**, measured against production data. One middleware, `GZipMiddleware` above `ConditionalGetMiddleware`, and twenty tests around the half that could break: `cached_page` leans on cheap revalidation, and a browser that got a compressed page must still get its empty 304 back — pinned, along with distinct validators for the compressed and plain bodies, so a proxy can never answer one with the other's. BREACH does not apply here: cached pages carry no secret and render no token, and the pages that do are not cached. Clients that do not ask for gzip get the bytes they always got.
 
