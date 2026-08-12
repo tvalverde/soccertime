@@ -222,6 +222,23 @@ class TestAVisitorSeesTheirOwn:
 
         assert listed_teams(html) == {match.local.name, match.visitor.name}
 
+    def test_pressing_a_star_does_not_clear_the_shared_cache(
+        self, visitor, match, favorite_team, server_side_cache, django_assert_num_queries
+    ):
+        """A visitor's choice is their own business and costs everybody else nothing.
+
+        Clearing the shared cache on a star would hand any stranger a way to make every page
+        on the site re-render as often as they liked. Only the owner's own `Favorite` rows
+        clear it, and those can only be changed from the admin.
+        """
+        stranger = Client()
+        stranger.get(reverse("favorites"))
+
+        star(visitor, "team", match.local)
+
+        with django_assert_num_queries(0):
+            stranger.get(reverse("favorites"))
+
     def test_two_visitors_never_read_each_other_s_agenda(self, match, other_match, favorite_team, server_side_cache):
         one, two = Client(), Client()
         star(one, "team", match.local)
