@@ -251,8 +251,14 @@ a {
     line-height: 1;
 }
 
+/* Hover brightens rather than turning gold. Sharing the pressed colour made a star look
+   marked at the exact moment the reader was deciding whether to mark it, which is the one
+   moment the control has to be unambiguous. */
 .favorite-star:hover,
-.favorite-star:focus-visible,
+.favorite-star:focus-visible {
+    color: #d8d4d2;
+}
+
 .favorite-star[aria-pressed="true"] {
     color: var(--bs-warning);
 }

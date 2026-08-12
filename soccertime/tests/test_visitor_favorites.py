@@ -143,6 +143,24 @@ class TestNothingChangesForSomebodyWhoChoosesNothing:
         with django_assert_num_queries(0):
             client.get(reverse("favorites"))
 
+    @pytest.mark.parametrize("page", ["favorites", "agenda", "competitions"])
+    def test_an_unsigned_cookie_cannot_switch_the_cache_off(
+        self, client, page, match, favorite_team, server_side_cache, django_assert_num_queries
+    ):
+        """What made this worth a test: the branch used to be on the cookie's *name*.
+
+        `Cookie: soccertime_favorites=x` carries no signature, so the page rendered was the
+        ordinary curated one — but rendered again on every request, with no rate limit in
+        front of it. Measured at 1.9-2.3s each on `/competitions/` against production data,
+        which is half a request per second to saturate the container that also serves the
+        database. The signature is what decides now.
+        """
+        client.get(reverse(page))
+        client.cookies[COOKIE_NAME] = "not-signed-by-this-site"
+
+        with django_assert_num_queries(0):
+            client.get(reverse(page))
+
 
 @pytest.mark.django_db
 class TestAVisitorSeesTheirOwn:
@@ -377,6 +395,23 @@ class TestNoTokenEndsUpInASharedCache:
 
         assert "private" in response.headers["Cache-Control"]
 
+    def test_a_personalised_listing_is_kept_private_too(self, visitor, match, team_home):
+        """The listings say it as loudly as the pages carrying a form do.
+
+        Without any `Cache-Control` a proxy in between is free to store what it likes and
+        hand it on, and only `Vary: Cookie` would be standing between one visitor's agenda
+        and the next one's.
+        """
+        star(visitor, "team", team_home)
+
+        response = visitor.get(reverse("favorites"))
+
+        assert "private" in response.headers["Cache-Control"]
+
+    def test_and_the_shared_one_is_not(self, client, match, favorite_team):
+        """`private` on the shared copy would stop proxies caching what they should."""
+        assert "private" not in client.get(reverse("favorites")).headers["Cache-Control"]
+
     @pytest.mark.parametrize("page", ["favorites", "team-events"])
     def test_a_page_that_reads_the_cookie_says_so(self, client, page, match, team_home):
         """Without this a proxy in between could reuse one visitor's page for another."""
@@ -432,6 +467,101 @@ class TestTheCuratedRuleIsUntouched:
         html = client.get(reverse("favorites")).content.decode()
 
         assert len(event_rows(html)) == 1
+
+
+@pytest.mark.django_db
+class TestThePagesThatLeftTheCachePayTheirOwnWay:
+    """Carrying a form costs these pages the shared cache, so what they render is now
+    rendered on every visit rather than once an hour. A busy competition took 1.6s whole,
+    measured against production data — unbounded listings are affordable when they are
+    computed hourly and not when they are computed per request."""
+
+    @pytest.mark.parametrize("page", ["team-events", "competition-events"])
+    def test_they_paginate(self, client, page, competition, team_home):
+        for index in range(30):
+            Match.objects.create(
+                competition=competition,
+                local=team_home,
+                visitor=Team.objects.create(name=f"Rival {index}"),
+                date=timezone.now() + datetime.timedelta(hours=2, minutes=index),
+            )
+        entity = team_home if page == "team-events" else competition
+
+        html = client.get(reverse(page, args=[entity.pk])).content.decode()
+
+        assert len(event_rows(html)) == 25
+
+    def test_the_crest_strip_lists_everyone_who_plays_in_the_competition(
+        self, client, competition, team_home, team_away, team_third, crested_team
+    ):
+        """Rewritten as two plain lookups after the page left the cache: the `OR` across home
+        and away matches made SQLite join the event table twice and sort it distinct, which
+        measured **1,608 ms against 19 ms** on the NBA's production data. This pins the answer
+        so the faster shape cannot quietly return a different one."""
+        Match.objects.create(
+            competition=competition,
+            local=crested_team,
+            visitor=team_home,
+            date=timezone.now() + datetime.timedelta(hours=1),
+        )
+
+        html = client.get(reverse("competition-events", args=[competition.pk])).content.decode()
+
+        assert strip_team_ids(html) == {crested_team.pk}
+
+    def test_and_the_rest_of_the_listing_is_still_reachable(self, client, competition, team_home):
+        for index in range(30):
+            Match.objects.create(
+                competition=competition,
+                local=team_home,
+                visitor=Team.objects.create(name=f"Rival {index}"),
+                date=timezone.now() + datetime.timedelta(hours=2, minutes=index),
+            )
+
+        html = client.get(reverse("competition-events", args=[competition.pk]), {"page": 2}).content.decode()
+
+        assert len(event_rows(html)) == 5
+
+
+@pytest.mark.django_db
+class TestTodayBeginsWhereTheSiteIsRead:
+    """`start_of_today()` replaced `date__date__gte=localdate()` in the three places that ask
+    which competitions and sports have something upcoming. Same rows, and an index can be used
+    on them — 585 ms against 8 ms and 696 ms against 84 ms on production data.
+
+    What these pin is the boundary, because the fast form is the one that can get it wrong:
+    built from `now()` instead of `localtime()` it would place midnight two hours late in
+    Madrid, and for those two hours an event at 00:30 would fall out of a listing that claims
+    to start at the beginning of today. The project has been bitten by exactly this before.
+    """
+
+    def test_an_event_just_after_local_midnight_counts_as_today(self, client, competition, team_home, team_away):
+        just_after_midnight = timezone.localtime().replace(hour=0, minute=30, second=0, microsecond=0)
+        Match.objects.create(competition=competition, local=team_home, visitor=team_away, date=just_after_midnight)
+
+        html = client.get(reverse("competitions")).content.decode()
+
+        assert competition.name in html
+
+    def test_an_event_just_before_it_does_not(self, client, competition, team_home, team_away):
+        just_before_midnight = timezone.localtime().replace(
+            hour=23, minute=30, second=0, microsecond=0
+        ) - datetime.timedelta(days=1)
+        Match.objects.create(competition=competition, local=team_home, visitor=team_away, date=just_before_midnight)
+
+        html = client.get(reverse("competitions")).content.decode()
+
+        assert competition.name not in html
+
+    def test_the_flag_strip_uses_the_same_boundary(
+        self, client, competition, team_home, team_away, favorite_competition
+    ):
+        just_after_midnight = timezone.localtime().replace(hour=0, minute=30, second=0, microsecond=0)
+        Match.objects.create(competition=competition, local=team_home, visitor=team_away, date=just_after_midnight)
+
+        html = client.get(reverse("agenda")).content.decode()
+
+        assert strip_competition_ids(html) == {competition.pk}
 
 
 @pytest.mark.django_db

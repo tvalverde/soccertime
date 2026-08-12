@@ -12,10 +12,12 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 {% endblock %}
 {% block content %}
 {% if events_title %}
-<div class="py-3 text-center">
-  {# Inline flex rather than the plain heading so the star sits on the title's centre line #}
-  {# instead of its baseline, and the pair stays centred inside the block.                 #}
-  <h2 class="m-0 text-light d-inline-flex align-items-center gap-2">{{ events_title }}{% if star_action %}{% include "soccertime/favorite_star.html" %}{% endif %}</h2>
+{# The star is a form and a heading may only hold phrasing content, so the two are siblings #}
+{# inside a flex row rather than one inside the other: it centres them on the same line     #}
+{# without nesting markup a validator refuses.                                              #}
+<div class="py-3 d-flex align-items-center justify-content-center gap-2">
+  <h2 class="m-0 text-light">{{ events_title }}</h2>
+  {% if star_action %}{% include "soccertime/favorite_star.html" %}{% endif %}
 </div>
 {% endif %}
 {% if competition_teams %}

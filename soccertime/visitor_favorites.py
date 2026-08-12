@@ -27,7 +27,12 @@ from django.conf import settings
 from django.core.signing import BadSignature, SignatureExpired
 from django.http import HttpRequest, HttpResponse
 
-COOKIE_NAME = "favorites"
+# Named for this application and scoped to its path, because the host is shared with sibling
+# apps behind the same proxy. A bare `favorites` at `/` would be sent to all of them, and any
+# of them setting one of their own would arrive here — where, before the signature was
+# checked rather than the name, it silently switched this site's page cache off for that
+# visitor for as long as the cookie lived.
+COOKIE_NAME = "soccertime_favorites"
 
 # A year, renewed on every change. Long enough that a selection survives a season, and the
 # cookie is the only copy there is.
@@ -114,6 +119,7 @@ def write_selection(response: HttpResponse, selection: Selection) -> HttpRespons
         COOKIE_NAME,
         json.dumps({"teams": list(selection.teams), "competitions": list(selection.competitions)}),
         max_age=COOKIE_MAX_AGE,
+        path=settings.SESSION_COOKIE_PATH or "/",
         httponly=True,
         samesite="Lax",
         secure=settings.SESSION_COOKIE_SECURE,

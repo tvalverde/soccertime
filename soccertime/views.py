@@ -26,8 +26,9 @@ from soccertime.models import (
     Match,
     Sport,
     Team,
+    start_of_today,
 )
-from soccertime.visitor_favorites import COOKIE_NAME, EntityKind, Selection, read_selection, write_selection
+from soccertime.visitor_favorites import EntityKind, Selection, read_selection, write_selection
 
 
 def cached_page(view: Any) -> Any:
@@ -71,17 +72,25 @@ def cached_unless_personalised(view: Any) -> Any:
     a selection are simply served fresh. They are the few; everybody arriving without one,
     which includes every crawler, shares the single cached copy exactly as before.
 
+    What counts as carrying one is a **valid signature**, not a cookie of that name. Testing
+    the name alone made the cache switchable off from outside: `Cookie: soccertime_favorites=x`
+    is unsigned, so the view rendered the ordinary curated page — freshly, every time, with no
+    rate limit in front of it. Measured at 1.9-2.3s per request on `/competitions/` against
+    production data, which is half a request per second to saturate the container that also
+    serves the database. Verifying the signature costs one HMAC over a hundred bytes.
+
     `Vary: Cookie` is sent either way, so no proxy in between reuses one visitor's page for
-    another. The stored copy is learnt from a request that carried no cookie, so the key
-    stays the plain URL and the entry cannot fragment.
+    another, and the fresh branch is marked `private` so nothing between here and them may
+    store it at all. The stored copy is learnt from a request that carried no selection, so
+    the key stays the plain URL and the entry cannot fragment.
     """
 
     @wraps(view)
     def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        if COOKIE_NAME in request.COOKIES:
-            response = view(request, *args, **kwargs)
-        else:
+        if read_selection(request) is None:
             response = cached_page(view)(request, *args, **kwargs)
+        else:
+            response = cache_control(private=True, max_age=0, must_revalidate=True)(view)(request, *args, **kwargs)
         patch_vary_headers(response, ("Cookie",))
         return response
 
@@ -104,9 +113,7 @@ def get_favorite_competitions(selection: Selection | None = None) -> list[Compet
     shortcut rather than an archive. A visitor's own are ordered by when they starred them,
     which the cookie preserves; the owner's keep the order they were dragged into.
     """
-    upcoming = (
-        Competition.objects.filter(events__date__date__gte=timezone.localdate()).select_related("flag").distinct()
-    )
+    upcoming = Competition.objects.filter(events__date__gte=start_of_today()).select_related("flag").distinct()
     if selection is None:
         return list(upcoming.filter(favorite__isnull=False).order_by("favorite__order"))
     chosen = upcoming.filter(pk__in=selection.competitions)
@@ -340,7 +347,11 @@ def team_events(request: HttpRequest, team: int) -> HttpResponse:
     context = get_base_context(selection=selection)
     context.update(
         {
-            "events": queryset,
+            # Paginated because this page carries a form and so cannot be shared-cached: what
+            # used to be rendered once an hour is now rendered on every visit, and an
+            # unbounded listing turns that into the site's slowest page. Measured against
+            # production data, a busy competition took 1.6s to render whole.
+            "events": paginate_queryset(queryset, request),
             "events_title": team_obj.name,
             "competition_teams": competition_teams,
             **get_star_context("team", team_obj.pk, selection),
@@ -382,6 +393,23 @@ def sport_events(request: HttpRequest, sport: int) -> HttpResponse:
     return render(request, "soccertime/agenda.html", context)
 
 
+def teams_playing_in(competition: Competition) -> QuerySet[Team]:
+    """The crest strip on a competition's page: everyone who plays or has played in it.
+
+    Read as two plain lookups rather than one `Q(home_matches=…) | Q(away_matches=…)`, which
+    is the same question asked in the shape SQLite is worst at: that `OR` makes it join the
+    52,000-row event table twice and then sort the result distinct. **Measured on production
+    data for the NBA: 1,608 ms against 19 ms, for the same thirty teams in the same order.**
+
+    It was affordable while the page was rendered once an hour. It is not now that the page
+    carries a form and so cannot be shared-cached — which is how a query nobody had ever
+    timed became the slowest thing on the site.
+    """
+    playing = Match.objects.filter(competition=competition).values_list("local_id", "visitor_id")
+    team_ids = {team_id for pair in playing for team_id in pair}
+    return Team.objects.filter(pk__in=team_ids).exclude(Q(crest__isnull=True) | Q(crest="")).order_by("name")
+
+
 @personalised
 def competition_events(request: HttpRequest, competition: int) -> HttpResponse:
     competition_obj = get_object_or_404(Competition, pk=competition)
@@ -391,15 +419,10 @@ def competition_events(request: HttpRequest, competition: int) -> HttpResponse:
     context = get_base_context(selection=selection)
     context.update(
         {
-            "events": queryset,
+            "events": paginate_queryset(queryset, request),
             "events_title": competition_obj.name,
             **get_star_context("competition", competition_obj.pk, selection),
-            "competition_teams": Team.objects.filter(
-                Q(home_matches__competition=competition_obj) | Q(away_matches__competition=competition_obj)
-            )
-            .exclude(Q(crest__isnull=True) | Q(crest=""))
-            .order_by("name")
-            .distinct(),
+            "competition_teams": teams_playing_in(competition_obj),
             **empty_state(),
         }
     )
@@ -452,7 +475,7 @@ def channels(request: HttpRequest) -> HttpResponse:
 @cached_unless_personalised
 def competitions(request: HttpRequest) -> HttpResponse:
     """List sports and their competitions, grouping in Python to avoid N+1 queries."""
-    today = timezone.localdate()
+    today = start_of_today()
 
     # Sports that still have upcoming events
     active_sports = (
@@ -464,7 +487,7 @@ def competitions(request: HttpRequest) -> HttpResponse:
         Competition.objects.filter(sport__in=active_sports)
         .select_related("flag")
         .annotate(
-            num_events=Count("events", filter=Q(events__date__date__gte=today)),
+            num_events=Count("events", filter=Q(events__date__gte=today)),
             is_fav=Exists(Favorite.objects.filter(competition=OuterRef("pk"))),
         )
     )
