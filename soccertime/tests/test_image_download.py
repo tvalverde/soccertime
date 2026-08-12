@@ -160,6 +160,104 @@ class TestRedirects:
         assert not errors
 
 
+class TestTheConnectionIsPinnedToTheVettedAddress:
+    """The check resolves the name, then `requests` resolves it again to connect.
+
+    Nothing forced the two lookups to agree, so a hostile DNS with a short TTL could answer
+    public to the check and internal to the fetch — a rebinding bypass of the whole
+    destination guard. The fix resolves once, vets, and connects only to that address: the
+    name is never resolved a second time.
+    """
+
+    def _record_pinned_target(self, monkeypatch):
+        """Capture the (host, port) every connection is actually opened to.
+
+        `create_connection` is urllib3's single choke point for opening a socket. The pin
+        rewrites the address it is handed; recording that address is how a test sees where
+        the fetch would really have gone, without a real network.
+        """
+        opened = []
+
+        def fake_create_connection(address, *args, **kwargs):
+            opened.append(address)
+            raise OSError("no real socket in tests")
+
+        monkeypatch.setattr(
+            "urllib3.util.connection.create_connection",
+            fake_create_connection,
+        )
+        return opened
+
+    def test_the_socket_is_opened_to_the_vetted_ip_not_a_second_lookup(self, monkeypatch):
+        """The rebinding case, which the pre-fix code failed.
+
+        The vet sees a public address and passes. When the connection is opened it must go
+        to that same address — never to whatever a second resolution of the name returns.
+        """
+        monkeypatch.setattr(
+            "soccertime.management.commands._image_download.socket.getaddrinfo",
+            lambda host, port: [(2, 1, 6, "", ("93.184.216.34", 0))],
+        )
+        opened = self._record_pinned_target(monkeypatch)
+
+        download_image("https://evil.example/flag.png", on_error=lambda _: None)
+
+        assert opened, "no connection was attempted"
+        assert all(host == "93.184.216.34" for host, _ in opened), opened
+
+    def test_the_original_hostname_still_reaches_requests_for_sni(self, monkeypatch):
+        """Pinning the socket must not strip the name TLS needs.
+
+        The URL requests is given keeps its hostname, so the Host header and the TLS SNI are
+        the name, not the IP — otherwise certificate validation for a name-based host breaks.
+        """
+        resolving_to(monkeypatch, "93.184.216.34")
+        self._record_pinned_target(monkeypatch)
+
+        with patch("requests.get", side_effect=AssertionError("stop before the socket")) as get:
+            try:
+                download_image("https://cdn.example/flag.png", on_error=lambda _: None)
+            except AssertionError:
+                pass
+
+        assert get.call_args is not None
+        url = get.call_args.args[0] if get.call_args.args else get.call_args.kwargs["url"]
+        assert "cdn.example" in url
+
+    def test_a_redirect_hop_is_pinned_to_its_own_host(self, monkeypatch):
+        """Each hop resolves, vets and pins independently — the pin is not stuck on hop one."""
+        seen_hosts = []
+
+        def getaddrinfo(host, port):
+            seen_hosts.append(host)
+            return [(2, 1, 6, "", ("93.184.216.34", 0))]
+
+        monkeypatch.setattr(
+            "soccertime.management.commands._image_download.socket.getaddrinfo", getaddrinfo
+        )
+        redirect = response_for(status=302, is_redirect=True, headers={"Location": "https://cdn.example/flag.png"})
+        final = response_for(body=image_bytes())
+
+        with patch("requests.get", side_effect=[redirect, final]):
+            download_image("https://public.example/flag.png", on_error=lambda _: None)
+
+        assert "public.example" in seen_hosts
+        assert "cdn.example" in seen_hosts
+
+    def test_a_vetted_ipv6_address_is_pinned_too(self, monkeypatch):
+        """`getaddrinfo` can hand back v6; the vet and the pin must both cope."""
+        monkeypatch.setattr(
+            "soccertime.management.commands._image_download.socket.getaddrinfo",
+            lambda host, port: [(10, 1, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0, 0, 0))],
+        )
+        opened = self._record_pinned_target(monkeypatch)
+
+        download_image("https://v6.example/flag.png", on_error=lambda _: None)
+
+        assert opened, "no connection was attempted"
+        assert all(host == "2606:2800:220:1:248:1893:25c8:1946" for host, _ in opened), opened
+
+
 class TestTheSize:
     def test_a_declared_length_over_the_cap_is_refused_before_reading(self, public_dns):
         response = response_for(headers={"Content-Length": str(MAX_IMAGE_BYTES + 1)})

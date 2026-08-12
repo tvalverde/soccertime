@@ -42,13 +42,6 @@ before being written down; the two worst were both confirmed by demonstration.
   `MISSES_BEFORE_REMOVAL` for that unit kind, or narrow that unit's declared coverage.
   Record the verdict here either way, with the numbers.
 
-- [ ] **MEDIUM — DNS rebinding gets through the image downloader's address check.**
-  `_reject_unroutable_host` resolves the name and vets every address, then `requests.get`
-  resolves it *again* — a host whose DNS answers public on the first lookup and private on
-  the second passes the check and the fetch connects inside the perimeter. Classic TOCTOU;
-  the fix is to connect to the vetted IP (pin it via a custom adapter or resolve-and-replace
-  in the URL with a Host header) rather than let requests resolve twice.
-
 - [ ] **LOW — The `env` template filter is now dead code.** Its last caller went with the
   `DJANGO_DEBUG` branch in `channels_list.html`, so a security-sensitive surface (an
   allowlisted environment reader reachable from any template) survives with no users.
@@ -284,6 +277,12 @@ the git history. Kept here as an index of what has been through this file.
   declare a build — both of them do — and not `--ignore-pull-failures`, which would also hide
   a real registry outage. Verified against the server: exit 0, both images skipped, the other
   four pulled.
+- **DNS rebinding bypassed the image downloader's address check** (2026-08-12) — the host was
+  resolved by the check and again by `requests`, so a short-TTL DNS could answer public then
+  internal. Resolved once now and the connection pinned to the vetted IP via urllib3's
+  `create_connection` hook, SNI preserved so TLS still validates; each redirect hop pinned
+  independently. A test connects to the vetted address rather than a second lookup's, and
+  fails without the pin.
 - **The upsert window merged real fixtures, and the phase text duplicated them**
   (2026-08-12) — identity is exact now and date changes are observed per scrape unit:
   superseded rows pruned in the same scrape, ambiguous ones after two consecutive misses.

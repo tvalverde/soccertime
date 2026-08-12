@@ -12,11 +12,14 @@ import io
 import ipaddress
 import socket
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import requests
 import requests_cache
+import urllib3.util.connection
 
 from soccertime.images import ImageRejected, read_image_format
 
@@ -35,8 +38,8 @@ CHUNK_SIZE = 8192
 MAX_REDIRECTS = 3
 
 
-def _reject_unroutable_host(url: str) -> None:
-    """Refuse a URL that resolves to an address inside the deployment.
+def _reject_unroutable_host(url: str) -> str:
+    """Vet a URL's host and return the exact address the fetch must connect to.
 
     The container shares a network with Traefik and the other services on the host, so an
     unchecked fetch is a way to reach them from outside — the request originates inside
@@ -44,6 +47,12 @@ def _reject_unroutable_host(url: str) -> None:
 
     Every address a name resolves to is checked, not just the first: a host answering with
     both a public and a private record would otherwise pass on whichever came back first.
+
+    Returning the address, not just passing or raising, is what closes the rebinding hole.
+    The name used to be resolved twice — here, and again by `requests` when it connected —
+    with nothing forcing the two to agree, so a short-TTL DNS could answer public to the
+    check and internal to the fetch. The caller pins the connection to the address returned
+    here, so the name is never resolved a second time.
     """
     host = urlparse(url).hostname
     if not host:
@@ -56,10 +65,42 @@ def _reject_unroutable_host(url: str) -> None:
         # where a malformed one is ordinary. Either way it must be a skipped image rather
         # than the end of the run.
         raise ImageRejected(f"could not resolve {host}: {error}") from error
+    if not resolved:
+        raise ImageRejected(f"{host} resolves to nothing")
     for info in resolved:
         address = ipaddress.ip_address(info[4][0])
         if not address.is_global or address.is_reserved:
             raise ImageRejected(f"{host} resolves to the non-public address {address}")
+    # Every address passed the same check, so any of them is safe to connect to; the first
+    # is the one the fetch is pinned to.
+    return str(resolved[0][4][0])
+
+
+@contextmanager
+def _connect_only_to(ip: str) -> Iterator[None]:
+    """Force every socket opened in this block to the vetted address.
+
+    `create_connection` is urllib3's single choke point for opening a socket, and it is
+    handed `(host, port)` — the *name*, which it would otherwise resolve itself, undoing the
+    check above. Rewriting the host to the vetted IP means the connection goes where the
+    check looked, and nowhere else; the name still travels through `requests` for the Host
+    header and the TLS SNI, so certificate validation is unchanged.
+
+    The hook is process-global, swapped for the duration of one request and restored in
+    `finally`. That is safe because the scraper is a single sequential process — if it is
+    ever parallelised, this needs a per-connection mechanism (a mounted adapter) instead.
+    """
+    original = urllib3.util.connection.create_connection
+
+    def pinned(address: tuple[str, int], *args: Any, **kwargs: Any) -> socket.socket:
+        _host, port = address
+        return original((ip, port), *args, **kwargs)
+
+    urllib3.util.connection.create_connection = pinned
+    try:
+        yield
+    finally:
+        urllib3.util.connection.create_connection = original
 
 
 def _read_capped(response: requests.Response, deadline: float) -> bytes:
@@ -89,13 +130,14 @@ def _fetch(url: str, deadline: float) -> requests.Response:
     vetted is not the URL that ends up being fetched.
     """
     for _ in range(MAX_REDIRECTS + 1):
-        _reject_unroutable_host(url)
-        response = requests.get(
-            url,
-            stream=True,
-            timeout=IMAGE_DOWNLOAD_TIMEOUT,
-            allow_redirects=False,
-        )
+        vetted_ip = _reject_unroutable_host(url)
+        with _connect_only_to(vetted_ip):
+            response = requests.get(
+                url,
+                stream=True,
+                timeout=IMAGE_DOWNLOAD_TIMEOUT,
+                allow_redirects=False,
+            )
         if not response.is_redirect:
             return response
         location = response.headers.get("Location")
