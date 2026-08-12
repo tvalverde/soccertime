@@ -39,13 +39,6 @@ before being written down; the two worst were both confirmed by demonstration.
   tolerate the migrated data — true for additive migrations, was true for 0037's inverse
   direction only), or clear the cache right after migrating.
 
-- [ ] **MEDIUM — Every remote operation assumes exactly one container.**
-  `remote-error-check` inspects `ps -q | head -1`, `remote-clear-cache` and the migrate step
-  `compose exec` into the default index, and `wait-remote-healthy` runs `case` over what
-  becomes a two-line status. In the stuck two-container state they silently check, clear or
-  migrate only one of the two. Same root cause as the first finding; fixing that one should
-  fix these, but each is worth a guard.
-
 - [ ] **MEDIUM — DNS rebinding gets through the image downloader's address check.**
   `_reject_unroutable_host` resolves the name and vets every address, then `requests.get`
   resolves it *again* — a host whose DNS answers public on the first lookup and private on
@@ -288,6 +281,13 @@ the git history. Kept here as an index of what has been through this file.
   declare a build — both of them do — and not `--ignore-pull-failures`, which would also hide
   a real registry outage. Verified against the server: exit 0, both images skipped, the other
   four pulled.
+- **The remote targets assumed one container** (2026-08-12) — `remote-clear-cache` and
+  `remote-scrape` cleared one container's per-tmpfs page cache and left the other serving
+  stale pages; `remote-error-check` scanned one log; `wait-remote-healthy` declared success
+  with one container healthy while another was still starting, shown on the replica against
+  the same state the new logic refuses. All iterate now; the deploy's migrate keeps its
+  single `exec` with the reason documented — the relay has just asserted exactly one, and the
+  database is shared.
 - **The deploy relay could silently deploy nothing** (2026-08-12) — with two containers left
   by an interrupted deploy it created nothing, mistook the second old container for the new
   one and reported success with the built image never running; with zero it started two and

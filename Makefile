@@ -283,6 +283,9 @@ remote_deploy:
 		sh -s $(REMOTE_SOCCERTIME_SERVICE) $(APP_NAME):latest \
 	' < scripts/relay.sh
 	@echo "--- Applying database migrations ---"
+	@# `exec` into "the" container is safe here and only here: the relay's post-condition
+	@# has just asserted there is exactly one. The database is shared state, so once is
+	@# also the right number of times.
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		cd $(REMOTE_DOCKER_PATH) && \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput \
@@ -334,10 +337,10 @@ remote-scrape:
 		cd $(REMOTE_DOCKER_PATH); \
 		echo "Running scraper..."; \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py scrapit; \
-		echo "Clearing cache..."; \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py shell -c "from django.core.cache import cache; cache.clear()"; \
+		echo "Scrape done; the cache is cleared per container by the target below."; \
 		echo "Remote scrape and cache clear completed successfully." \
 	'
+	@$(MAKE) --no-print-directory remote-clear-cache
 
 # === Data Management (Docker volumes in production) ===
 
@@ -457,30 +460,56 @@ remote-import-links:
 
 # Drop the rendered page cache without running the scraper. Pages are cached for an
 # hour, so this is what makes a fix visible immediately after a deploy.
+# The page cache lives in a tmpfs inside each container, so with more than one running —
+# mid-relay, or a stuck state — clearing "the" cache through `compose exec` reached only
+# one of them and the other kept serving stale pages for up to an hour. Every container is
+# cleared, and each says so.
 remote-clear-cache:
-	@echo "--- Clearing the remote page cache ---"
+	@echo "--- Clearing the page cache in every running container ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		cd $(REMOTE_DOCKER_PATH); \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
-			$(REMOTE_SOCCERTIME_SERVICE) python manage.py shell -c "from django.core.cache import cache; cache.clear()" \
+		set -e; cd $(REMOTE_DOCKER_PATH); \
+		ids=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps -q $(REMOTE_SOCCERTIME_SERVICE)); \
+		[ -n "$$ids" ] || { echo "no containers running"; exit 1; }; \
+		for id in $$ids; do \
+			docker exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $$id \
+				python manage.py shell -c "from django.core.cache import cache; cache.clear()"; \
+			echo "  cleared $$(echo $$id | cut -c1-12)"; \
+		done \
 	'
 	@echo "Page cache cleared."
 
 # Block until the orchestrator reports the service healthy. A failing health check is
 # how the proxy learns to withdraw the route, so an unhealthy container means the site
 # is down even though the application itself may be answering.
+# Every container must be healthy, not "the" container: the old `case` over the status
+# string looked at whatever line matched first, so with two running — mid-relay, or a stuck
+# state — one healthy container declared success while the other was still starting, and a
+# multi-line status made the report itself misleading.
 wait-remote-healthy:
-	@echo "--- Waiting for $(REMOTE_SOCCERTIME_SERVICE) to report healthy ---"
+	@echo "--- Waiting for every $(REMOTE_SOCCERTIME_SERVICE) container to report healthy ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		cd $(REMOTE_DOCKER_PATH); \
 		deadline=$$(( $$(date +%s) + $(HEALTH_TIMEOUT) )); \
 		while :; do \
-			status=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps $(REMOTE_SOCCERTIME_SERVICE) --format "{{.Status}}"); \
-			case "$$status" in \
-				*unhealthy*) echo "  $$status"; exit 1 ;; \
-				*healthy*)   echo "  $$status"; exit 0 ;; \
-			esac; \
-			if [ $$(date +%s) -ge $$deadline ]; then echo "  timed out after $(HEALTH_TIMEOUT)s: $$status"; exit 1; fi; \
+			ids=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps -q $(REMOTE_SOCCERTIME_SERVICE)); \
+			if [ -n "$$ids" ]; then \
+				all_healthy=yes; \
+				for id in $$ids; do \
+					state=$$(docker inspect -f "{{.State.Health.Status}}" $$id 2>/dev/null || echo missing); \
+					case "$$state" in \
+						unhealthy) echo "  $$(echo $$id | cut -c1-12) is unhealthy"; exit 1 ;; \
+						healthy) ;; \
+						*) all_healthy=no ;; \
+					esac; \
+				done; \
+				if [ "$$all_healthy" = yes ]; then \
+					for id in $$ids; do echo "  $$(echo $$id | cut -c1-12) healthy"; done; \
+					exit 0; \
+				fi; \
+			fi; \
+			if [ $$(date +%s) -ge $$deadline ]; then \
+				echo "  timed out after $(HEALTH_TIMEOUT)s; containers: $${ids:-none}"; exit 1; \
+			fi; \
 			sleep 2; \
 		done \
 	'
@@ -517,14 +546,14 @@ remote-smoke-test: wait-remote-healthy
 # are printed rather than counted, because the judgement of whether a 5xx matters is one a
 # person makes, not a grep.
 remote-error-check:
-	@echo "--- Checking for server errors since the container started ---"
+	@echo "--- Checking every container for server errors since it started ---"
 	@errors=$$(ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		cd $(REMOTE_DOCKER_PATH); \
-		id=$$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps -q $(REMOTE_SOCCERTIME_SERVICE) | head -1); \
-		started=$$(docker inspect -f "{{.State.StartedAt}}" $$id 2>/dev/null); \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) logs --no-log-prefix \
-			$${started:+--since $$started} $(REMOTE_SOCCERTIME_SERVICE) \
-			| grep -E "\" $(ERROR_STATUS) " || true \
+		for id in $$(docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) ps -q $(REMOTE_SOCCERTIME_SERVICE)); do \
+			started=$$(docker inspect -f "{{.State.StartedAt}}" $$id 2>/dev/null); \
+			docker logs --since "$$started" $$id 2>&1 \
+				| grep -E "\" $(ERROR_STATUS) " || true; \
+		done \
 	'); \
 	if [ -n "$$errors" ]; then \
 		echo "$$errors" | sed "s/^/  /"; \
