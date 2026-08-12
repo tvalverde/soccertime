@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Responses are compressed now.** Nothing was — not Django, not nginx, not Traefik — so the page sizes in this file were what actually travelled: `/competitions/` sent 338 KB that gzip turns into **28 KB**, `/channels/` 186 into **11**, the agenda 103 into **11**, measured against production data. One middleware, `GZipMiddleware` above `ConditionalGetMiddleware`, and twenty tests around the half that could break: `cached_page` leans on cheap revalidation, and a browser that got a compressed page must still get its empty 304 back — pinned, along with distinct validators for the compressed and plain bodies, so a proxy can never answer one with the other's. BREACH does not apply here: cached pages carry no secret and render no token, and the pages that do are not cached. Clients that do not ask for gzip get the bytes they always got.
+
+### Removed
+- The `[project]` table in `pyproject.toml`, whose `version = "0.3.0"` sat four releases behind the tags because nothing kept it honest and nothing read it: the application is never installed as a package, and ruff and mypy carry their Python version in their own sections. The version lives in `CHANGELOG.md` and the git tag, the two places the release ritual actually touches.
+
 ## [0.7.0] - 2026-08-13
 
 The landing page stops being one person's agenda. Each visitor picks their own favourites

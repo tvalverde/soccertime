@@ -67,21 +67,13 @@ the last, which is a different kind of thing and says so.
   layout, and no `manifest` and no `apple-touch-icon`. Nobody can add it to a home screen,
   which is precisely how something like this gets used: open, check what is on, close.
 
-- [ ] **The big pages are heavy for a phone.** `/competitions/` sends **331 KB** of HTML and
-  `/channels/` **181 KB**, the latter dumping all 381 links at once. The queries are not the
-  problem — between 1 and 10 per page, which is what the 0.2.1 work bought — so this is purely
-  how much is rendered in one go.
-
-  **Nothing compresses anything**, which was found on 2026-08-12 while sizing the favourites
-  work: not Django, not nginx, not Traefik. So those numbers are what actually goes over the
-  wire, and the markup is repetitive enough that gzip returns **11.5:1** on it — measured on
-  a page rendered from a copy of the production database, 437.1 KB down to 38.1 KB. Adding
-  `django.middleware.gzip.GZipMiddleware` above `ConditionalGetMiddleware` is the whole
-  change. It was written and then set aside when the favourites redesign stopped needing it;
-  the patch and its tests are in the session scratchpad, and the one thing they exist to
-  check is that a browser asking for gzip still gets its 304 — `GZipMiddleware` rewrites the
-  ETag, and `cached_page` is built on cheap revalidation. BREACH does not apply: these pages
-  carry no secret, and the one place with a CSRF token is not cached (see below).
+- [ ] **The big pages are heavy for a phone — the transfer half is done, the rendering half
+  remains.** Responses are gzip-compressed since 2026-08-13: `/competitions/` now travels at
+  **28 KB instead of 338** and `/channels/` at **11 KB instead of 186**, measured against
+  production data, with a test pinning that a browser asking for gzip still gets its empty
+  304 on revalidation. What compression does not fix: `/channels/` still renders all 381
+  links in one page, and a phone still parses the full 338 KB of `/competitions/` markup.
+  That part is purely how much is rendered in one go, and it is what is left of this entry.
 
 - [ ] **Nothing reports the system's own health, and the database is 96% past.** **49,985 past
   events against 2,148 future ones**, with nothing that purges them: unbounded growth of rows

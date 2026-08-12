@@ -60,6 +60,21 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    # Nothing compressed anything before this — not Django, not nginx, not Traefik — so
+    # `/competitions/` really did send its 331 KB. The markup is repetitive and gzip returns
+    # better than eleven to one on it, which is what makes the favourites page affordable now
+    # that it carries the whole window for the browser to filter: 437.1 KB became 38.1 KB,
+    # measured against a copy of the production database.
+    #
+    # Above `ConditionalGetMiddleware`, per Django's documented ordering. Responses travel
+    # outwards through this list in reverse, so the ETag is computed on the page and this
+    # then marks it as standing for the compressed body. A test asserts that a browser
+    # asking for gzip still gets its 304, because `cached_page` is built on that.
+    #
+    # BREACH does not apply: these pages carry no secret to guess at. Anonymous visitors get
+    # no session, the public forms are GET and carry no CSRF token, and the admin — the one
+    # place with either — is switched off in production and never compressed here anyway.
+    "django.middleware.gzip.GZipMiddleware",
     # Turns the revalidation that `cached_page` asks browsers for into a 304 with no
     # body, by attaching an ETag to the response. Without it every revalidation would
     # send the whole page again, which would be worse than the hour of staleness it
