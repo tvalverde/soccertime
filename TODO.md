@@ -14,6 +14,81 @@ The security audit of 2026-08-11 is closed: every finding it raised, from the tw
 ones down to the four Low, was fixed and deployed within the day. The detail is in Done and
 in `CHANGELOG.md`. What is left below is improvements and maintenance, none of it urgent.
 
+### Code review of 2026-08-11/12 (106 commits, reviewed 2026-08-12)
+
+Findings from reviewing every change since `1e70080`, ordered by criticality. Each was
+verified — reproduced in the replica, measured against the data, or proven from the code —
+before being written down; the two worst were both confirmed by demonstration.
+
+- [ ] **HIGH — The deploy relay silently deploys nothing if the container count is not
+  exactly 1.** Demonstrated in the replica with the Makefile's own commands: with two
+  containers left behind (an interrupted deploy, an SSH drop between scale-up and retire),
+  `up -d --no-recreate --scale=2` creates nothing, `new` resolves to the *second old
+  container*, which answers `/healthz/` immediately, the first old one is retired, and the
+  deploy reports success **with the new image never having run**. The zero-container case
+  seeds it: `--scale=2` starts two, none is retired, and every deploy after that hits the
+  two-container case. Fix directions: assert the count is 1 before starting (fail loudly),
+  or select `new` by image id rather than by exclusion, or retire all-but-newest.
+
+- [ ] **HIGH — `upsert_event`'s ±2-day window makes a second fixture of the same pairing
+  impossible to store.** `Match` lookup is (competition, local, visitor); any candidate
+  within ±2 days is treated as the same event and *realigned*, and `get_or_create` only runs
+  when no candidate exists — so an NBA back-to-back, a two-legged tie or a replay between
+  the same clubs within four days collapses into one event whose date follows the latest
+  scrape. The data agrees: **219 same-pairing pairs at ≤2 days exist in rows written before
+  the window landed (2026-08), and zero exist in future events**. The deletion branch
+  (`candidates.exclude(pk).delete()`) even removes one if both were already stored. Needs a
+  tighter identity (kick-off time, round, or a much narrower window) — the window exists to
+  absorb source-side shifts, which are hours, not days.
+
+- [ ] **MEDIUM — Migrations run after the new container is already serving.** The relay
+  starts the new code, waits for health, retires the old, *then* migrates. A deploy carrying
+  a data migration (0037 was exactly this) serves new code against unmigrated data for some
+  seconds, and any page a visitor hits in that window is rendered wrong and **cached for up
+  to an hour** in the fresh container's cache. Either migrate before the swap (old code must
+  tolerate the migrated data — true for additive migrations, was true for 0037's inverse
+  direction only), or clear the cache right after migrating.
+
+- [ ] **MEDIUM — Every remote operation assumes exactly one container.**
+  `remote-error-check` inspects `ps -q | head -1`, `remote-clear-cache` and the migrate step
+  `compose exec` into the default index, and `wait-remote-healthy` runs `case` over what
+  becomes a two-line status. In the stuck two-container state they silently check, clear or
+  migrate only one of the two. Same root cause as the first finding; fixing that one should
+  fix these, but each is worth a guard.
+
+- [ ] **MEDIUM — DNS rebinding gets through the image downloader's address check.**
+  `_reject_unroutable_host` resolves the name and vets every address, then `requests.get`
+  resolves it *again* — a host whose DNS answers public on the first lookup and private on
+  the second passes the check and the fetch connects inside the perimeter. Classic TOCTOU;
+  the fix is to connect to the vetted IP (pin it via a custom adapter or resolve-and-replace
+  in the URL with a Host header) rather than let requests resolve twice.
+
+- [ ] **LOW — The `env` template filter is now dead code.** Its last caller went with the
+  `DJANGO_DEBUG` branch in `channels_list.html`, so a security-sensitive surface (an
+  allowlisted environment reader reachable from any template) survives with no users.
+  Delete it, and `ENV_ALLOWLIST` with it.
+
+- [ ] **LOW — The Traefik probe writes ~170k access-log lines a day.** One line per second
+  per server in uvicorn's log, on top of the container health check. The json-file driver
+  rotates at 10 MB×3, so real errors get pushed out of `docker logs` noticeably sooner, and
+  `remote-error-check` scans a log that is mostly probe noise. Uvicorn can exclude paths
+  from access logging, or the probe could hit a lighter target.
+
+- [ ] **LOW — `PROXY_SETTLE_SECONDS=5` is silently coupled to `healthcheck.interval=1s`.**
+  The five-second wait is five probe intervals; raise the interval without raising the wait
+  and the 404 window reopens with nothing pointing at why. A comment ties them; a derived
+  value or a shared variable would tie them properly.
+
+- [ ] **LOW — `collectstatic` accumulates forever.** Hashed filenames mean every deploy adds
+  files and nothing prunes superseded ones — the static volume only grows. Harmless for
+  years at this size, but `collectstatic --clear` cannot be used naively either: the old
+  container's manifest is in memory but its files must survive until it is retired. Prune
+  after the swap instead.
+
+- [ ] **LOW — Four view signatures still say `team: str` while the URLs now deliver `int`.**
+  Cosmetic lie left over from the `<str:>`→`<int:>` fix; mypy passes because the value is
+  only forwarded, but the annotation misdescribes the contract.
+
 ### Improvements
 
 Ordered by the utility each would add, judged against the site and its data on 2026-08-11.
