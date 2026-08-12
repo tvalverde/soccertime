@@ -62,6 +62,27 @@ class Event:
     channels: list[str] = field(default_factory=list)
 
 
+@dataclass
+class ScrapeUnit:
+    """One fetched page, and the scope of the world it claims to describe.
+
+    Reconciliation needs to know not just what a scrape listed but what it *covered*: a
+    stored event inside the covered scope that was not listed is what a move or a
+    cancellation looks like. A unit declares that scope — a sport's whole agenda, or one
+    team's fixtures — or declares none, in which case its events are stored and stamped but
+    nothing is ever pruned on its account.
+
+    `complete=False` marks a page that died mid-parse: its events are still stored, but a
+    partial view must not be allowed to judge what is missing.
+    """
+
+    events: list[Event]
+    sport: str | None = None
+    team_slug: str | None = None
+    complete: bool = True
+    label: str = ""
+
+
 class EventSource(ABC):
     """
     Abstract base class for event sources.
@@ -103,6 +124,16 @@ class EventSource(ABC):
         """
         pass
 
+
+
+    def iter_units(self) -> Iterator[ScrapeUnit]:
+        """The source's pages, each with its declared scope.
+
+        The default wraps `get_events` in a single unit with no scope at all, which is the
+        conservative reading for a source that has not said what its listing covers: its
+        events are stored, nothing is ever pruned because of it.
+        """
+        yield ScrapeUnit(events=list(self.get_events()), label=self.name)
 
 # Registry of available event sources
 _sources: dict[str, type[EventSource]] = {}

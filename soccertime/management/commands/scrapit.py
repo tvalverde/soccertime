@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from django.core.cache import cache
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Q
 from django.utils import timezone
 
 from soccertime.models import (
@@ -16,6 +17,9 @@ from soccertime.models import (
     SimpleEvent,
     Sport,
     Team,
+)
+from soccertime.models import (
+    Event as StoredEvent,
 )
 
 from ._image_download import download_image
@@ -31,14 +35,16 @@ from .scraping.base import (
     EventSource,
     MatchDetails,
     RaceDetails,
+    ScrapeUnit,
     get_available_sources,
     get_source,
     list_source_names,
 )
 
-# Sources shift an announced event by hours or a day; within this window it is the same
-# event rather than a new one.
-DUPLICATE_WINDOW_DAYS = 2
+# Consecutive successful scrapes that must miss an event before a cancellation is the only
+# reading left. Two: one miss is indistinguishable from the source omitting a row, and with
+# the hour-long page cache a wrongly pruned event would flicker visibly.
+MISSES_BEFORE_REMOVAL = 2
 
 # The clock the sources print. Their times are naive strings off a Spanish listings page, so
 # this is the only place that knows what they mean.
@@ -180,13 +186,116 @@ class Command(BaseCommand):
         return channel
 
     def process_source(self, source: EventSource) -> None:
-        """Process events from a single source."""
+        """Process events unit by unit, reconciling each unit against what it covered."""
         event_count = 0
-        for agenda_event in source.get_events():
-            self.process_event(agenda_event)
-            event_count += 1
+        # Events seen by any earlier unit of this run. A football match appears on both the
+        # sport agenda and a team page; a unit must not count as missing what another unit
+        # of the same run has already listed.
+        self._run_seen_pks: set[int] = set()
+        for unit in source.iter_units():
+            seen: list[tuple[Any, bool]] = []
+            for agenda_event in unit.events:
+                saved = self.process_event(agenda_event)
+                if saved is not None:
+                    seen.append(saved)
+                event_count += 1
+            if not self.dry_run:
+                self.reconcile_unit(unit, seen)
         if self.dry_run:
             self.stdout.write(f"  Total events: {event_count}")
+
+    def reconcile_unit(self, unit: ScrapeUnit, seen: list[tuple[Any, bool]]) -> None:
+        """Prune what the unit covered and did not list, with the caution each case earns.
+
+        The rule, decided over the real data: a move brings its replacement in the same
+        scrape, so a pairing whose listed count reaches what was already stored has its
+        unlisted rows pruned at once; anything short of that is an omission or a
+        cancellation, indistinguishable today, so it takes two consecutive misses — counted
+        in successful scrapes, not hours, so the rule keeps its meaning if the scrape
+        frequency changes. A doubleheader lists both rows and is never touched, which is
+        the whole point of replacing the ±2-day window.
+        """
+        now = timezone.now()
+        seen_pks = [event.pk for event, _ in seen]
+        if seen_pks:
+            StoredEvent.objects.filter(pk__in=seen_pks).update(last_seen_at=now, missing_scrapes=0)
+        self._run_seen_pks.update(seen_pks)
+
+        # No scope, an empty page or a parse that died halfway: a partial or undeclared
+        # view of the world must not judge what is missing from it.
+        if not unit.complete or not seen or not (unit.sport or unit.team_slug):
+            return
+
+        if unit.team_slug:
+            scope = StoredEvent.objects.filter(
+                Q(match__local__futbolenlatv_slug=unit.team_slug)
+                | Q(match__visitor__futbolenlatv_slug=unit.team_slug)
+            )
+        else:
+            scope = StoredEvent.objects.filter(competition__sport__name=unit.sport)
+
+        seen_dates = [timezone.localdate(event.date) for event, _ in seen]
+        candidates = list(
+            scope.filter(
+                date__gte=now,
+                date__date__gte=min(seen_dates),
+                date__date__lte=max(seen_dates),
+            )
+            .exclude(pk__in=self._run_seen_pks)
+            .select_related("match", "race", "simpleevent")
+        )
+        if not candidates:
+            return
+
+        def group_key(child: Any) -> tuple:
+            # Deliberately without the concrete type for name-based events: the same stage
+            # has been stored as a Race by one vintage of the parser and a SimpleEvent by
+            # another, and the pairing is the identity, not the Python class it landed in.
+            if isinstance(child, Match):
+                return ("match", child.competition_id, child.local_id, child.visitor_id)
+            return ("byname", child.competition_id, child.name)
+
+        seen_total: dict[tuple, int] = {}
+        stored_before: dict[tuple, int] = {}
+        seen_slots: set[tuple] = set()
+        for event, created in seen:
+            key = group_key(event)
+            seen_total[key] = seen_total.get(key, 0) + 1
+            seen_slots.add((key, event.date))
+            if not created:
+                stored_before[key] = stored_before.get(key, 0) + 1
+
+        superseded, first_miss, removed = 0, 0, 0
+        for candidate in candidates:
+            child = candidate.child_event
+            if child is None:
+                continue
+            key = group_key(child)
+            # An unseen row whose exact slot — group and instant — a seen row occupies is a
+            # duplicate by definition, whatever the counts say: the legacy twins this heals
+            # differ only in detail text or concrete type.
+            if (key, candidate.date) in seen_slots:
+                candidate.delete()
+                superseded += 1
+                continue
+            stored = stored_before.get(key, 0) + 1  # the unseen candidate itself
+            if seen_total.get(key, 0) >= stored:
+                candidate.delete()
+                superseded += 1
+            elif candidate.missing_scrapes + 1 >= MISSES_BEFORE_REMOVAL:
+                candidate.delete()
+                removed += 1
+            else:
+                StoredEvent.objects.filter(pk=candidate.pk).update(
+                    missing_scrapes=candidate.missing_scrapes + 1
+                )
+                first_miss += 1
+        if superseded or first_miss or removed:
+            label = unit.label or unit.sport or unit.team_slug or "unit"
+            self.stdout.write(
+                f"  [{label}] Reconciled: superseded={superseded}, "
+                f"first_miss={first_miss}, removed_after_{MISSES_BEFORE_REMOVAL}_misses={removed}"
+            )
 
     def display_event(self, event: Event) -> None:
         """Display an event without saving it (for dry-run mode)."""
@@ -207,12 +316,12 @@ class Command(BaseCommand):
             f"{event_desc} | Channels: {channels}"
         )
 
-    def process_event(self, agenda_event: Event) -> None:
-        """Process a single event."""
+    def process_event(self, agenda_event: Event) -> tuple[Any, bool] | None:
+        """Process a single event, returning the stored row and whether it was created."""
         # In dry-run mode, just display the event
         if self.dry_run:
             self.display_event(agenda_event)
-            return
+            return None
 
         sport = self.get_or_create_sport(agenda_event.sport)
         flag = self.get_or_create_flag(agenda_event.competition_crest)
@@ -227,20 +336,22 @@ class Command(BaseCommand):
         event_datetime = timezone.make_aware(agenda_event.datetime, timezone=SPANISH_SCREEN_TIME)
 
         event: Match | Race | SimpleEvent
+        created: bool
         if isinstance(agenda_event.details, MatchDetails):
-            event = self.save_match_event(competition, event_datetime, agenda_event.details)
+            event, created = self.save_match_event(competition, event_datetime, agenda_event.details)
         elif isinstance(agenda_event.details, RaceDetails):
-            event = self.save_race_event(competition, event_datetime, agenda_event.details)
+            event, created = self.save_race_event(competition, event_datetime, agenda_event.details)
         elif isinstance(agenda_event.details, EventDetails):
-            event = self.save_simple_event(competition, event_datetime, agenda_event.details)
+            event, created = self.save_simple_event(competition, event_datetime, agenda_event.details)
         else:
             self.stderr.write(f"Unhandled event type: {agenda_event}")
-            return
+            return None
 
         if not event:
-            return
+            return None
 
         self.update_channels(event, agenda_event.channels)
+        return event, created
 
     def get_or_create_flag(self, flag_url: str | None) -> Flag | None:
         """Get or create a flag from URL."""
@@ -278,31 +389,29 @@ class Command(BaseCommand):
         lookup: dict[str, Any],
         event_datetime: datetime.datetime,
         defaults: dict[str, Any] | None = None,
-    ) -> Any:
-        """Find the event around this datetime and realign it, or create it.
+    ) -> tuple[Any, bool]:
+        """Store the event under its exact identity: the lookup plus its datetime.
 
-        Sources shift a fixed event by a few hours or a day rather than announcing a new
-        one, so a match within a two-day window counts as the same event. Where a shift
-        has already produced duplicates, the most recently updated row wins and the rest
-        are removed.
+        Deliberately no window. The previous version treated anything of the same pairing
+        within ±2 days as the same event, which made a second fixture of the same pairing —
+        an ACB doubleheader on the same court, an NBA back-to-back — impossible to store:
+        219 such pairs exist in rows written before that window landed, none after it. And
+        no smaller window is safe either: 99 of those 219 pairs sit under three hours
+        apart. Closeness cannot distinguish a duplicate from two real games; only the
+        source's current listing can, which is `reconcile_unit`'s job.
+
+        Returns the event and whether it was created, which reconciliation needs: a moved
+        fixture is one freshly created row plus one stored row nobody listed.
         """
-        window = (
-            event_datetime - datetime.timedelta(days=DUPLICATE_WINDOW_DAYS),
-            event_datetime + datetime.timedelta(days=DUPLICATE_WINDOW_DAYS),
-        )
-        candidates = model.objects.filter(**lookup, date__range=window)
-        event = candidates.order_by("-last_updated_at").first()
-
+        # Not `get_or_create`: the legacy duplicates this identity change heals — rows that
+        # differ only in the detail text — still share a (lookup, datetime) slot, and
+        # `get_or_create` raises on multiple matches. The freshest row wins; reconciliation
+        # removes the others as unseen occupants of a seen slot.
+        event = model.objects.filter(**lookup, date=event_datetime).order_by("-last_updated_at").first()
         if event is None:
-            event, _ = model.objects.get_or_create(**lookup, date=event_datetime, defaults=defaults or {})
-            return event
-
-        candidates.exclude(pk=event.pk).delete()
+            return model.objects.create(**lookup, date=event_datetime, **(defaults or {})), True
 
         changed = []
-        if event.date != event_datetime:
-            event.date = event_datetime
-            changed.append("date")
         for field, value in (defaults or {}).items():
             if getattr(event, field) != value:
                 setattr(event, field, value)
@@ -310,29 +419,34 @@ class Command(BaseCommand):
         if changed:
             event.save(update_fields=[*changed, "last_updated_at"])
 
-        return event
+        return event, False
 
     def save_simple_event(
         self, competition: Competition, event_datetime: datetime.datetime, details: EventDetails
-    ) -> SimpleEvent:
+    ) -> tuple[SimpleEvent, bool]:
+        # `details` is the phase text ("Liga Regular", "1ª Ronda") and the source rephrases
+        # it. Inside the lookup it was part of the identity, so every rephrasing created a
+        # duplicate row: 234 of them existed in production when this moved to `defaults`.
         return self.upsert_event(
             SimpleEvent,
-            {"competition": competition, "name": details.name, "details": details.details},
+            {"competition": competition, "name": details.name},
             event_datetime,
+            defaults={"details": details.details},
         )
 
     def save_race_event(
         self, competition: Competition, event_datetime: datetime.datetime, details: RaceDetails
-    ) -> Race:
+    ) -> tuple[Race, bool]:
         return self.upsert_event(
             Race,
-            {"competition": competition, "name": details.name, "details": details.details},
+            {"competition": competition, "name": details.name},
             event_datetime,
+            defaults={"details": details.details},
         )
 
     def save_match_event(
         self, competition: Competition, event_datetime: datetime.datetime, details: MatchDetails
-    ) -> Match:
+    ) -> tuple[Match, bool]:
         local = self.get_or_create_team(details.local)
         visitor = self.get_or_create_team(details.visitor)
 

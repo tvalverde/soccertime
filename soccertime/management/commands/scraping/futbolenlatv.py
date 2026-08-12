@@ -19,6 +19,7 @@ from .base import (
     EventSource,
     MatchDetails,
     RaceDetails,
+    ScrapeUnit,
     register_source,
 )
 
@@ -405,6 +406,73 @@ def get_favorite_team_slugs() -> list[str]:
     return [slug for slug in slugs if slug]
 
 
+def iter_units() -> Iterator[ScrapeUnit]:
+    """Each page as a unit with its declared scope, which is what reconciliation runs on.
+
+    A sport agenda page covers that sport for the days it showed; a team page covers that
+    team's fixtures. A page that raises mid-parse still hands over what it yielded, but
+    marked incomplete: a partial view stores events and judges nothing.
+    """
+    _configure_cache()
+    session = create_session()
+    total_stats = ScrapingStats()
+
+    for info in EVENTS_PAGES:
+        url = info["url"]
+        sport = info["sport"]
+        page_stats = ScrapingStats()
+        events: list[Event] = []
+        complete = True
+        try:
+            response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, "lxml")
+            events = list(parse_iter(soup, sport, url, page_stats))
+            total_stats.add(page_stats)
+            logger.info(f"[{sport}] Completed: {page_stats}")
+        except requests.exceptions.Timeout:
+            logger.error(f"[{sport}] Timeout fetching URL {url} after {REQUEST_TIMEOUT}s")
+            total_stats.errors += 1
+            complete = False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[{sport}] Network/HTTP error fetching {url}: {type(e).__name__}: {e}")
+            total_stats.errors += 1
+            complete = False
+        except Exception as e:
+            logger.critical(f"[{sport}] Unexpected error for {url}: {type(e).__name__}: {e}")
+            total_stats.errors += 1
+            complete = False
+        yield ScrapeUnit(events=events, sport=sport, complete=complete, label=sport)
+
+    for slug in get_favorite_team_slugs():
+        url = f"{TEAM_PAGE_BASE_URL}{slug}"
+        page_stats = ScrapingStats()
+        events = []
+        complete = True
+        try:
+            response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, "lxml")
+            events = list(parse_iter(soup, TEAM_PAGE_SPORT, url, page_stats))
+            total_stats.add(page_stats)
+            logger.info(f"[Team: {slug}] Completed: {page_stats}")
+        except requests.exceptions.Timeout:
+            logger.error(f"[Team: {slug}] Timeout fetching URL {url} after {REQUEST_TIMEOUT}s")
+            total_stats.errors += 1
+            complete = False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[Team: {slug}] Network/HTTP error fetching {url}: {type(e).__name__}: {e}")
+            total_stats.errors += 1
+            complete = False
+        except Exception as e:
+            logger.critical(f"[Team: {slug}] Unexpected error for {url}: {type(e).__name__}: {e}")
+            total_stats.errors += 1
+            complete = False
+        yield ScrapeUnit(events=events, team_slug=slug, complete=complete, label=f"Team: {slug}")
+
+    logger.info(f"Scraping complete. Total: {total_stats}")
+
+
 def get_events() -> Iterator[Event]:
     """Fetch and parse events from all configured pages."""
     _configure_cache()
@@ -494,3 +562,7 @@ class FutbolEnLaTVSource(EventSource):
     def get_events(self) -> Iterator[Event]:
         """Fetch and parse events from futbolenlatv.es."""
         return get_events()
+
+    def iter_units(self) -> Iterator[ScrapeUnit]:
+        """Pages with their scopes, which is what lets reconciliation prune safely."""
+        return iter_units()

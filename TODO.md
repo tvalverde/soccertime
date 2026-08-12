@@ -20,25 +20,6 @@ Findings from reviewing every change since `1e70080`, ordered by criticality. Ea
 verified — reproduced in the replica, measured against the data, or proven from the code —
 before being written down; the two worst were both confirmed by demonstration.
 
-- [ ] **HIGH — `upsert_event`'s ±2-day window makes a second fixture of the same pairing
-  impossible to store.** `Match` lookup is (competition, local, visitor); any candidate
-  within ±2 days is treated as the same event and *realigned*, and `get_or_create` only runs
-  when no candidate exists — so an NBA back-to-back, a two-legged tie or a replay between
-  the same clubs within four days collapses into one event whose date follows the latest
-  scrape. The data agrees: **219 same-pairing pairs at ≤2 days exist in rows written before
-  the window landed (2026-08), and zero exist in future events**. The deletion branch
-  (`candidates.exclude(pk).delete()`) even removes one if both were already stored. Needs a
-  tighter identity (kick-off time, round, or a much narrower window) — the window exists to
-  absorb source-side shifts, which are hours, not days.
-
-- [ ] **MEDIUM — Migrations run after the new container is already serving.** The relay
-  starts the new code, waits for health, retires the old, *then* migrates. A deploy carrying
-  a data migration (0037 was exactly this) serves new code against unmigrated data for some
-  seconds, and any page a visitor hits in that window is rendered wrong and **cached for up
-  to an hour** in the fresh container's cache. Either migrate before the swap (old code must
-  tolerate the migrated data — true for additive migrations, was true for 0037's inverse
-  direction only), or clear the cache right after migrating.
-
 - [ ] **MEDIUM — DNS rebinding gets through the image downloader's address check.**
   `_reject_unroutable_host` resolves the name and vets every address, then `requests.get`
   resolves it *again* — a host whose DNS answers public on the first lookup and private on
@@ -281,6 +262,14 @@ the git history. Kept here as an index of what has been through this file.
   declare a build — both of them do — and not `--ignore-pull-failures`, which would also hide
   a real registry outage. Verified against the server: exit 0, both images skipped, the other
   four pulled.
+- **The upsert window merged real fixtures, and the phase text duplicated them**
+  (2026-08-12) — identity is exact now and date changes are observed per scrape unit:
+  superseded rows pruned in the same scrape, ambiguous ones after two consecutive misses.
+  The first real run against production data caught the second bug on its own: `details`
+  sat inside race identity, and 234 same-slot twin rows existed. Healed by rule and by a
+  one-shot migration. Migrations also moved before the deploy handover, closing the
+  500-window a column-adding release would have opened — additive-first is now the stated
+  discipline.
 - **The remote targets assumed one container** (2026-08-12) — `remote-clear-cache` and
   `remote-scrape` cleared one container's per-tmpfs page cache and left the other serving
   stale pages; `remote-error-check` scanned one log; `wait-remote-healthy` declared success

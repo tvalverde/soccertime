@@ -19,6 +19,7 @@ from soccertime.management.commands.scraping.base import (
     EventDetails,
     MatchDetails,
     RaceDetails,
+    ScrapeUnit,
     get_available_sources,
     list_source_names,
 )
@@ -214,9 +215,16 @@ class TestScrapitCommandProcessing:
         assert match.channels.filter(name="Test Channel").exists()
 
     def test_race_event_no_duplication_on_date_shift(self, db, mock_race_event):
-        """Should update existing race event date when only the time shifts slightly."""
-        with patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get:
-            mock_get.return_value = iter([mock_race_event])
+        """A shifted race is replaced, not duplicated — by reconciliation, not by a window.
+
+        The old ±2-day window did this by fuzzy identity, which also made a second fixture
+        of the same pairing impossible to store. Now the shift is observed: the unit that
+        covers the race lists it at the new time only, so the old row is superseded within
+        the same scrape. The unit needs a scope for that, which is what `iter_units`
+        declares and a bare `get_events` does not.
+        """
+        with patch("soccertime.management.commands.scraping.example.ExampleSource.iter_units") as mock_units:
+            mock_units.return_value = iter([ScrapeUnit(events=[mock_race_event], sport=mock_race_event.sport)])
             call_command("scrapit", "--source=example", "--include-disabled")
 
         assert Race.objects.count() == 1
@@ -225,8 +233,8 @@ class TestScrapitCommandProcessing:
         shifted_event = mock_race_event
         shifted_event.datetime = shifted_event.datetime + datetime.timedelta(minutes=5)
 
-        with patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get:
-            mock_get.return_value = iter([shifted_event])
+        with patch("soccertime.management.commands.scraping.example.ExampleSource.iter_units") as mock_units:
+            mock_units.return_value = iter([ScrapeUnit(events=[shifted_event], sport=shifted_event.sport)])
             call_command("scrapit", "--source=example", "--include-disabled")
 
         assert Race.objects.count() == 1
@@ -259,8 +267,8 @@ class TestScrapitCommandProcessing:
 
     def test_simple_event_no_duplication_on_date_shift(self, db, mock_simple_event):
         """Should update existing simple event date when only the time shifts slightly."""
-        with patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get:
-            mock_get.return_value = iter([mock_simple_event])
+        with patch("soccertime.management.commands.scraping.example.ExampleSource.iter_units") as mock_units:
+            mock_units.return_value = iter([ScrapeUnit(events=[mock_simple_event], sport=mock_simple_event.sport)])
             call_command("scrapit", "--source=example", "--include-disabled")
 
         assert SimpleEvent.objects.count() == 1
@@ -269,8 +277,8 @@ class TestScrapitCommandProcessing:
         shifted_event = mock_simple_event
         shifted_event.datetime = shifted_event.datetime + datetime.timedelta(minutes=5)
 
-        with patch("soccertime.management.commands.scraping.example.ExampleSource.get_events") as mock_get:
-            mock_get.return_value = iter([shifted_event])
+        with patch("soccertime.management.commands.scraping.example.ExampleSource.iter_units") as mock_units:
+            mock_units.return_value = iter([ScrapeUnit(events=[shifted_event], sport=shifted_event.sport)])
             call_command("scrapit", "--source=example", "--include-disabled")
 
         assert SimpleEvent.objects.count() == 1

@@ -243,6 +243,14 @@ upload_files:
 # `SILENCED_SYSTEM_CHECKS` rather than ignored here.
 #
 # `collectstatic` runs there too, not
+# Migrations run BEFORE the handover, in a throwaway container running the new code, while
+# the previous container is still serving. The old code must therefore tolerate the migrated
+# schema — which additive migrations satisfy by construction, since Django only selects the
+# columns a model declares. The order used to be the reverse, and the day a migration added
+# columns the new code reads, every page the new container served before `migrate` finished
+# would have answered 500 — caught by the deploy's own error gate, but caught is not avoided.
+# The discipline this buys: destructive migrations need a two-release path (stop reading
+# first, drop later), which is the standard additive-first rule.
 # through `exec` afterwards. Static filenames carry a content hash, and the manifest that
 # maps plain names to hashed ones is read once, the first time a template renders a
 # `{% static %}` tag. Collecting afterwards meant the new process could read a manifest
@@ -273,6 +281,10 @@ remote_deploy:
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) run --rm --no-deps \
 			-u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) \
 			python manage.py collectstatic --noinput && \
+		echo "--- Applying database migrations, before the new code serves ---" && \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) run --rm --no-deps \
+			-u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) \
+			python manage.py migrate --noinput && \
 		echo "--- Preparation done; the relay script takes it from here ---" \
 	'
 	@echo "--- Handing the service over to the new image ---"
@@ -282,14 +294,6 @@ remote_deploy:
 		HEALTH_TIMEOUT=$(HEALTH_TIMEOUT) PROXY_SETTLE_SECONDS=$(PROXY_SETTLE_SECONDS) \
 		sh -s $(REMOTE_SOCCERTIME_SERVICE) $(APP_NAME):latest \
 	' < scripts/relay.sh
-	@echo "--- Applying database migrations ---"
-	@# `exec` into "the" container is safe here and only here: the relay's post-condition
-	@# has just asserted there is exactly one. The database is shared state, so once is
-	@# also the right number of times.
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		cd $(REMOTE_DOCKER_PATH) && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) $(REMOTE_SOCCERTIME_SERVICE) python manage.py migrate --noinput \
-	'
 
 # Target to clean up local temporary archive after upload
 clean_local_archive:

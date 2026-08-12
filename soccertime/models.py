@@ -591,6 +591,13 @@ class Event(models.Model):
     )
     channels = models.ManyToManyField(Channel, related_name="events")
     last_updated_at = models.DateTimeField(auto_now=True)
+    # Bookkeeping for the scraper's presence reconciliation. `last_seen_at` is when a scrape
+    # last listed this event; `missing_scrapes` counts consecutive successful scrapes whose
+    # covered scope included it and did not — at two, a cancellation is the only reading
+    # left and the row is removed. Counted in scrapes rather than hours on purpose, so the
+    # rule does not change meaning when the scrape frequency does.
+    last_seen_at = models.DateTimeField(null=True, blank=True, editable=False)
+    missing_scrapes = models.PositiveSmallIntegerField(default=0, editable=False)
 
     objects = EventQuerySet.as_manager()
 
