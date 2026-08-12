@@ -348,6 +348,72 @@ class TestTheStarIsTheOnlyWriteThisSiteAccepts:
 
 
 @pytest.mark.django_db
+class TestTheStarSurvivesTheProxy:
+    """The one path local development cannot exercise by accident, and the site's first write.
+
+    Development is plain HTTP, where Django skips the origin check on a POST entirely.
+    Production terminates TLS at Traefik and forwards the scheme in a header, and there
+    Django compares the browser's `Origin` against the site's own — so a missing
+    `CSRF_TRUSTED_ORIGINS`, or `SECURE_PROXY_SSL_HEADER` left unset, turns every star press
+    into a 403 that nothing here would have shown. Two outages in this project came from
+    exactly this shape: something the proxy adds, or does not, that local never sees.
+
+    The settings below are what `.env.production` carries. That file is unversioned, so this
+    is a copy rather than the source; what the tests state is what the deployment must satisfy.
+    """
+
+    @pytest.fixture(autouse=True)
+    def behind_the_proxy(self, settings):
+        settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+        settings.CSRF_TRUSTED_ORIGINS = ["https://www.mojon.es"]
+        # `testserver` is the test client's own default host, kept so a case in this class
+        # can use the plain helper; the cases about the proxy name the real host themselves.
+        settings.ALLOWED_HOSTS = ["www.mojon.es", "localhost", "testserver"]
+        settings.USE_X_FORWARDED_HOST = True
+
+    @staticmethod
+    def as_the_proxy_sends_it(extra=None):
+        return {"host": "www.mojon.es", "x-forwarded-proto": "https", **(extra or {})}
+
+    def test_a_star_pressed_over_https_is_accepted(self, match, team_home):
+        browser = Client(enforce_csrf_checks=True)
+        page = browser.get(reverse("team-events", args=[team_home.pk]), headers=self.as_the_proxy_sends_it())
+        token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', page.content.decode()).group(1)
+
+        response = browser.post(
+            reverse("toggle-favorite-team", args=[team_home.pk]),
+            {"csrfmiddlewaretoken": token},
+            headers=self.as_the_proxy_sends_it({"origin": "https://www.mojon.es"}),
+        )
+
+        assert response.status_code == 302
+
+    def test_and_one_pressed_from_another_site_is_not(self, match, team_home):
+        """The half the origin check exists for."""
+        browser = Client(enforce_csrf_checks=True)
+        page = browser.get(reverse("team-events", args=[team_home.pk]), headers=self.as_the_proxy_sends_it())
+        token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', page.content.decode()).group(1)
+
+        response = browser.post(
+            reverse("toggle-favorite-team", args=[team_home.pk]),
+            {"csrfmiddlewaretoken": token},
+            headers=self.as_the_proxy_sends_it({"origin": "https://evil.example"}),
+        )
+
+        assert response.status_code == 403
+
+    def test_the_cookie_it_sets_is_scoped_to_this_application(self, match, team_home, settings):
+        """`.env.production` puts the site under `/soccertime`, and the cookie has to follow
+        it: at `/` it would be sent to every sibling application on the same host."""
+        settings.SESSION_COOKIE_PATH = "/soccertime/"
+        browser = Client()
+
+        star(browser, "team", team_home)
+
+        assert browser.cookies[COOKIE_NAME]["path"] == "/soccertime/"
+
+
+@pytest.mark.django_db
 class TestACookieNobodyCanForge:
     def test_a_tampered_cookie_is_ignored(self, visitor, match, other_match, favorite_team):
         """It is signed with the site's secret, so an edited one reads as no selection at all
