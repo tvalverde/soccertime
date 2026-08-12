@@ -656,11 +656,15 @@ replica-migrate:
 # outage for the images that matter. This project's own service additionally sets
 # `pull_policy: never`, so a bare `pull` no longer trips over it; the flag is what covers the
 # neighbouring stack the host includes and this repository does not own.
+# `make remote-pull PULL_FLAGS=` runs the bare command, which is how to check whether the
+# services still need the flag or now declare `pull_policy: never` for themselves.
+PULL_FLAGS ?= --ignore-buildable
+
 remote-pull:
-	@echo "--- Pulling the images the host fetches, skipping the ones it builds ---"
+	@echo "--- Pulling the images the host fetches $(if $(PULL_FLAGS),(with $(PULL_FLAGS)),(no flags)) ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		cd $(REMOTE_DOCKER_PATH); \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) pull --ignore-buildable \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) pull $(PULL_FLAGS) \
 	'
 
 # What is actually running out there, containers and images. Read-only, and here rather than

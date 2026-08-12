@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `make remote-pull` refreshes the host's images with `--ignore-buildable`, which skips exactly the services declaring a `build:` — this project's and the neighbouring stack's `frankenshop`, the other half of the same failure and a file this repository does not own. Deliberately not `--ignore-pull-failures`, which would also swallow a real registry outage for the images that matter. Verified against the server: exit 0, both built images skipped, the other four pulled.
+- `make remote-pull PULL_FLAGS=` runs the bare command, which is what proves whether the flag is still doing the work or the services now declare `pull_policy: never` themselves. With both halves declaring it — the neighbouring stack's was on `if_not_present`, compose's default under its old name — a plain `docker compose pull` on the host exits 0 with no denial at all: the two built images skipped, the four remote ones fetched.
 - `make remote-ps` now reports the compose version and which services would have to be built rather than pulled, which is how both halves of the above were identified.
 
 
