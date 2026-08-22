@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Open Graph and Twitter Card metadata** across all views, enabling rich previews with title, description, and preview cards when links are shared in WhatsApp, Telegram, or other messaging apps.
 - **PWA and mobile home screen installation support**, including `manifest.json`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, and mobile web app meta tags (`theme-color`, `apple-mobile-web-app-capable`).
 - **Strict search engine anti-indexing protection**, with `/robots.txt` disallowing all crawlers and `<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">` in HTML headers.
+- **`purge_old_events` management command** to purge historical events older than a configurable retention threshold (`--days`, default 90), with `--dry-run` and `--before-date` options, cascaded to child event models.
+- **Scraper health monitoring** in `scrapit` to report total active future events and warn if the upcoming agenda drops to 0.
+- **End-to-end ordering regression tests** in `test_views.py` ensuring landing page and agenda strictly preserve chronological sorting and tie-breaking hierarchy.
 
 ### Removed
 - `TODO.md` tracked file from repository version control and added it to `.gitignore`.

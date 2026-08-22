@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -345,6 +345,25 @@ remote-scrape:
 		echo "Remote scrape and cache clear completed successfully." \
 	'
 	@$(MAKE) --no-print-directory remote-clear-cache
+
+# Target to purge historical events locally (default: 90 days)
+# Usage: make purge-old-events [DAYS=90] [ARGS=--dry-run]
+PURGE_DAYS ?= 90
+
+purge-old-events:
+	@echo "--- Purging historical events older than $(PURGE_DAYS) days ---"
+	docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web python manage.py purge_old_events --days=$(PURGE_DAYS) $(ARGS)
+
+# Target to purge historical events on the remote production server
+# Usage: make remote-purge-old-events [DAYS=90] [ARGS=--dry-run]
+remote-purge-old-events:
+	@echo "--- Purging historical events on production older than $(PURGE_DAYS) days ---"
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		set -e; \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+			$(REMOTE_SOCCERTIME_SERVICE) python manage.py purge_old_events --days=$(PURGE_DAYS) $(ARGS); \
+	'
 
 # === Data Management (Docker volumes in production) ===
 

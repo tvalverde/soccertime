@@ -76,6 +76,17 @@ class Command(BaseCommand):
             action="store_true",
             help="Include disabled sources when using --source=all or --list-sources",
         )
+        parser.add_argument(
+            "--auto-purge",
+            action="store_true",
+            help="Automatically purge old historical events after scraping",
+        )
+        parser.add_argument(
+            "--purge-days",
+            type=int,
+            default=90,
+            help="Days of history to retain when --auto-purge is used (default: 90)",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         self.dry_run = options["dry_run"]
@@ -126,7 +137,23 @@ class Command(BaseCommand):
             self.process_source(source)
 
         if not self.dry_run:
+            if options.get("auto_purge"):
+                purge_days = options.get("purge_days", 90)
+                cutoff = timezone.now() - datetime.timedelta(days=purge_days)
+                purged_count, _ = StoredEvent.objects.filter(date__lt=cutoff).delete()
+                if purged_count > 0:
+                    self.stdout.write(f"Auto-purged {purged_count} historical records older than {purge_days} days.")
+
             cache.clear()
+            future_events_count = StoredEvent.objects.in_progress_or_upcoming().count()
+            self.stdout.write(f"Active upcoming events in database: {future_events_count}")
+            if future_events_count == 0:
+                self.stdout.write(
+                    self.style.ERROR(
+                        "HEALTH WARNING: Database has 0 upcoming events! Scrapers may be failing or blocked."
+                    )
+                )
+
             self.stdout.write(self.style.SUCCESS("Scraping completed successfully"))
         else:
             self.stdout.write(self.style.SUCCESS("Dry run completed"))

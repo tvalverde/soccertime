@@ -112,6 +112,43 @@ class TestFavoritesView:
         # We want to make sure fetching flags does not cause N+1 queries
         assert len(queries) < 15
 
+    def test_favorites_preserves_chronological_order(
+        self, client, db, competition, competition_champions, team_home, team_away, team_third
+    ):
+        """Favorites page must render events in strict chronological order with tie-breakers."""
+        from soccertime.models import Favorite
+
+        Favorite.objects.create(team=team_home)
+        Favorite.objects.create(team=team_third)
+
+        now = timezone.now()
+        # Event 1: Later date (tomorrow)
+        m_tomorrow = Match.objects.create(
+            date=now + datetime.timedelta(days=1, hours=2),
+            competition=competition,
+            local=team_home,
+            visitor=team_away,
+        )
+        # Events in same slot today (18:00): La Liga should sort before UEFA Champions League
+        slot_today = now + datetime.timedelta(hours=1)
+        m_champions = Match.objects.create(
+            date=slot_today,
+            competition=competition_champions,
+            local=team_home,
+            visitor=team_third,
+        )
+        m_liga = Match.objects.create(
+            date=slot_today,
+            competition=competition,
+            local=team_home,
+            visitor=team_away,
+        )
+
+        response = client.get(reverse("favorites"))
+        pks = get_event_pks(response.context["events"])
+
+        assert pks == [m_liga.pk, m_champions.pk, m_tomorrow.pk]
+
 
 class TestAgendaView:
     """Tests for agenda view."""
@@ -120,6 +157,33 @@ class TestAgendaView:
         """Should return 200 status code."""
         response = client.get(reverse("agenda"))
         assert response.status_code == 200
+
+    def test_agenda_preserves_chronological_order(
+        self, client, db, competition, competition_tour, competition_roland_garros, team_home, team_away
+    ):
+        """Agenda page must render events in strict chronological order, breaking ties by sport order and comp name."""
+        from soccertime.models import SimpleEvent
+
+        now = timezone.now()
+        slot = now + datetime.timedelta(hours=1)
+
+        # In same slot: football (sport order 1) -> cycling (sport order 2) -> tennis (sport order 3)
+        tennis = SimpleEvent.objects.create(competition=competition_roland_garros, name="Final Tenis", date=slot)
+        cycling = SimpleEvent.objects.create(competition=competition_tour, name="Etapa Ciclismo", date=slot)
+        football = Match.objects.create(competition=competition, local=team_home, visitor=team_away, date=slot)
+
+        m_later = Match.objects.create(
+            competition=competition,
+            local=team_home,
+            visitor=team_away,
+            date=slot + datetime.timedelta(hours=3),
+        )
+
+        response = client.get(reverse("agenda"))
+        pks = get_event_pks(response.context["events"])
+
+        pks_in_scope = [pk for pk in pks if pk in [football.pk, cycling.pk, tennis.pk, m_later.pk]]
+        assert pks_in_scope == [football.pk, cycling.pk, tennis.pk, m_later.pk]
 
     def test_uses_correct_template(self, client, db):
         """Should use agenda.html template."""
