@@ -140,7 +140,11 @@ class TestMovesArePrunedAtOnce:
         )
 
         pairings = future_matches()
-        assert ("Baskonia", "Madrid", timezone.localtime(stored_instant(announced(6, 20))).strftime("%d %H:%M")) in pairings
+        assert (
+            "Baskonia",
+            "Madrid",
+            timezone.localtime(stored_instant(announced(6, 20))).strftime("%d %H:%M"),
+        ) in pairings
         assert len([p for p in pairings if p[0] == "Baskonia"]) == 1
 
     def test_one_game_of_a_doubleheader_can_move(self):
@@ -239,8 +243,16 @@ class TestTheScopeOfAUnit:
             )
         )
 
-        scrape(ScrapeUnit(events=[match_event("Unicaja", "Valencia", announced(3, 19))], sport="Baloncesto", complete=False))
-        scrape(ScrapeUnit(events=[match_event("Unicaja", "Valencia", announced(3, 19))], sport="Baloncesto", complete=False))
+        scrape(
+            ScrapeUnit(
+                events=[match_event("Unicaja", "Valencia", announced(3, 19))], sport="Baloncesto", complete=False
+            )
+        )
+        scrape(
+            ScrapeUnit(
+                events=[match_event("Unicaja", "Valencia", announced(3, 19))], sport="Baloncesto", complete=False
+            )
+        )
 
         assert Match.objects.count() == 3
         assert Event.objects.filter(missing_scrapes__gt=0).count() == 0
@@ -248,8 +260,16 @@ class TestTheScopeOfAUnit:
     def test_another_sport_is_out_of_scope(self):
         scrape(sport_unit(match_event("Baskonia", "Madrid", announced(3, 18))))
 
-        scrape(sport_unit(match_event("Alaves", "Getafe", announced(3, 18), competition="LaLiga", sport="Fútbol"), sport="Fútbol"))
-        scrape(sport_unit(match_event("Alaves", "Getafe", announced(3, 18), competition="LaLiga", sport="Fútbol"), sport="Fútbol"))
+        scrape(
+            sport_unit(
+                match_event("Alaves", "Getafe", announced(3, 18), competition="LaLiga", sport="Fútbol"), sport="Fútbol"
+            )
+        )
+        scrape(
+            sport_unit(
+                match_event("Alaves", "Getafe", announced(3, 18), competition="LaLiga", sport="Fútbol"), sport="Fútbol"
+            )
+        )
 
         assert Match.objects.filter(local__name="Baskonia").count() == 1
 
@@ -370,6 +390,7 @@ class TestDetailsAreDataNotIdentity:
         # La fila heredada, como la almacenó el parser antiguo: una Race.
 
         from soccertime.models import Competition, Sport
+
         sport_obj, _ = Sport.objects.get_or_create(name="Ciclismo")
         comp, _ = Competition.objects.get_or_create(name="Vuelta a España", sport=sport_obj)
         Race.objects.create(competition=comp, name="Etapa 1", date=stored_instant(when))

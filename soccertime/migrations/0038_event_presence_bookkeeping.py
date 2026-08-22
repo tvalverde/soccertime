@@ -15,20 +15,19 @@ def backfill_last_seen(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('soccertime', '0037_event_dates_to_utc'),
+        ("soccertime", "0037_event_dates_to_utc"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='event',
-            name='last_seen_at',
+            model_name="event",
+            name="last_seen_at",
             field=models.DateTimeField(blank=True, editable=False, null=True),
         ),
         migrations.AddField(
-            model_name='event',
-            name='missing_scrapes',
+            model_name="event",
+            name="missing_scrapes",
             field=models.PositiveSmallIntegerField(default=0, editable=False),
         ),
         migrations.RunPython(backfill_last_seen, migrations.RunPython.noop),

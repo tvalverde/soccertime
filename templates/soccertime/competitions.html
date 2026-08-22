@@ -4,6 +4,10 @@
 {% block title %}
 Soccertime :: {% translate "Competiciones" %}
 {% endblock %}
+{% block og_title %}Soccertime :: {% translate "Competiciones" %}{% endblock %}
+{% block twitter_title %}Soccertime :: {% translate "Competiciones" %}{% endblock %}
+{% block og_description %}{% translate "Competiciones deportivas por deporte y eventos programados." %}{% endblock %}
+{% block twitter_description %}{% translate "Competiciones deportivas por deporte y eventos programados." %}{% endblock %}
 {% block content %}
     {% for item in sports_data %}
         <h3 class="pt-3">{{ item.sport.name }}</h3>

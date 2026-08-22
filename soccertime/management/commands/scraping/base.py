@@ -124,8 +124,6 @@ class EventSource(ABC):
         """
         pass
 
-
-
     def iter_units(self) -> Iterator[ScrapeUnit]:
         """The source's pages, each with its declared scope.
 
@@ -134,6 +132,7 @@ class EventSource(ABC):
         events are stored, nothing is ever pruned because of it.
         """
         yield ScrapeUnit(events=list(self.get_events()), label=self.name)
+
 
 # Registry of available event sources
 _sources: dict[str, type[EventSource]] = {}

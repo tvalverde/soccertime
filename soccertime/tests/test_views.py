@@ -244,7 +244,6 @@ class TestTeamEventsView:
         response = client.get(reverse("team-events", args=[99999]))
         assert response.status_code == 404
 
-
     def test_shows_team_events(self, client, match, team_home):
         """Should display events for the team."""
         response = client.get(reverse("team-events", args=[team_home.pk]))

@@ -23,11 +23,13 @@ def page(rows):
 
 
 def event_row(time_text, name="G.P. Holanda (Zandvoort) Clasificación"):
-    return f"<tr><td>{time_text}</td><td><span>detalle</span></td><td>{name}</td><td><ul><li>DAZN F1</li></ul></td></tr>"
+    return (
+        f"<tr><td>{time_text}</td><td><span>detalle</span></td><td>{name}</td><td><ul><li>DAZN F1</li></ul></td></tr>"
+    )
 
 
 class TestPendingTime:
-    """"PD" — por determinar — means the time is not announced, not that the row is bad."""
+    """ "PD" — por determinar — means the time is not announced, not that the row is bad."""
 
     def test_is_counted_apart_from_the_malformed_rows(self):
         stats = ScrapingStats()
@@ -54,7 +56,9 @@ class TestPendingTime:
     def test_a_dated_event_alongside_one_pending_is_still_produced(self):
         stats = ScrapingStats()
 
-        events = list(parse_iter(page(event_row("PD") + event_row("14:30", "Carrera")), "Automovilismo", BASE_URL, stats))
+        events = list(
+            parse_iter(page(event_row("PD") + event_row("14:30", "Carrera")), "Automovilismo", BASE_URL, stats)
+        )
 
         assert len(events) == 1
         assert stats.processed == 1

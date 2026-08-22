@@ -279,4 +279,3 @@ SILENCED_SYSTEM_CHECKS = [
     "security.W005",
     "security.W021",
 ]
-

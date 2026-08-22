@@ -232,9 +232,7 @@ class TestTheConnectionIsPinnedToTheVettedAddress:
             seen_hosts.append(host)
             return [(2, 1, 6, "", ("93.184.216.34", 0))]
 
-        monkeypatch.setattr(
-            "soccertime.management.commands._image_download.socket.getaddrinfo", getaddrinfo
-        )
+        monkeypatch.setattr("soccertime.management.commands._image_download.socket.getaddrinfo", getaddrinfo)
         redirect = response_for(status=302, is_redirect=True, headers={"Location": "https://cdn.example/flag.png"})
         final = response_for(body=image_bytes())
 

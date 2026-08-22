@@ -205,7 +205,7 @@ class TestEventQuerySetSearch:
         assert match.pk in event_pks(Event.objects.search(competition.name))
 
     def test_it_finds_events_by_sport(self, match, competition):
-        """"Tenis" returned nothing at all, because the sport was not searched either."""
+        """ "Tenis" returned nothing at all, because the sport was not searched either."""
         assert match.pk in event_pks(Event.objects.search(competition.sport.name))
 
     def test_a_term_matching_nothing_still_matches_nothing(self, match):

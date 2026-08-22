@@ -60,7 +60,10 @@ def services(path):
         for key, pattern in (
             ("image", r'\s+image:\s*"?([^"\s]+)"?'),
             ("install_dev", r'\s+INSTALL_DEV:\s*"?(\w+)"?'),
-            ("healthcheck_host", r'\s+- "traefik\.http\.services\.[\w-]+\.loadbalancer\.healthcheck\.hostname=([^"]+)"'),
+            (
+                "healthcheck_host",
+                r'\s+- "traefik\.http\.services\.[\w-]+\.loadbalancer\.healthcheck\.hostname=([^"]+)"',
+            ),
             ("pull_policy", r"\s+pull_policy:\s*(\w+)"),
         ):
             match = re.fullmatch(pattern, line.rstrip())
@@ -200,9 +203,7 @@ def seconds(value):
 
 
 def probe_interval():
-    match = re.search(
-        r"loadbalancer\.healthcheck\.interval=([\d.]+m?s)", PRODUCTION.read_text()
-    )
+    match = re.search(r"loadbalancer\.healthcheck\.interval=([\d.]+m?s)", PRODUCTION.read_text())
     return seconds(match.group(1)) if match else None
 
 

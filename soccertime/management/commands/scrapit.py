@@ -228,8 +228,7 @@ class Command(BaseCommand):
 
         if unit.team_slug:
             scope = StoredEvent.objects.filter(
-                Q(match__local__futbolenlatv_slug=unit.team_slug)
-                | Q(match__visitor__futbolenlatv_slug=unit.team_slug)
+                Q(match__local__futbolenlatv_slug=unit.team_slug) | Q(match__visitor__futbolenlatv_slug=unit.team_slug)
             )
         else:
             scope = StoredEvent.objects.filter(competition__sport__name=unit.sport)
@@ -286,9 +285,7 @@ class Command(BaseCommand):
                 candidate.delete()
                 removed += 1
             else:
-                StoredEvent.objects.filter(pk=candidate.pk).update(
-                    missing_scrapes=candidate.missing_scrapes + 1
-                )
+                StoredEvent.objects.filter(pk=candidate.pk).update(missing_scrapes=candidate.missing_scrapes + 1)
                 first_miss += 1
         if superseded or first_miss or removed:
             label = unit.label or unit.sport or unit.team_slug or "unit"

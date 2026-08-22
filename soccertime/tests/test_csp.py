@@ -68,9 +68,7 @@ class TestThePolicyIsWorthHaving:
         ],
     )
     def test_each_directive_says_what_it_should(self, client, directive, expected):
-        directives = dict(
-            (part.split(" ", 1) + [""])[:2] for part in policy(client.get(reverse("agenda"))).split("; ")
-        )
+        directives = dict((part.split(" ", 1) + [""])[:2] for part in policy(client.get(reverse("agenda"))).split("; "))
 
         assert directives[directive] == expected
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Open Graph and Twitter Card metadata** across all views, enabling rich previews with title, description, and preview cards when links are shared in WhatsApp, Telegram, or other messaging apps.
+- **PWA and mobile home screen installation support**, including `manifest.json`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, and mobile web app meta tags (`theme-color`, `apple-mobile-web-app-capable`).
+- **Strict search engine anti-indexing protection**, with `/robots.txt` disallowing all crawlers and `<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">` in HTML headers.
+
 ### Removed
 - `TODO.md` tracked file from repository version control and added it to `.gitignore`.
 

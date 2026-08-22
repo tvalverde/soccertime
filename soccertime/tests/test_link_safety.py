@@ -32,6 +32,7 @@ class OutputCollector:
     def style(self, *args, **kwargs):
         pass
 
+
 # Payloads that must never reach an href. The tab and the casing variants are here
 # because browsers strip control characters and lower-case the scheme before acting on
 # it, so a guard that compares the raw string is not a guard at all.

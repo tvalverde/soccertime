@@ -21,7 +21,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import URLPattern, URLResolver, path
-from django.views.generic.base import RedirectView
+from django.views.generic.base import RedirectView, TemplateView
 
 from soccertime.views import (
     agenda,
@@ -55,6 +55,7 @@ admin_urlpatterns: list[URLPattern | URLResolver] = [path("admin/", admin.site.u
 
 site_urlpatterns: list[URLPattern | URLResolver] = [
     path("healthz/", healthz, name="healthz"),
+    path("robots.txt", TemplateView.as_view(template_name="robots.txt", content_type="text/plain"), name="robots-txt"),
     path("", RedirectView.as_view(url="favorites/")),
     path("favorites/", favorites, name="favorites"),
     path("events/", RedirectView.as_view(url="../favorites/")),

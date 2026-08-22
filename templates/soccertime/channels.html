@@ -4,6 +4,10 @@
 {% block title %}
 Soccertime :: {% translate "Canales" %}
 {% endblock %}
+{% block og_title %}Soccertime :: {% translate "Canales" %}{% endblock %}
+{% block twitter_title %}Soccertime :: {% translate "Canales" %}{% endblock %}
+{% block og_description %}{% translate "Directorio de canales de televisión y plataformas deportivas con enlaces directos." %}{% endblock %}
+{% block twitter_description %}{% translate "Directorio de canales de televisión y plataformas deportivas con enlaces directos." %}{% endblock %}
 {% block content %}
 {% if not channels_links %}
     {% include "soccertime/empty_state.html" %}

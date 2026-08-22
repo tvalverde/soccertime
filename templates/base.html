@@ -6,7 +6,29 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Agenda de eventos deportivos en vivo con enlaces a streams. Fútbol, baloncesto, tenis y más deportes.">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <meta name="description" content="{% block meta_description %}{% translate "Agenda de eventos deportivos en vivo con enlaces a streams. Fútbol, baloncesto, tenis y más deportes." %}{% endblock %}">
+    <meta name="theme-color" content="#0e0e0e">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Soccertime">
+    <link rel="manifest" href="{% static 'soccertime/manifest.json' %}">
+    <link rel="apple-touch-icon" href="{% static 'soccertime/img/apple-touch-icon.png' %}">
+
+    <!-- Open Graph / WhatsApp / Telegram -->
+    <meta property="og:site_name" content="Soccertime">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{% block og_title %}Soccertime{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{% translate "Agenda de eventos deportivos en directo y canales de TV." %}{% endblock %}">
+    <meta property="og:url" content="{% block og_url %}{{ request.build_absolute_uri }}{% endblock %}">
+    <meta property="og:image" content="{% block og_image %}{{ request.scheme }}://{{ request.get_host }}{% static 'soccertime/img/og-image.png' %}{% endblock %}">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{% block twitter_title %}Soccertime{% endblock %}">
+    <meta name="twitter:description" content="{% block twitter_description %}{% translate "Agenda de eventos deportivos en directo y canales de TV." %}{% endblock %}">
+    <meta name="twitter:image" content="{% block twitter_image %}{{ request.scheme }}://{{ request.get_host }}{% static 'soccertime/img/og-image.png' %}{% endblock %}">
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, proxy-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">

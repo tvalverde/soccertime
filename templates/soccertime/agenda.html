@@ -5,6 +5,10 @@
 {% block title %}
 Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Agenda" %}{% endif %}
 {% endblock %}
+{% block og_title %}Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Agenda" %}{% endif %}{% endblock %}
+{% block twitter_title %}Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Agenda" %}{% endif %}{% endblock %}
+{% block og_description %}{% if events_title %}{% blocktranslate with title=events_title %}Próximos eventos y partidos de {{ title }} con canales de TV.{% endblocktranslate %}{% else %}{% translate "Agenda de eventos deportivos en directo y canales de TV." %}{% endif %}{% endblock %}
+{% block twitter_description %}{% if events_title %}{% blocktranslate with title=events_title %}Próximos eventos y partidos de {{ title }} con canales de TV.{% endblocktranslate %}{% else %}{% translate "Agenda de eventos deportivos en directo y canales de TV." %}{% endif %}{% endblock %}
 {% block javascript %}
 {% if "agenda" in request.path %}
 <script src="{% static 'soccertime/js/datepicker.js' %}" defer></script>
