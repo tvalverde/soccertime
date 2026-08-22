@@ -105,3 +105,4 @@ db
 .claude/settings.local.json
 .claude/.cc-writes/
 backups/
+TODO.md

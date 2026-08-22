@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- `TODO.md` tracked file from repository version control and added it to `.gitignore`.
+
 ## [0.8.0] - 2026-08-13
 
 Housekeeping with one visible effect: the site travels at a tenth of its former weight.
