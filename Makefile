@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -26,6 +26,7 @@ help:
 	@echo "  upload-config        Upload only .env.production"
 	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
+	@echo "  remote-install-import-cron  Install the periodic link import (SOURCE=, URL=)"
 	@echo "  remote-check         Run Django's deployment checks on production"
 	@echo "  remote-pull          Refresh remote images, skipping the ones built on the host"
 	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200)"
@@ -127,6 +128,9 @@ KEEP_MONTHLY ?= 12
 REMOTE_BACKUP_PATH ?= ~/soccertime-backups
 # Bind-mounted into the container, unlike /tmp which is a tmpfs there.
 REMOTE_SHARED_PATH ?= ~/shared
+
+# Every six hours, an hour after the scraper's 4-hourly entry rather than alongside it.
+CRON_SCHEDULE ?= 20 1,7,13,19 * * *
 CONTAINER_SHARED_PATH ?= /shared
 LOCAL_BACKUP_PATH ?= ./backups
 REMOTE_IMAGE ?= $(APP_NAME):latest
@@ -500,6 +504,23 @@ remote-import-links:
 			exit $$status \
 		'; \
 	fi
+
+# Install, or refresh, the crontab entry that imports a published list into production.
+#
+# The default schedule is every six hours, deliberately offset from the scraper's own
+# entry so the two never share an hour: a link can only reach a channel the scraper has
+# already created, so importing shortly after a scrape is what gives the new channels a
+# chance. The script replaces any entry for the same source and copies every other line
+# through untouched.
+# Usage: make remote-install-import-cron SOURCE=tokyo URL=https://host/list.m3u
+#        make remote-install-import-cron SOURCE=tokyo URL=... CRON_SCHEDULE="0 */6 * * *"
+remote-install-import-cron:
+	@if [ -z "$(SOURCE)" ] || [ -z "$(URL)" ]; then \
+		echo 'Usage: make remote-install-import-cron SOURCE=tokyo URL=https://host/list.m3u [CRON_SCHEDULE="20 1,7,13,19 * * *"]'; \
+		exit 1; \
+	fi
+	@echo "--- Installing the $(SOURCE) import in the remote crontab ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s "$(SOURCE)" "$(URL)" "$(CRON_SCHEDULE)"' < scripts/install-import-cron.sh
 
 # Drop the rendered page cache without running the scraper. Pages are cached for an
 # hour, so this is what makes a fix visible immediately after a deploy.

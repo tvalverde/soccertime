@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--url` input for `addlinksource` and `importm3u`**, mutually exclusive with `--file`, so a
   published playlist is imported without downloading it first. `make remote-import-links` takes
   `URL=` as an alternative to `FILE=`, and lets the production container do the fetching.
+- **`remote-install-import-cron`**, which installs or refreshes the crontab entry that keeps a
+  source imported on a schedule — every six hours by default, offset from the scraper's own
+  entry. It replaces only the line for that source and copies every other one through.
 - **`tokyo` source in `addlinksource`**, an M3U playlist parsed by the same reader `importm3u`
   uses, now shared in `BaseLinkImportCommand`.
 - **Open Graph and Twitter Card metadata** across all views, enabling rich previews with title, description, and preview cards when links are shared in WhatsApp, Telegram, or other messaging apps.
