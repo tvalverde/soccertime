@@ -183,6 +183,31 @@ class TestMalformedInput:
         """
         assert match(name) == ["Aragón TV"]
 
+
+@pytest.mark.django_db
+class TestDiacritics:
+    """67 of the 568 channels in production carry an accent; the lists rarely do.
+
+    Comparing the two literally lost every one of them, so both sides are stripped of
+    their diacritics before they meet — the stored name keeps its accents untouched.
+    """
+
+    @pytest.mark.parametrize("name", ["aragon tv", "ARAGON TV", "Aragon Tv"])
+    def test_a_name_written_without_its_accent_still_matches(self, channels, match, name):
+        assert match(name) == ["Aragón TV"]
+
+    def test_an_accent_the_catalogue_does_not_carry_matches_too(self, channels, match):
+        """The fold runs on both sides: a list may add an accent as easily as drop one."""
+        assert match("canál sur") == ["Canal Sur"]
+
+    def test_a_token_carrying_the_accent_matches(self, channels, match):
+        """Not only the exact name: the token fallback compares folded text as well."""
+        assert match("esport3 cataluna") == ["Esport3 (Cataluña)"]
+
+    def test_folding_does_not_merge_distinct_channels(self, channels, match):
+        """Dropping accents must widen nothing beyond the accent itself."""
+        assert match("DAZN LaLiga 2") == ["DAZN LaLiga 2"]
+
     def test_returns_channels_the_caller_can_iterate(self, channels):
         """A list, since the matching happens in memory: `import_entries` iterates it."""
         command = BaseLinkImportCommand()

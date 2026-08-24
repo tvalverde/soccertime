@@ -391,3 +391,31 @@ def image_response(body, status=200, content_type="image/png", headers=None, is_
     response.iter_content = Mock(side_effect=lambda size: iter([body[i : i + size] for i in range(0, len(body), size)]))
     response.close = Mock()
     return response
+
+
+# =============================================================================
+# Remote playlist fetching
+# =============================================================================
+
+
+def remote_text_response(body, status=200, content_type="text/plain"):
+    """A real `requests.Response` carrying `body`, for the `--url` import path.
+
+    Real rather than a `Mock` on purpose: what these tests guard is how the body is
+    decoded, and `requests` only applies its ISO-8859-1 fallback for a charset-less
+    text/* response inside the genuine class. A mock would answer whatever was set on it
+    and the regression could not fail.
+    """
+    from io import BytesIO
+
+    import requests
+    from requests.utils import get_encoding_from_headers
+
+    response = requests.Response()
+    response.status_code = status
+    response.raw = BytesIO(body)
+    response.headers["Content-Type"] = content_type
+    # What `Session.send` does, and the whole point of the exercise: a charset-less
+    # text/* response is stamped ISO-8859-1 here, so `response.text` would lie.
+    response.encoding = get_encoding_from_headers(response.headers)
+    return response

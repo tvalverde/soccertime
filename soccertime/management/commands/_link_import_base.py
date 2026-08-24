@@ -1,35 +1,80 @@
 import re
+import unicodedata
 from collections.abc import Iterable
-from typing import Any
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, TypedDict
+from urllib.parse import urlparse
 
+import requests
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from soccertime.models import Channel, ChannelLink, ChannelLinkSource
 
+EXTINF_RE = re.compile(
+    r"^#EXTINF:\s*-?\d+(?:\.\d+)?"  # duration: -1, 0, 10.5
+    r'(?P<attrs>(?:\s+[\w.-]+="[^"]*")*)'  # key="value" attribute pairs
+    r"\s*,\s*(?P<name>.+?)\s*$"  # display name after the attributes comma
+)
+ATTR_RE = re.compile(r'([\w.-]+)="([^"]*)"')
+MIRROR_SUFFIX_RE = re.compile(r"\s*\[\d+\]\s*$")  # "DAZN Mundial 1 [2]" -> "DAZN Mundial 1"
+ACESTREAM_HASH_RE = re.compile(r"[0-9a-fA-F]{40}")
+
+# Per read rather than for the whole transfer, matching the image downloader: these
+# playlists are a few hundred kilobytes, so a server that has not answered in this long is
+# not going to.
+URL_FETCH_TIMEOUT = 30
+
+REMOTE_SCHEMES = frozenset({"http", "https"})
+
+# (channel_name, subcategory, quality, link) — what every parser produces and
+# import_entries() consumes.
+ParsedEntry = tuple[str, str | None, "ChannelLink.Quality", str]
+
+
+class PendingEntry(TypedDict):
+    """An #EXTINF directive waiting for the URL line that follows it."""
+
+    name: str
+    group_title: str | None
+
+
+@lru_cache(maxsize=2048)
+def fold(text: str) -> str:
+    """Lower case and drop the diacritics, so a name can be compared to a catalogue entry.
+
+    67 of the 568 channels in production carry an accent and the published lists usually
+    do not: "Aragon TV" found no channel, and every link naming it was dropped. Only the
+    comparison is folded — the name that reaches the database keeps its accents.
+
+    Cached because the catalogue is asked about once per entry and never changes within a
+    run, so the same few hundred names would otherwise be decomposed thousands of times.
+    """
+    decomposed = unicodedata.normalize("NFKD", text.lower())
+    return "".join(character for character in decomposed if not unicodedata.combining(character))
+
 
 def _named_exactly_or_bracketed(channel_name: str, wanted: str) -> bool:
     """The name itself, or the name followed by the operator's bracketed suffix."""
-    lowered = channel_name.lower()
-    return lowered == wanted or f"{wanted} (" in lowered
+    folded = fold(channel_name)
+    return folded == wanted or f"{wanted} (" in folded
 
 
 def _has_every_token(channel_name: str, tokens: Iterable[str]) -> bool:
     """All tokens present. Short ones must match as whole words: "la" is not "LaLiga"."""
-    lowered = channel_name.lower()
+    folded = fold(channel_name)
     return all(
-        re.search(rf"\b{re.escape(token)}\b", channel_name, re.IGNORECASE)
-        if len(token) < 4
-        else token.lower() in lowered
+        re.search(rf"\b{re.escape(fold(token))}\b", folded) if len(token) < 4 else fold(token) in folded
         for token in tokens
     )
 
 
 def _carries_number(channel_name: str, number: str) -> bool:
-    lowered = channel_name.lower()
-    return f" {number}" in lowered or lowered.endswith(number) or f"{number} (" in lowered
+    folded = fold(channel_name)
+    return f" {number}" in folded or folded.endswith(number) or f"{number} (" in folded
 
 
 def _mentions_number(channel_name: str, number: str) -> bool:
@@ -49,6 +94,100 @@ class BaseLinkImportCommand(BaseCommand):
         # it means a new one that forgets breaks the shared pipeline instead of its own.
         self.warnings: list[str] = []
         self._channel_catalogue: list[Channel] | None = None
+
+    # ------------------------------------------------------------------
+    # Input
+    # ------------------------------------------------------------------
+    def read_input_lines(self, *, file: str | None = None, url: str | None = None) -> list[str]:
+        """Read the input as lines, from a local path or an HTTP(S) URL.
+
+        The URL is typed by the operator running the command rather than scraped, so it
+        needs none of the address vetting `_image_download` does. Its body does need an
+        explicit decode: `requests` falls back to ISO-8859-1 for a text/* response that
+        declares no charset, which is exactly what a raw playlist is served as, and every
+        accented channel name in it would arrive as mojibake and match nothing.
+        """
+        if url:
+            if urlparse(url).scheme not in REMOTE_SCHEMES:
+                raise CommandError(f"Only http(s) URLs can be fetched, got: {url}")
+            try:
+                response = requests.get(url, timeout=URL_FETCH_TIMEOUT)
+                response.raise_for_status()
+            except requests.RequestException as error:
+                raise CommandError(f"Could not fetch {url}: {error}") from error
+            return response.content.decode("utf-8-sig", errors="replace").splitlines()
+
+        if not file:
+            raise CommandError("Either --file or --url is required")
+
+        try:
+            return Path(file).read_text(encoding="utf-8-sig").splitlines()
+        except (OSError, UnicodeDecodeError) as error:
+            raise CommandError(f"Could not read {file}: {error}") from error
+
+    # ------------------------------------------------------------------
+    # Parsing
+    # ------------------------------------------------------------------
+    def parse_m3u(self, lines: Iterable[str]) -> list[ParsedEntry]:
+        """Parse an M3U playlist into (channel_name, subcategory, quality, link) tuples.
+
+        Pairs each #EXTINF directive with the following URL line, tolerating blank
+        lines and unrelated # directives (#EXTM3U, #EXTVLCOPT, ...). Only acestream
+        links (or bare 40-hex hashes) are kept; anything else is skipped with a warning.
+        The group-title attribute becomes the subcategory.
+        """
+        entries: list[ParsedEntry] = []
+        pending: PendingEntry | None = None
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            if line.startswith("#EXTINF"):
+                if pending:
+                    self.warnings.append(f"EXTINF with no URL (skipped): {pending['name']}")
+                match = EXTINF_RE.match(line)
+                if not match:
+                    self.warnings.append(f"Malformed EXTINF (skipped): {line}")
+                    pending = None
+                    continue
+                attrs = dict(ATTR_RE.findall(match.group("attrs")))
+                pending = {"name": match.group("name"), "group_title": attrs.get("group-title")}
+                continue
+
+            if line.startswith("#"):
+                continue
+
+            if pending is None:
+                self.warnings.append(f"URL with no preceding EXTINF (skipped): {line}")
+                continue
+
+            if line.startswith("acestream://"):
+                hash_part = line.removeprefix("acestream://")
+                if not ACESTREAM_HASH_RE.fullmatch(hash_part):
+                    self.warnings.append(f"Invalid hash (skipped): {line}")
+                    pending = None
+                    continue
+                link = line
+            elif ACESTREAM_HASH_RE.fullmatch(line):
+                link = f"acestream://{line}"
+            else:
+                self.warnings.append(f"Non-acestream URL (skipped): {line}")
+                pending = None
+                continue
+
+            raw_name = MIRROR_SUFFIX_RE.sub("", pending["name"])
+            channel_name, quality = self.extract_name_parts(raw_name)
+            subcategory = pending["group_title"] or None
+
+            entries.append((channel_name, subcategory, quality, link))
+            pending = None
+
+        if pending:
+            self.warnings.append(f"EXTINF with no URL (skipped): {pending['name']}")
+
+        return entries
 
     # ------------------------------------------------------------------
     # Helpers
@@ -114,10 +253,19 @@ class BaseLinkImportCommand(BaseCommand):
         if re.search(r"\bsky\s+sports?\s+laliga\b", name):
             return "dazn laliga"
 
+        # "Gol TV" -> "gol", the Spanish channel: the lists carry tvg-id="Gol" and a logo
+        # served from goltelevision.com. It is not "GolTV Play", which is the South
+        # American network and whose events here are the Campeonato Uruguayo.
+        name = re.sub(r"\bgol\s+tv\b", "gol", name)
+
         if name.startswith("liga de campeones"):
             name = "m+ " + name
         if name == "dazn pvv":
             name = "dazn"
+
+        # "Sport TV2" -> "sport tv 2" (M3U sources omit the space)
+        name = re.sub(r"\bsport\s*tv\s*(\d+)\b", r"sport tv \1", name)
+
         return name
 
     def extract_quality(self, name: str) -> tuple[str, "ChannelLink.Quality"]:
@@ -193,19 +341,19 @@ class BaseLinkImportCommand(BaseCommand):
             # reduces a name that is only a mirror marker, "(*)" or "(**)", to empty.
             return []
 
-        lowered = normalised.lower()
+        folded = fold(normalised)
         parts = normalised.split(" ")
         suffix_num = parts[-1] if parts[-1].isdigit() else None
         base_tokens = [token for token in (parts[:-1] if suffix_num else parts) if len(token) >= 2]
         catalogue = self.channel_catalogue
 
         # A variant must not be absorbed by the generic DAZN channel.
-        dazn_variant = " ".join(parts[:2]).lower() if parts[0].lower() == "dazn" and len(parts) >= 2 else None
+        dazn_variant = fold(" ".join(parts[:2])) if parts[0].lower() == "dazn" and len(parts) >= 2 else None
 
-        matches = [channel for channel in catalogue if _named_exactly_or_bracketed(channel.name, lowered)]
+        matches = [channel for channel in catalogue if _named_exactly_or_bracketed(channel.name, folded)]
 
         if dazn_variant and not suffix_num and not matches:
-            matches = [channel for channel in catalogue if channel.name.lower().startswith(dazn_variant)]
+            matches = [channel for channel in catalogue if fold(channel.name).startswith(dazn_variant)]
 
         if len(normalised) < 4 and not suffix_num:
             return matches
@@ -240,16 +388,14 @@ class BaseLinkImportCommand(BaseCommand):
             precise = dazn_variant
             if suffix_num and suffix_num != "1" and not dazn_variant.endswith(f" {suffix_num}"):
                 precise = f"{dazn_variant} {suffix_num}"
-            matches = [channel for channel in matches if channel.name.lower().startswith(precise)]
+            matches = [channel for channel in matches if fold(channel.name).startswith(precise)]
 
         return matches
 
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
-    def import_entries(
-        self, entries: Iterable[tuple[str, str | None, "ChannelLink.Quality", str]], source_name: str, dry_run: bool
-    ) -> None:
+    def import_entries(self, entries: Iterable[ParsedEntry], source_name: str, dry_run: bool) -> None:
         """Persist (channel_name, subcategory, quality, link) tuples."""
         source_obj, _ = ChannelLinkSource.get_or_create_by_name(source_name)
 

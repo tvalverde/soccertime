@@ -458,28 +458,48 @@ remote-redownload-images:
 			$(REMOTE_SOCCERTIME_SERVICE) python manage.py redownload_images $(ARGS) \
 	'
 
-# Import channel links from a local file into production. The file is external data and
-# never lives in the repository, so it is dropped in the shared directory for the run and
-# removed afterwards. It goes through the bind mount rather than `docker cp`, because
-# /tmp inside the container is a tmpfs and a copy into it is invisible to the process.
+# Import channel links into production, from a local file or straight from a URL.
+#
+# A local file is external data and never lives in the repository, so it is dropped in the
+# shared directory for the run and removed afterwards. It goes through the bind mount
+# rather than `docker cp`, because /tmp inside the container is a tmpfs and a copy into it
+# is invisible to the process. A URL skips the round trip entirely: the container fetches
+# it itself.
 # Usage: make remote-import-links SOURCE=newera FILE=~/newera.txt [ARGS=--dry]
+#        make remote-import-links SOURCE=tokyo URL=https://host/list.m3u [ARGS=--dry]
 remote-import-links:
-	@if [ -z "$(SOURCE)" ] || [ -z "$(FILE)" ]; then \
+	@set -e; \
+	if [ -z "$(SOURCE)" ] || { [ -z "$(FILE)" ] && [ -z "$(URL)" ]; }; then \
 		echo "Usage: make remote-import-links SOURCE=newera FILE=~/newera.txt [ARGS=--dry]"; \
+		echo "       make remote-import-links SOURCE=tokyo URL=https://host/list.m3u [ARGS=--dry]"; \
 		exit 1; \
+	fi; \
+	if [ -n "$(FILE)" ] && [ -n "$(URL)" ]; then \
+		echo "Pass FILE or URL, not both"; \
+		exit 1; \
+	fi; \
+	if [ -n "$(URL)" ]; then \
+		echo "--- Importing $(URL) into production as source $(SOURCE) ---"; \
+		ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+			cd $(REMOTE_DOCKER_PATH); \
+			docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+				$(REMOTE_SOCCERTIME_SERVICE) python manage.py addlinksource \
+				--source=$(SOURCE) --url="$(URL)" $(ARGS) \
+		'; \
+	else \
+		echo "--- Importing $(FILE) into production as source $(SOURCE) ---"; \
+		ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_SHARED_PATH)'; \
+		scp -P$(REMOTE_PORT) $(FILE) $(REMOTE_HOST):$(REMOTE_SHARED_PATH)/links-import.txt; \
+		ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+			cd $(REMOTE_DOCKER_PATH); \
+			docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
+				$(REMOTE_SOCCERTIME_SERVICE) python manage.py addlinksource \
+				--source=$(SOURCE) --file=$(CONTAINER_SHARED_PATH)/links-import.txt $(ARGS); \
+			status=$$?; \
+			rm -f $(REMOTE_SHARED_PATH)/links-import.txt; \
+			exit $$status \
+		'; \
 	fi
-	@echo "--- Importing $(FILE) into production as source $(SOURCE) ---"
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_SHARED_PATH)'
-	@scp -P$(REMOTE_PORT) $(FILE) $(REMOTE_HOST):$(REMOTE_SHARED_PATH)/links-import.txt
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		cd $(REMOTE_DOCKER_PATH); \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) exec -T -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
-			$(REMOTE_SOCCERTIME_SERVICE) python manage.py addlinksource \
-			--source=$(SOURCE) --file=$(CONTAINER_SHARED_PATH)/links-import.txt $(ARGS); \
-		status=$$?; \
-		rm -f $(REMOTE_SHARED_PATH)/links-import.txt; \
-		exit $$status \
-	'
 
 # Drop the rendered page cache without running the scraper. Pages are cached for an
 # hour, so this is what makes a fix visible immediately after a deploy.

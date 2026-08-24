@@ -1,33 +1,36 @@
 import re
 from argparse import ArgumentParser
+from collections.abc import Callable
 from typing import Any
 
 from django.core.management.base import CommandError
 
-from soccertime.management.commands._link_import_base import BaseLinkImportCommand
-from soccertime.models import ChannelLink
+from soccertime.management.commands._link_import_base import BaseLinkImportCommand, ParsedEntry
 
 
 class Command(BaseLinkImportCommand):
-    help = "Import channel links from different sources"
+    help = "Import channel links from different sources, read from a file or a URL"
 
     def add_arguments(self, parser: ArgumentParser) -> None:
-        parser.add_argument("--source", "-s", required=True, choices=["newera", "elcano"], help="Source parser")
-        parser.add_argument("--file", "-f", required=True, help="Input file path")
+        parser.add_argument(
+            "--source", "-s", required=True, choices=["newera", "elcano", "tokyo"], help="Source parser"
+        )
+        origin = parser.add_mutually_exclusive_group(required=True)
+        origin.add_argument("--file", "-f", help="Input file path")
+        origin.add_argument("--url", "-u", help="Input URL")
         parser.add_argument("--dry", action="store_true", help="Dry run without saving")
 
     # ------------------------------------------------------------------
     # Parsing
     # ------------------------------------------------------------------
-    def parse_newera(self, filepath: str) -> list[tuple[str, str | None, ChannelLink.Quality, str]]:
+    def parse_newera(self, lines: list[str]) -> list[ParsedEntry]:
         """Parse the newera format: alternating NAME --> SUBCATEGORY and HASH lines.
 
         The right-hand side is the subcategory, usually the feed aggregated inside
         newera. Malformed lines and hashes are collected as warnings and skipped: only an
-        unreadable file aborts the import.
+        unreadable input aborts the import.
         """
-        with open(filepath, encoding="utf-8") as f:
-            lines = [line.strip() for line in f if line.strip()]
+        lines = [line.strip() for line in lines if line.strip()]
 
         if len(lines) % 2 != 0:
             self.warnings.append("Odd number of lines in the newera file: the last one is ignored")
@@ -42,11 +45,7 @@ class Command(BaseLinkImportCommand):
                 continue
             raw_name, source_label = name_line.split(" --> ", 1)
 
-            # Normalise known aliases
-            name_fixed = self.fix_name(raw_name)
-            name_norm = re.sub(r"\s+", " ", name_fixed).strip()
-
-            name_norm, quality = self.extract_quality(name_norm)
+            name_norm, quality = self.extract_name_parts(raw_name)
             subcategory = source_label.strip().lower() if source_label else None
 
             link = link_line
@@ -61,7 +60,7 @@ class Command(BaseLinkImportCommand):
             entries.append((name_norm, subcategory, quality, link))
         return entries
 
-    def parse_elcano(self, filepath: str) -> list[tuple[str, str | None, ChannelLink.Quality, str]]:
+    def parse_elcano(self, lines: list[str]) -> list[ParsedEntry]:
         """Parse elcano custom text format.
 
         Format:
@@ -70,8 +69,7 @@ class Command(BaseLinkImportCommand):
         Channel Name
         acestream://hash
         """
-        with open(filepath, encoding="utf-8") as file:
-            lines = [line.strip() for line in file if line.strip()]
+        lines = [line.strip() for line in lines if line.strip()]
 
         entries = []
         current_subcategory = None
@@ -128,24 +126,29 @@ class Command(BaseLinkImportCommand):
 
         return entries
 
+    def parse_tokyo(self, lines: list[str]) -> list[ParsedEntry]:
+        """The tokyo source publishes a plain M3U playlist, so the shared parser is all it needs."""
+        return self.parse_m3u(lines)
+
     # ------------------------------------------------------------------
     # Main
     # ------------------------------------------------------------------
     def handle(self, *args: Any, **options: Any) -> None:
         source = options["source"].upper()
-        filepath = options["file"]
         dry_run = options["dry"]
 
         if dry_run:
             self.stdout.write(self.style.WARNING("=== DRY RUN ==="))
 
-        parser_map = {
+        parser_map: dict[str, Callable[[list[str]], list[ParsedEntry]]] = {
             "NEWERA": self.parse_newera,
             "ELCANO": self.parse_elcano,
+            "TOKYO": self.parse_tokyo,
         }
         parser = parser_map.get(source)
         if not parser:
             raise CommandError(f"Unsupported source {source}")
 
-        entries = parser(filepath)
+        lines = self.read_input_lines(file=options["file"], url=options["url"])
+        entries = parser(lines)
         self.import_entries(entries, source, dry_run)

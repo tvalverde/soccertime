@@ -8,12 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`--url` input for `addlinksource` and `importm3u`**, mutually exclusive with `--file`, so a
+  published playlist is imported without downloading it first. `make remote-import-links` takes
+  `URL=` as an alternative to `FILE=`, and lets the production container do the fetching.
+- **`tokyo` source in `addlinksource`**, an M3U playlist parsed by the same reader `importm3u`
+  uses, now shared in `BaseLinkImportCommand`.
 - **Open Graph and Twitter Card metadata** across all views, enabling rich previews with title, description, and preview cards when links are shared in WhatsApp, Telegram, or other messaging apps.
 - **PWA and mobile home screen installation support**, including `manifest.json`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, and mobile web app meta tags (`theme-color`, `apple-mobile-web-app-capable`).
 - **Strict search engine anti-indexing protection**, with `/robots.txt` disallowing all crawlers and `<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">` in HTML headers.
 - **`purge_old_events` management command** to purge historical events older than a configurable retention threshold (`--days`, default 90), with `--dry-run` and `--before-date` options, cascaded to child event models.
 - **Scraper health monitoring** in `scrapit` to report total active future events and warn if the upcoming agenda drops to 0.
 - **End-to-end ordering regression tests** in `test_views.py` ensuring landing page and agenda strictly preserve chronological sorting and tie-breaking hierarchy.
+
+### Fixed
+- **Channel names arriving as mojibake from a remote list**: `requests` decodes a charset-less
+  `text/*` response as ISO-8859-1, so every accented name in a UTF-8 playlist matched nothing.
+  Bodies are now decoded as UTF-8 explicitly, and a byte order mark is stripped from local files.
+- **Channels whose name carries an accent no longer lost**: the lists write "Aragon TV" and
+  the catalogue holds "Aragón TV", so 67 of the 568 channels could only be found when a list
+  happened to type the accent. Matching now compares both sides with their diacritics
+  stripped; the stored name keeps them.
+- **`Gol TV` reaching the Spanish channel**: the playlists mean Gol Televisión, which the
+  matcher could not reach through the `(Síguelo en directo)` suffix, and the name is now
+  reduced to `gol`. It deliberately does not reach `GolTV Play`, the South American network.
+- **`Sport TV2` no longer missing its channel**: the spaceless numbering M3U lists use is
+  normalised to `Sport TV 2`.
 
 ### Removed
 - `TODO.md` tracked file from repository version control and added it to `.gitignore`.

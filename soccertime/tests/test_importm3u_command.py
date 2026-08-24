@@ -1,9 +1,14 @@
 from io import StringIO
+from unittest.mock import patch
 
 import pytest
+import requests
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from soccertime.models import Channel, ChannelLink, ChannelLinkSource
+
+from .conftest import remote_text_response
 
 M3U_HEADER = """#EXTM3U url-tvg="https://example.com/guide.xml" refresh="3600"
 #EXTVLCOPT:network-caching=1000
@@ -251,3 +256,66 @@ acestream://9999999999999999999999999999999999999999
         output = out.getvalue()
         assert "EXTINF with no URL (skipped): Orphan Without URL" in output
         assert "EXTINF with no URL (skipped): Trailing Orphan" in output
+
+
+@pytest.mark.django_db
+class TestImportM3uFromUrl:
+    """The playlist may live on a server, which is where these lists are published."""
+
+    PLAYLIST = (
+        '#EXTM3U\n#EXTINF:-1 group-title="MUNDIAL",DAZN Mundial 1\n'
+        "acestream://1111111111111111111111111111111111111111\n"
+    )
+    URL = "https://example.com/lists/hashes_acestream.m3u"
+
+    def fetching(self, body=PLAYLIST, **kwargs):
+        return patch(
+            "soccertime.management.commands._link_import_base.requests.get",
+            return_value=remote_text_response(body.encode("utf-8"), **kwargs),
+        )
+
+    def test_importm3u_from_url(self):
+        channel = Channel.objects.create(name="DAZN Mundial 1")
+
+        with self.fetching():
+            call_command("importm3u", f"--url={self.URL}")
+
+        link = ChannelLink.objects.get(link="acestream://1111111111111111111111111111111111111111")
+        assert channel.links.filter(pk=link.pk).exists()
+
+    def test_importm3u_names_the_source_after_the_url_file(self):
+        Channel.objects.create(name="DAZN Mundial 1")
+
+        with self.fetching():
+            call_command("importm3u", f"--url={self.URL}")
+
+        assert ChannelLinkSource.objects.filter(name="HASHES_ACESTREAM").exists()
+
+    def test_importm3u_source_override_wins_over_the_url(self):
+        Channel.objects.create(name="DAZN Mundial 1")
+
+        with self.fetching():
+            call_command("importm3u", f"--url={self.URL}", "--source=tokyo")
+
+        assert ChannelLinkSource.objects.filter(name="TOKYO").exists()
+        assert not ChannelLinkSource.objects.filter(name="HASHES_ACESTREAM").exists()
+
+    def test_importm3u_url_without_a_file_name_demands_a_source(self):
+        with pytest.raises(CommandError, match="--source"):
+            call_command("importm3u", "--url=https://example.com/")
+
+    def test_importm3u_requires_an_origin(self):
+        with pytest.raises(CommandError):
+            call_command("importm3u")
+
+    def test_importm3u_rejects_both_origins(self, tmp_path):
+        with pytest.raises(CommandError):
+            call_command("importm3u", f"--file={write_m3u(tmp_path, '')}", f"--url={self.URL}")
+
+    def test_importm3u_reports_an_unreachable_url(self):
+        with patch(
+            "soccertime.management.commands._link_import_base.requests.get",
+            side_effect=requests.Timeout("too slow"),
+        ):
+            with pytest.raises(CommandError, match="Could not fetch"):
+                call_command("importm3u", f"--url={self.URL}")
