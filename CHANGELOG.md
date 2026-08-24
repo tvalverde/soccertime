@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--url` input for `addlinksource` and `importm3u`**, mutually exclusive with `--file`, so a
   published playlist is imported without downloading it first. `make remote-import-links` takes
   `URL=` as an alternative to `FILE=`, and lets the production container do the fetching.
+- **`remote-install-logrotate`**, which rotates the logs those cron entries append to —
+  weekly, or sooner past 5 MB, keeping eight generations. It needs no root: logrotate runs
+  from a crontab entry of its own against a state file in the deploy user's home.
 - **`remote-install-import-cron`**, which installs or refreshes the crontab entry that keeps a
   source imported on a schedule — every six hours by default, offset from the scraper's own
   entry. It replaces only the line for that source and copies every other one through.

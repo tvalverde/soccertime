@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -27,6 +27,7 @@ help:
 	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo "  remote-install-import-cron  Install the periodic link import (SOURCE=, URL=)"
+	@echo "  remote-install-logrotate    Rotate the logs those cron entries write"
 	@echo "  remote-check         Run Django's deployment checks on production"
 	@echo "  remote-pull          Refresh remote images, skipping the ones built on the host"
 	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200)"
@@ -131,6 +132,8 @@ REMOTE_SHARED_PATH ?= ~/shared
 
 # Every six hours, an hour after the scraper's 4-hourly entry rather than alongside it.
 CRON_SCHEDULE ?= 20 1,7,13,19 * * *
+IMPORT_CRON_COMMAND = docker compose -f ./docker/$(REMOTE_DOCKER_COMPOSE_FILE) exec --user appuser $(REMOTE_SOCCERTIME_SERVICE) python manage.py addlinksource --source=$(SOURCE) --url=$(URL) >> ~/addlinksource-$(SOURCE).log 2>&1
+LOGROTATE_CRON_COMMAND = /usr/sbin/logrotate --state ~/logrotate/soccertime.state ~/logrotate/soccertime.conf >> ~/logrotate/soccertime.log 2>&1
 CONTAINER_SHARED_PATH ?= /shared
 LOCAL_BACKUP_PATH ?= ./backups
 REMOTE_IMAGE ?= $(APP_NAME):latest
@@ -520,7 +523,22 @@ remote-install-import-cron:
 		exit 1; \
 	fi
 	@echo "--- Installing the $(SOURCE) import in the remote crontab ---"
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s "$(SOURCE)" "$(URL)" "$(CRON_SCHEDULE)"' < scripts/install-import-cron.sh
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s "--source=$(SOURCE)" "$(CRON_SCHEDULE)" "$(IMPORT_CRON_COMMAND)"' < scripts/install-cron-entry.sh
+
+# Keep the logs those cron entries append to from growing without end. Nothing here needs
+# root: the deploy user cannot write /etc/logrotate.d, so logrotate runs from a crontab
+# entry of its own against a state file in the home directory.
+#
+# It rotates at an hour no other entry uses. A rotation landing mid-scrape is survivable —
+# that is what `delaycompress` is for — but not sharing the hour means it does not happen.
+# `/usr/sbin/logrotate` by absolute path: cron's PATH does not carry the sbin directories.
+LOGROTATE_SCHEDULE ?= 45 3 * * *
+ROTATED_LOGS ?= scrapit.log addlinksource-tokyo.log
+remote-install-logrotate:
+	@echo "--- Writing the logrotate configuration ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s $(ROTATED_LOGS)' < scripts/install-logrotate.sh
+	@echo "--- Installing the rotation in the remote crontab ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s "logrotate --state" "$(LOGROTATE_SCHEDULE)" "$(LOGROTATE_CRON_COMMAND)"' < scripts/install-cron-entry.sh
 
 # Drop the rendered page cache without running the scraper. Pages are cached for an
 # hour, so this is what makes a fix visible immediately after a deploy.
