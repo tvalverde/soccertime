@@ -289,11 +289,14 @@ make replica-up
 ## Production deployment
 
 
-> **Note:** The previous deployment method using the `Makefile` is considered **deprecated**. The new workflow will be based on building and deploying a production-ready Docker image. The specific steps (CI/CD pipeline, registry pushes) are to be defined.
->
-> The Makefile commands documented below remain functional but should not be relied upon for new deployments.
+The image is built by GitHub Actions and published to `ghcr.io/tvalverde/soccertime`, tagged
+with the full commit hash. `make deploy-production` pulls the tag matching the commit being
+deployed and retags it on the host, so nothing but `.env.production` is ever uploaded: the
+code no longer lives on the server, and the image that serves is the one whose checks passed.
 
-Deployment was previously done through the `Makefile` which automates the entire process.
+The published package is public, so the server pulls it anonymously and holds no registry
+credentials. The only thing the deploy still sends is `.env.production`, which is deliberately
+not in the repository — it holds the secret key — and therefore cannot be in the image either.
 
 ## Domain notes
 
@@ -319,7 +322,7 @@ Deployment was previously done through the `Makefile` which automates the entire
 
 - SSH access to the production server
 - `.env.production` file configured locally
-- Changes committed to git (deploy uses `git archive HEAD`)
+- The commit pushed to `main` and its CI run green, so the image exists to be pulled
 
 ### Available commands
 
@@ -332,10 +335,9 @@ make help
 
 | Command | Description |
 |---------|-------------|
-| `make deploy-production` | Full deployment (upload code + snapshot the database + run on remote) |
-| `make upload-only` | Upload code and configs without running deploy |
-| `make upload-config` | Upload only configuration files |
-| `make remote-restart` | Restart remote services without uploading code |
+| `make deploy-production` | Full deployment (pull the published image + snapshot the database + hand over) |
+| `make upload-config` | Upload only `.env.production` |
+| `make remote-restart` | Recreate remote services without deploying |
 | `make remote-scrape` | Run the scraper on the server and clear the cache |
 | `make remote-check` | Run Django's deployment checks against production |
 | `make remote-smoke-test` | Verify a live deploy from outside: health plus every public page |
@@ -405,48 +407,38 @@ make help
 # 1. Make changes to the code
 vim soccertime/views.py
 
-# 2. Commit the changes (IMPORTANT: deploy uses git archive HEAD)
+# 2. Commit and push: the image is built from what is on `main`
 git add -p
 git commit -m "feat: new feature"
+git push
 
-# 3. Deploy to production
+# 3. Wait for the checks and the publish job
+gh run watch
+
+# 4. Deploy to production
 make deploy-production
-```
-
-Expected output:
-
-```
---- Archiving application files ---
-git archive --format=tgz -o /tmp/soccertime.tgz HEAD
---- Uploading application archive and configuration files ---
-soccertime.tgz                                100%  150KB 1.2MB/s   00:00
-compose.production.yaml                       100% 1882    50KB/s   00:00
-.env.production                               100%  481    15KB/s   00:00
---- Initiating remote deployment via SSH ---
---- Pulling latest Docker images ---
---- Stopping and removing old services ---
---- Extracting new application code ---
---- Copying compose file to compose.yaml ---
---- Bringing up new services ---
---- Applying database migrations ---
---- Collecting static files ---
-Deployment process completed successfully.
 ```
 
 ### Detailed deployment process
 
-The `make deploy-production` command executes the following steps:
+`make deploy-production` runs these steps, in this order:
 
-1. **archive_app**: Creates a `.tgz` archive of the code using `git archive HEAD`
-2. **upload_files**: Uploads the archive, `compose.production.yaml` and `.env.production` to the server
-3. **remote_deploy**:
-   - Pulls the latest Nginx image
-   - Stops current services
-   - Extracts new code
-   - Brings up services with `docker compose up -d --build`
-   - Runs database migrations
-   - Collects static files
-4. **clean_local_archive**: Removes the local temporary archive
+1. **pull_image**: fetches `ghcr.io/tvalverde/soccertime:sha-$(git rev-parse HEAD)` on the
+   server. It comes first because it is the step most likely to fail — the commit may not be
+   published yet — and nothing on the server has changed when it does.
+2. **upload-config**: sends `.env.production`, the only file the deploy still uploads.
+3. **backup-remote-db** and **backup-remote-media**: snapshots taken before anything migrates.
+4. **remote_deploy**: retags the outgoing image as `soccertime:previous`, puts the pulled one
+   under `soccertime:latest` and drops the registry name, then — in throwaway containers, with
+   the previous container still serving — runs `check --deploy --fail-level WARNING`,
+   `collectstatic` and `migrate`, and finally hands the service over with `scripts/relay.sh`.
+5. **remote-smoke-test**: fetches the public pages from outside, so a deploy that leaves the
+   site broken fails instead of reporting success.
+6. **prune-remote-images**: drops superseded images of this project, keeping `:previous`.
+
+Rolling back is either of two things: `soccertime:previous` is still on the host, and any
+commit CI ever published can be deployed by name with
+`make deploy-production DEPLOY_TAG=sha-<commit>`.
 
 ### Production architecture
 
@@ -471,17 +463,14 @@ tmpfs:
 
 #### Changes are not reflected in production
 
-The `git archive HEAD` command only includes committed changes. Verify your changes are in the commit:
+The image is built from what was pushed, so a change that is only committed locally — or one
+whose CI run has not finished — is not in the image the deploy asks for. The pull fails by
+name rather than deploying something older:
 
 ```bash
-# View uncommitted changes
-git status
-
-# Commit changes
-git add <files>
-git commit -m "description"
-
-# Deploy again
+git status          # anything uncommitted is not in the image
+git push
+gh run watch        # the publish job runs after the checks pass
 make deploy-production
 ```
 

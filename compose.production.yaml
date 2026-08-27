@@ -44,15 +44,15 @@ services:
     # the new container has to be serving before the old one goes, or Traefik spends a second
     # answering 502 and then four answering 404 because no route matches at all. Anything that
     # needs the running container asks compose for its id rather than assuming the name.
-    build:
-      context: .
+    # No `build:` either: the image is built by CI and published to the registry, and the
+    # deploy pulls `ghcr.io/tvalverde/soccertime:sha-<commit>` and retags it to this name
+    # before anything here runs. A build declared here would let a stray `up --build` replace
+    # a reviewed, tested image with one made from whatever code this machine happens to hold.
     image: soccertime:latest
-    # This image is built on the host and published nowhere, so `docker compose pull` asked a
-    # registry for it and got `pull access denied for soccertime, repository does not exist`,
-    # failing the whole command and taking the four images that really are remote with it.
-    # `never` says what is true: there is nothing to fetch. Deliberately not `build`, which
-    # also silences the pull but makes every `up` rebuild — that would put a build, and a
-    # `docker/dockerfile:1` download, inside the container hand-over of a deploy.
+    # No registry answers to this tag — it is a local name for something already pulled — so
+    # `docker compose pull` asked for it and got `pull access denied for soccertime,
+    # repository does not exist`, failing the whole command and taking the four images that
+    # really are remote with it. `never` says what is true: there is nothing to fetch here.
     pull_policy: never
     restart: unless-stopped
     stop_grace_period: 30s

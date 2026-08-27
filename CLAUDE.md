@@ -88,6 +88,17 @@ it is reviewable and repeatable. `deploy-production` snapshots the database befo
 migrating. `.env.production` is not versioned — it holds the secret key — but the deploy
 uploads it from the working copy, so production configuration changes take effect there.
 
+The deploy no longer sends code. CI builds the image and publishes it to
+`ghcr.io/tvalverde/soccertime:sha-<commit>`; `deploy-production` pulls that tag and retags it
+to `soccertime:latest`, which is the name the compose file, the relay, the backups and the
+prune all use — the registry is transport, not a new contract. Two consequences worth
+remembering: **a commit that is not pushed, or whose checks have not passed, cannot be
+deployed**, and the pull runs before anything on the server changes so that failure costs
+nothing. Rolling back is either `soccertime:previous` on the host or
+`make deploy-production DEPLOY_TAG=sha-<commit>` for anything CI ever published. Nothing
+retags the pulled image but `remote_deploy`, which also drops the registry name — an image
+still carrying one is not dangling, and `prune-remote-images` only reclaims dangling ones.
+
 ## Committing
 
 Stage explicit paths. `git add -A` in this repository sweeps in sandbox artefacts that

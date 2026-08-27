@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -21,10 +21,9 @@ help:
 	@echo "  format               Format code with ruff"
 	@echo ""
 	@echo "DEPLOY:"
-	@echo "  deploy-production    Full deploy (upload code + run on remote orchestrator)"
-	@echo "  upload-only          Upload code and .env.production without running deploy"
+	@echo "  deploy-production    Full deploy (pull the published image and hand over)"
 	@echo "  upload-config        Upload only .env.production"
-	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
+	@echo "  remote-restart       Recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo "  remote-install-import-cron  Install the periodic link import (SOURCE=, URL=)"
 	@echo "  remote-install-logrotate    Rotate the logs those cron entries write"
@@ -32,6 +31,7 @@ help:
 	@echo "  remote-pull          Refresh remote images, skipping the ones built on the host"
 	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200)"
 	@echo "  replica-up           Start the local production replica, ready to serve"
+	@echo "  replica-up-published Same, on the image CI published for this commit"
 	@echo "  replica-migrate      Migrate the local production replica as its database owner"
 	@echo "  replica-relay        Rehearse the deploy handover against the replica"
 	@echo "  remote-smoke-test    Verify a live deploy from outside (health + public pages)"
@@ -213,35 +213,40 @@ format:
 
 # === Deployment Commands ===
 
-# Application archive to upload
-ARCHIVE_NAME = $(APP_NAME).tgz
-LOCAL_ARCHIVE_PATH = /tmp/$(ARCHIVE_NAME)
-
 # Configuration files to upload
 ENV_PROD_FILE = .env.production
 
+# The published image, and the tag of the commit being deployed. CI tags with the full hash
+# — `type=sha,format=long` — which is what `git rev-parse` prints, so the two agree by
+# construction rather than by convention; `test_deploy_transport.py` holds them together.
+#
+# Overriding DEPLOY_TAG is the rollback that does not depend on the server still holding
+# `:previous`, and it can reach any commit CI ever published:
+#
+#   make deploy-production DEPLOY_TAG=sha-<commit>
+GHCR_IMAGE ?= ghcr.io/tvalverde/soccertime
+DEPLOY_TAG ?= sha-$(shell git rev-parse HEAD)
+
 # Main target for production deployment.
+# The pull comes first: it is the step most likely to fail — the commit may not be published
+# yet, or CI may still be running — and failing it after the database has been snapshotted
+# and the configuration uploaded would leave work half done for nothing.
 # The snapshots run before remote_deploy, which is what applies the migrations,
 # and the smoke test runs last so a deploy that leaves the site broken fails loudly.
-deploy-production: archive_app upload_files backup-remote-db backup-remote-media remote_deploy clean_local_archive remote-smoke-test prune-remote-images
+deploy-production: pull_image upload-config backup-remote-db backup-remote-media remote_deploy remote-smoke-test prune-remote-images
 	@echo "Deployment process completed successfully."
 
-# Target to archive application files locally
-archive_app:
-	@echo "--- Archiving application files ---"
-	git archive --format=tgz -o $(LOCAL_ARCHIVE_PATH) HEAD
-
-# Target to upload files to remote server
-upload_files:
-	@echo "--- Uploading application archive and .env.production ---"
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_APP_PATH)'
-	scp -P$(REMOTE_PORT) $(LOCAL_ARCHIVE_PATH) $(REMOTE_HOST):$(REMOTE_APP_PATH)/
-	@if [ -f "$(ENV_PROD_FILE)" ]; then \
-		echo "Uploading $(ENV_PROD_FILE)..."; \
-		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/; \
-	else \
-		echo "Warning: $(ENV_PROD_FILE) not found locally. Skipping upload."; \
-	fi
+# Fetch the image CI built for this commit. Nothing on the server has changed when this runs,
+# so a commit that was never published, or whose checks failed, costs a message and no state.
+pull_image:
+	@echo "--- Pulling $(GHCR_IMAGE):$(DEPLOY_TAG) ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker pull $(GHCR_IMAGE):$(DEPLOY_TAG)' || { \
+		echo ""; \
+		echo "No image published for this commit. It has to be pushed and its checks green:"; \
+		echo "  gh run watch"; \
+		echo "Or name one that exists: make deploy-production DEPLOY_TAG=sha-<commit>"; \
+		exit 1; \
+	}
 
 # Target to execute deployment commands on remote server via SSH
 #
@@ -271,19 +276,22 @@ upload_files:
 # answered 500 while `/healthz/` — which renders no template — stayed green, so the
 # container looked healthy with the site down. Finishing the collection first removes the
 # window rather than papering over it with a second restart.
+#
+# The image itself is not built here any more: `pull_image` has already fetched the one CI
+# built for this commit, and this retags it to the name everything on the host uses. The
+# registry name is then dropped — an image still carrying one is not dangling, and
+# `prune-remote-images` reclaims superseded images by pruning the dangling ones, so leaving
+# the tag behind would turn that prune into a no-op and fill the disk over releases.
 remote_deploy:
 	@echo "--- Initiating remote deployment via SSH ---"
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e && \
-		cd $(REMOTE_APP_PATH) && \
-		echo "--- Extracting new application code ---" && \
-		tar zxfv $(ARCHIVE_NAME) && \
-		rm $(ARCHIVE_NAME) && \
 		cd $(REMOTE_DOCKER_PATH) && \
 		{ docker image inspect $(APP_NAME):latest >/dev/null 2>&1 \
 			&& docker tag $(APP_NAME):latest $(APP_NAME):previous || true; } && \
-		echo "--- Building the new image ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) build $(REMOTE_SOCCERTIME_SERVICE) && \
+		echo "--- Putting the pulled image under the name the host runs ---" && \
+		docker tag $(GHCR_IMAGE):$(DEPLOY_TAG) $(APP_NAME):latest && \
+		docker rmi $(GHCR_IMAGE):$(DEPLOY_TAG) && \
 		echo "--- Fixing static volume permissions ---" && \
 		docker run --rm -v $(REMOTE_STATIC_VOLUME):/data alpine chown -R $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data && \
 		echo "--- Checking the configuration before anything runs on it ---" && \
@@ -308,26 +316,13 @@ remote_deploy:
 		sh -s $(REMOTE_SOCCERTIME_SERVICE) $(APP_NAME):latest \
 	' < scripts/relay.sh
 
-# Target to clean up local temporary archive after upload
-clean_local_archive:
-	@echo "--- Cleaning up local archive ---"
-	rm $(LOCAL_ARCHIVE_PATH)
-
-# Upload and unpack the code without building, migrating or restarting anything.
-# The archive has to be extracted here too: leaving it packed means a later
-# remote-restart quietly rebuilds the image from the previous version.
-upload-only: archive_app upload_files clean_local_archive
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		set -e; \
-		cd $(REMOTE_APP_PATH); \
-		tar zxf $(ARCHIVE_NAME); \
-		rm $(ARCHIVE_NAME) \
-	'
-	@echo "Files uploaded and extracted. No build, migration or restart executed."
-
-# Target to upload only configuration file (.env.production)
+# Target to upload only configuration file (.env.production).
+# This is the whole of what the deploy still puts on the server: the file is deliberately not
+# in the repository — it holds the secret key — so the local copy is the one of record, and
+# it cannot be baked into a published image for the same reason.
 upload-config:
 	@echo "--- Uploading configuration file only ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_APP_PATH)'
 	@if [ -f "$(ENV_PROD_FILE)" ]; then \
 		echo "Uploading $(ENV_PROD_FILE)..."; \
 		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/; \
@@ -336,14 +331,15 @@ upload-config:
 		echo "Warning: $(ENV_PROD_FILE) not found locally. Nothing uploaded."; \
 	fi
 
-# Target to rebuild/recreate remote services without uploading
+# Target to recreate remote services without deploying. No `--build`: there is nothing on the
+# server to build from, and the image under `soccertime:latest` is the one a deploy pulled.
 remote-restart:
-	@echo "--- Rebuilding and restarting remote services (safe up) ---"
+	@echo "--- Restarting remote services (safe up) ---"
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
 		cd $(REMOTE_DOCKER_PATH); \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans $(REMOTE_SOCCERTIME_SERVICE); \
-		echo "Services rebuilt/restarted successfully." \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --remove-orphans $(REMOTE_SOCCERTIME_SERVICE); \
+		echo "Services restarted successfully." \
 	'
 
 # Target to run the scraper on the remote production server and clear the cache
@@ -767,11 +763,27 @@ REPLICA_DB_VOLUME ?= $(notdir $(CURDIR))_soccertime-db
 # collecting after `up` leaves the container answering 500 to every page while its health
 # check stays green. That is the incident `CLAUDE.md` documents, and doing it in the wrong
 # order here reproduced it exactly.
-replica-up:
-	@echo "--- Handing the database volume to the user the replica runs as ---"
-	@docker run --rm -v $(REPLICA_DB_VOLUME):/db alpine chown -R $(DOCKER_UID):$(DOCKER_GID) /db
+replica-up: replica-build replica-serve
+
+# Rehearse the artefact production will run rather than a local rebuild of it. Two builds of
+# one commit are not the same image — the base image and every wheel resolve afresh — so once
+# the question is "does the published image serve?", building here answers a different one.
+# Same tag as the build, so everything downstream is untouched.
+replica-up-published: replica-pull replica-serve
+
+replica-build:
 	@echo "--- Building the replica image ---"
 	@docker compose $(REPLICA_COMPOSE) build $(REPLICA_SERVICE)
+
+replica-pull:
+	@echo "--- Pulling $(GHCR_IMAGE):$(DEPLOY_TAG) ---"
+	@docker pull $(GHCR_IMAGE):$(DEPLOY_TAG)
+	@docker tag $(GHCR_IMAGE):$(DEPLOY_TAG) $(APP_NAME):replica
+	@docker rmi $(GHCR_IMAGE):$(DEPLOY_TAG)
+
+replica-serve:
+	@echo "--- Handing the database volume to the user the replica runs as ---"
+	@docker run --rm -v $(REPLICA_DB_VOLUME):/db alpine chown -R $(DOCKER_UID):$(DOCKER_GID) /db
 	@echo "--- Collecting static files, before anything serves them ---"
 	@docker compose $(REPLICA_COMPOSE) run --rm --no-deps -u $(DOCKER_UID):$(DOCKER_GID) \
 		$(REPLICA_SERVICE) python manage.py collectstatic --noinput
