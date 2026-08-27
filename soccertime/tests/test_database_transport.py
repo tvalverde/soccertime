@@ -68,6 +68,29 @@ class TestTheDatabaseTravelsThroughAConnection:
         assert "cp $(LOCAL_DB_PATH)" not in commands
 
 
+class TestTheSnapshotCanOpenTheDatabase:
+    """A write-ahead-logged database cannot be read from a read-only filesystem.
+
+    Reading one means reading its log, and to do that SQLite needs the shared-memory index
+    beside it — which it must create when the database was closed cleanly, because a clean
+    close deletes both. On a `:ro` mount it cannot, and the backup dies with `unable to open
+    database file`.
+
+    That is not hypothetical: enabling the log broke `backup-remote-db` in production, the
+    snapshot the deploy takes before it migrates and the one the cron keeps. It was found
+    minutes after the deploy that caused it, by running the target. The first local test
+    written for this missed it, because it held a connection open while it checked — so the
+    shared-memory file was there, and the failing state was the one only production had.
+    """
+
+    @pytest.mark.parametrize("target", ["backup-remote-db", "download-db"])
+    def test_the_database_volume_is_writable(self, target):
+        commands = recipe(target)
+
+        assert "$(REMOTE_DB_VOLUME):/db:ro" not in commands
+        assert "$(REMOTE_DB_VOLUME):/db" in commands
+
+
 class TestAReplacedDatabaseLeavesNoLogBehind:
     @pytest.mark.parametrize("target", REPLACING_TARGETS)
     def test_the_log_and_the_shared_index_are_removed(self, target):

@@ -389,13 +389,18 @@ BACKUP_SUFFIX := .backup.$(shell date +%Y%m%d_%H%M%S)
 # Snapshot the production database inside its own volume. Kept on the server so a bad
 # Snapshot the database to the host, compressed and consistent. Copying the file byte by
 # byte can capture a half-written transaction; the SQLite backup API cannot.
+# The database volume is mounted writable, which a backup has no use for and SQLite
+# insists on: reading a write-ahead-logged database means reading its log, and for that
+# it must create the shared-memory index beside it — which a clean close deletes. On a
+# read-only mount it cannot, and the snapshot dies with `unable to open database file`.
+# That broke this target in production the day the log was enabled.
 backup-remote-db:
 	@echo "--- Backing up remote database ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
 		mkdir -p $(REMOTE_BACKUP_PATH); \
 		docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
-			-v $(REMOTE_DB_VOLUME):/db:ro -v $(REMOTE_BACKUP_PATH):/backups $(REMOTE_IMAGE) \
+			-v $(REMOTE_DB_VOLUME):/db -v $(REMOTE_BACKUP_PATH):/backups $(REMOTE_IMAGE) \
 			python -m soccertime.backups snapshot-db /db/$(REMOTE_DB_FILE_IN_VOLUME) \
 				/backups/db.$(BACKUP_TIMESTAMP).sqlite3.gz \
 	'
@@ -837,7 +842,7 @@ download-db:
 		python3 -m soccertime.backups snapshot-db $(LOCAL_DB_PATH) $(LOCAL_DB_PATH)$(BACKUP_SUFFIX).gz; \
 	fi
 	@mkdir -p $(dir $(LOCAL_DB_PATH))
-	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) -v $(REMOTE_DB_VOLUME):/db:ro -v /tmp:/to $(REMOTE_IMAGE) python -m soccertime.backups snapshot-db /db/$(REMOTE_DB_FILE_IN_VOLUME) /to/$(APP_NAME)-db.sqlite3.gz'
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) -v $(REMOTE_DB_VOLUME):/db -v /tmp:/to $(REMOTE_IMAGE) python -m soccertime.backups snapshot-db /db/$(REMOTE_DB_FILE_IN_VOLUME) /to/$(APP_NAME)-db.sqlite3.gz'
 	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-db.sqlite3.gz /tmp/$(APP_NAME)-db.sqlite3.gz
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-db.sqlite3.gz'
 	@docker compose stop web >/dev/null 2>&1 || true

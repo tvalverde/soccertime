@@ -78,6 +78,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SQLite would otherwise read as belonging to the new one — a stale backup is an
   inconvenience, that is a corrupt database. `test_backups.py` demonstrates the row a plain
   copy loses rather than asserting it, and `test_database_transport.py` pins the recipes.
+
+  One of those recipes had to give up a `:ro` it looked entitled to. Reading a logged
+  database means reading its log, and for that SQLite must create the shared-memory index
+  beside it — which a clean close deletes. On a read-only mount it cannot, so
+  `backup-remote-db` began answering `unable to open database file` the moment the log was
+  enabled: the snapshot the deploy takes before it migrates, and the one the cron keeps.
+  Found by running the target minutes after the deploy that caused it, and fixed by mounting
+  the volume writable, which a backup has no use for and SQLite insists on. The first local
+  test written for this had missed it, because it held a connection open while it checked —
+  so the shared-memory file was there, and the failing state was the one only production had.
 - **`EventQuerySet.watchable()` asks an `EXISTS` instead of joining and de-duplicating.**
   `filter(channels__links__enabled=True)` multiplies the event row by every enabled link
   reaching it, so it needed `distinct()` to put back — and what the paginator counts is that
