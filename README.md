@@ -291,12 +291,21 @@ make replica-up
 
 The image is built by GitHub Actions and published to `ghcr.io/tvalverde/soccertime`, tagged
 with the full commit hash. `make deploy-production` pulls the tag matching the commit being
-deployed and retags it on the host, so nothing but `.env.production` is ever uploaded: the
-code no longer lives on the server, and the image that serves is the one whose checks passed.
+deployed and retags it to `soccertime:latest` on the host, so the code no longer lives on the
+server and what serves is the image whose checks passed.
 
 The published package is public, so the server pulls it anonymously and holds no registry
-credentials. The only thing the deploy still sends is `.env.production`, which is deliberately
-not in the repository — it holds the secret key — and therefore cannot be in the image either.
+credentials. Two files still travel with a deploy, both of them descriptions of how to run
+the image on that machine rather than code: `.env.production`, which is deliberately not in
+the repository — it holds the secret key — and therefore cannot be in a public image either,
+and `compose.production.yaml`, which the server's own `~/docker/docker-compose.yml`
+`include`s from the uploaded directory rather than defining itself.
+
+`~/www/soccertime` on the server still holds the checkout the last archive-based deploy
+unpacked there. Those two uploaded files live in that same directory and **must stay**: the
+host's `docker-compose.yml` includes one and reads the other, and an `include` of a missing
+file breaks every `docker compose` command on that machine, not only this service. What can
+be cleared, once a release or two has gone out this way, is the unpacked code around them.
 
 ## Domain notes
 
@@ -337,6 +346,7 @@ make help
 |---------|-------------|
 | `make deploy-production` | Full deployment (pull the published image + snapshot the database + hand over) |
 | `make upload-config` | Upload only `.env.production` |
+| `make upload-compose` | Upload the service definition of the commit being deployed |
 | `make remote-restart` | Recreate remote services without deploying |
 | `make remote-scrape` | Run the scraper on the server and clear the cache |
 | `make remote-check` | Run Django's deployment checks against production |
@@ -426,7 +436,9 @@ make deploy-production
 1. **pull_image**: fetches `ghcr.io/tvalverde/soccertime:sha-$(git rev-parse HEAD)` on the
    server. It comes first because it is the step most likely to fail — the commit may not be
    published yet — and nothing on the server has changed when it does.
-2. **upload-config**: sends `.env.production`, the only file the deploy still uploads.
+2. **upload-compose** and **upload-config**: send the two files the image cannot carry —
+   `compose.production.yaml`, read out of git at the commit being deployed, and
+   `.env.production` from the working copy, which is where that file lives.
 3. **backup-remote-db** and **backup-remote-media**: snapshots taken before anything migrates.
 4. **remote_deploy**: retags the outgoing image as `soccertime:previous`, puts the pulled one
    under `soccertime:latest` and drops the registry name, then — in throwaway containers, with

@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -22,7 +22,8 @@ help:
 	@echo ""
 	@echo "DEPLOY:"
 	@echo "  deploy-production    Full deploy (pull the published image and hand over)"
-	@echo "  upload-config        Upload .env.production and compose.production.yaml"
+	@echo "  upload-config        Upload only .env.production"
+	@echo "  upload-compose       Upload the service definition of the deployed commit"
 	@echo "  remote-restart       Recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo "  remote-install-import-cron  Install the periodic link import (SOURCE=, URL=)"
@@ -232,6 +233,10 @@ COMPOSE_PROD_FILE = compose.production.yaml
 #   make deploy-production DEPLOY_TAG=sha-<commit>
 GHCR_IMAGE ?= ghcr.io/tvalverde/soccertime
 DEPLOY_TAG ?= sha-$(shell git rev-parse HEAD)
+# The same commit without the tag's prefix. The compose file the server runs is read out of
+# git at this revision, so overriding DEPLOY_TAG moves the definition with the image rather
+# than pairing an old image with today's working copy.
+DEPLOY_COMMIT = $(DEPLOY_TAG:sha-%=%)
 
 # Main target for production deployment.
 # The pull comes first: it is the step most likely to fail — the commit may not be published
@@ -239,7 +244,7 @@ DEPLOY_TAG ?= sha-$(shell git rev-parse HEAD)
 # and the configuration uploaded would leave work half done for nothing.
 # The snapshots run before remote_deploy, which is what applies the migrations,
 # and the smoke test runs last so a deploy that leaves the site broken fails loudly.
-deploy-production: pull_image upload-config backup-remote-db backup-remote-media remote_deploy remote-smoke-test prune-remote-images
+deploy-production: pull_image upload-compose upload-config backup-remote-db backup-remote-media remote_deploy remote-smoke-test prune-remote-images
 	@echo "Deployment process completed successfully."
 
 # Fetch the image CI built for this commit. Nothing on the server has changed when this runs,
@@ -248,9 +253,11 @@ pull_image:
 	@echo "--- Pulling $(GHCR_IMAGE):$(DEPLOY_TAG) ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker pull $(GHCR_IMAGE):$(DEPLOY_TAG)' || { \
 		echo ""; \
-		echo "No image published for this commit. It has to be pushed and its checks green:"; \
-		echo "  gh run watch"; \
-		echo "Or name one that exists: make deploy-production DEPLOY_TAG=sha-<commit>"; \
+		echo "The pull did not happen. Read the error above before assuming which:"; \
+		echo "  a 'not found' means no image was published for this commit — it has to be"; \
+		echo "  pushed and its checks green ('gh run watch'), or name one that exists with"; \
+		echo "  'make deploy-production DEPLOY_TAG=sha-<commit>'. Anything else — a refused"; \
+		echo "  connection, a name that does not resolve — is the server, not the image."; \
 		exit 1; \
 	}
 
@@ -322,14 +329,26 @@ remote_deploy:
 		sh -s $(REMOTE_SOCCERTIME_SERVICE) $(APP_NAME):latest \
 	' < scripts/relay.sh
 
-# Target to upload the configuration the server needs and the image cannot carry: the
-# environment file, which is not in the repository, and the compose file, which the server
-# includes from this directory. This is now the whole of what a deploy puts there.
-upload-config:
-	@echo "--- Uploading the configuration the server runs the image with ---"
+# Target to upload the service definition the server includes, taken from git at the commit
+# being deployed rather than from the working copy. The archive used to guarantee that by
+# construction, being made from a commit; a plain `scp` would put a half-finished compose
+# edit into production without passing through git or CI, and on a rollback it would pair an
+# old image with today's definition — a combination nothing has ever run.
+#
+# Separate from `upload-config` because that one is also what `remote-apply-config` and the
+# admin toggles run, and those have no business replacing the definition of a live service.
+upload-compose:
+	@echo "--- Uploading $(COMPOSE_PROD_FILE) as of $(DEPLOY_COMMIT) ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_APP_PATH)'
-	@echo "Uploading $(COMPOSE_PROD_FILE)..."
-	scp -P$(REMOTE_PORT) $(COMPOSE_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/
+	@git show $(DEPLOY_COMMIT):$(COMPOSE_PROD_FILE) | \
+		ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'cat > $(REMOTE_APP_PATH)/$(COMPOSE_PROD_FILE)'
+
+# Target to upload only the configuration file (`.env.production`), which is not in the
+# repository — it holds the secret key — so the local copy is the one of record, and it
+# cannot be baked into a published image for the same reason.
+upload-config:
+	@echo "--- Uploading the environment the container reads ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_APP_PATH)'
 	@if [ -f "$(ENV_PROD_FILE)" ]; then \
 		echo "Uploading $(ENV_PROD_FILE)..."; \
 		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/; \

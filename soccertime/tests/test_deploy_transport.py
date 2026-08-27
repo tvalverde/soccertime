@@ -28,16 +28,14 @@ project live, with the parser `test_database_transport.py` already uses for the 
 """
 
 import re
-from pathlib import Path
 
 import pytest
 
+from soccertime.tests.test_ci_workflow import workflow
 from soccertime.tests.test_database_transport import MAKEFILE, recipe
 
-WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
-
 # The steps of a deploy, in the order `deploy-production` names them.
-DEPLOY_STEPS = ["pull_image", "upload-config", "backup-remote-db", "remote_deploy"]
+DEPLOY_STEPS = ["pull_image", "upload-compose", "upload-config", "backup-remote-db", "remote_deploy"]
 
 
 def prerequisites(target: str) -> list[str]:
@@ -75,8 +73,7 @@ class TestTheImageArrivesFromTheRegistry:
         assert "$(ARCHIVE_NAME)" not in makefile
 
     def test_the_configuration_still_travels_with_the_deploy(self):
-        """`.env.production` is not in the repository and cannot be in the image: the local
-        file stays the one of record, so it is uploaded exactly as before."""
+        """What the image cannot carry still has to reach the server; see the class below."""
         assert "upload-config" in prerequisites("deploy-production")
 
 
@@ -89,17 +86,44 @@ class TestWhatTheServerStillNeedsSent:
     this service, it `include`s `compose.production.yaml` out of the uploaded directory. While
     the deploy shipped the whole archive that file came along with everything else. It no
     longer does, so a deploy that stopped sending it would go on running whichever definition
-    was uploaded last — including, right now, one that still declares a `build:` pointing at
-    code the server is no longer given. Nothing would report that: compose has no notion of a
+    was uploaded last — including one that still declares a `build:` pointing at code the
+    server is no longer given. Nothing would report that: compose has no notion of a
     definition being out of date, and the container would come up and answer its health check.
+
+    They travel by different targets on purpose. `upload-config` is also what
+    `remote-apply-config` and the two admin toggles run, and those have no business replacing
+    the definition of a running service — the admin is turned on to look at something, often
+    while something else is wrong.
     """
 
-    @pytest.mark.parametrize("path", ["$(ENV_PROD_FILE)", "$(COMPOSE_PROD_FILE)"])
-    def test_it_is_uploaded(self, path):
-        assert f"scp -P$(REMOTE_PORT) {path} $(REMOTE_HOST):$(REMOTE_APP_PATH)/" in recipe("upload-config")
+    def test_the_environment_file_is_uploaded(self):
+        assert "scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/" in recipe("upload-config")
 
-    def test_the_compose_file_uploaded_is_the_one_this_repository_holds(self):
-        assert re.search(r"(?m)^COMPOSE_PROD_FILE = compose\.production\.yaml", MAKEFILE.read_text())
+    def test_the_definition_is_uploaded_too(self):
+        assert "upload-compose" in prerequisites("deploy-production")
+
+    def test_the_definition_uploaded_is_the_one_belonging_to_the_image(self):
+        """From git, at the commit being deployed, never from the working copy.
+
+        The archive used to guarantee this by construction: it was made from `HEAD`, so the
+        definition on the server was always the committed one. A plain `scp` of the working
+        copy would put a half-finished compose edit into production without passing through
+        git, review or CI — and on a rollback it would pair an old image with today's
+        definition, which is the pairing nothing has ever run.
+        """
+        commands = recipe("upload-compose")
+
+        assert "git show $(DEPLOY_COMMIT):$(COMPOSE_PROD_FILE)" in commands
+        assert "scp -P$(REMOTE_PORT) $(COMPOSE_PROD_FILE)" not in commands
+
+    def test_the_commit_it_comes_from_is_the_one_the_image_was_built_from(self):
+        """`DEPLOY_TAG` is `sha-<commit>`; this is the same commit with the prefix removed,
+        so overriding the tag for a rollback moves both the image and the definition."""
+        assert re.search(r"(?m)^DEPLOY_COMMIT = \$\(DEPLOY_TAG:sha-%=%\)", MAKEFILE.read_text())
+
+    def test_the_admin_toggles_do_not_replace_the_definition(self):
+        """They upload an environment file and recreate the container; that is all they are."""
+        assert "upload-compose" not in prerequisites("remote-apply-config")
 
 
 class TestTheTagIsTheOneThatWasPublished:
@@ -110,13 +134,13 @@ class TestTheTagIsTheOneThatWasPublished:
         """Seven characters on one side and forty on the other is a pull that fails on the
         server, mid-deploy, with the site up and nothing else wrong."""
         assert "rev-parse --short" not in MAKEFILE.read_text()
-        assert "type=sha,format=long" in WORKFLOW.read_text()
+        assert "type=sha,format=long" in workflow()
 
     def test_the_registry_image_is_the_one_the_workflow_pushes(self):
         image = re.search(r"(?m)^GHCR_IMAGE \?= *(\S+)", MAKEFILE.read_text())
 
         assert image
-        assert f"images: {image.group(1)}" in WORKFLOW.read_text()
+        assert f"images: {image.group(1)}" in workflow()
 
 
 class TestTheHostContractIsUnchanged:

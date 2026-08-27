@@ -50,7 +50,7 @@ fi
 
 # --- 2. Resolve what this run promises to put into service ----------------------------
 expected=$(docker image inspect "$IMAGE_TAG" -f '{{.Id}}') || {
-    say "ERROR: the image $IMAGE_TAG does not exist here; build it first"; exit 1;
+    say "ERROR: the image $IMAGE_TAG does not exist here; the deploy pulls and tags it, so run make deploy-production rather than this script alone"; exit 1;
 }
 
 

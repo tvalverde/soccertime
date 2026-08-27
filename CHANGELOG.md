@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scraper health monitoring** in `scrapit` to report total active future events and warn if the upcoming agenda drops to 0.
 - **End-to-end ordering regression tests** in `test_views.py` ensuring landing page and agenda strictly preserve chronological sorting and tie-breaking hierarchy.
 
-- **Every push runs the suite, the linters and the type checker.** The 1,133 tests only ever
+- **Every push runs the suite, the linters and the type checker.** The 1,137 tests only ever
   ran on a laptop, by hand: there was no `.github/` at all, so a push carrying a broken
   migration, an unformatted file or a failing test looked exactly like a good one until
   somebody deployed it. GitHub Actions now runs `ruff check`, `ruff format --check`, `mypy`
@@ -199,7 +199,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A day-header test that only passed for three weeks of every month**: it placed its event
   four days from whenever it ran and compared `%d`, which pads to two digits, against a
   header that does not pad — so it failed on the first nine days of a month and nowhere else.
-  It now names a day. Also found by CI, which ran it on the first of September.
+  CI found it on its second run. It now names a day in the past, which is the only kind that
+  cannot come round again: the header renders through `naturalday`, so an event within a day
+  of now is called "hoy" or "mañana" and carries no date at all — the trap the first attempt
+  at this fix walked straight into, by fixing the day to one four days out.
 - **`resetdb` no longer passes `os.path` something that may not be a path**: the database
   name comes out of the settings as the union of everything a connection entry can hold, and
   the mapping the engine's own options are in is one of those. Found by the type checker on

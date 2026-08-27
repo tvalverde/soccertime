@@ -41,7 +41,14 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def workflow() -> str:
-    return WORKFLOW.read_text()
+    """The workflow with its comments dropped.
+
+    Everything here reads it this way. The comments explain the very things these tests look
+    for — the tag format, the excluded marker, why debug is set — so reading the file raw
+    would let a workflow that describes all of it and does none of it pass. It is also how
+    `python-version:` stops being an `on:` as far as a regex is concerned.
+    """
+    return "\n".join(line for line in WORKFLOW.read_text().splitlines() if not line.lstrip().startswith("#"))
 
 
 def job(name: str) -> str:
@@ -58,16 +65,6 @@ def job(name: str) -> str:
             else:
                 break
     return "\n".join(collected)
-
-
-def commands(name: str) -> str:
-    """One job with its comments dropped, so no assertion can be satisfied by prose.
-
-    The comments here name the very commands these tests look for — why `pytest` excludes the
-    integration marker, why `db/` has to exist first — so a workflow that explained all of it
-    and ran none of it would pass against the raw body.
-    """
-    return "\n".join(line for line in job(name).splitlines() if not line.lstrip().startswith("#"))
 
 
 class TestTheWorkflowIsReadable:
@@ -101,14 +98,14 @@ class TestItRunsEveryCheckTheProjectHas:
         ],
     )
     def test_the_command_is_part_of_the_run(self, command):
-        assert command in commands("checks")
+        assert command in job("checks")
 
     def test_the_suite_excludes_the_tests_that_call_other_people_websites(self):
-        assert 'pytest -m "not integration"' in commands("checks")
+        assert 'pytest -m "not integration"' in job("checks")
 
     def test_the_database_directory_exists_before_pytest_needs_it(self):
         """`db/` is ignored, and pytest-django puts its test database there."""
-        run = commands("checks")
+        run = job("checks")
 
         assert "mkdir -p db" in run
         assert run.index("mkdir -p db") < run.index("pytest")
@@ -117,7 +114,7 @@ class TestItRunsEveryCheckTheProjectHas:
 class TestTheRunnerCanImportTheSettings:
     def test_debug_is_on_so_the_missing_secret_key_is_not_fatal(self):
         """The key is not in the repository; without debug, importing settings raises."""
-        assert re.search(r'DJANGO_DEBUG:\s*"?true"?', commands("checks"))
+        assert re.search(r'DJANGO_DEBUG:\s*"?true"?', job("checks"))
 
 
 class TestThePythonIsTheOneProductionRuns:
@@ -133,7 +130,7 @@ class TestThePythonIsTheOneProductionRuns:
         assert base_image_python_version() is not None
 
     def test_the_runner_uses_it(self):
-        assert f'python-version: "{base_image_python_version()}"' in commands("checks")
+        assert f'python-version: "{base_image_python_version()}"' in job("checks")
 
 
 class TestTheImageIsOnlyPublishedWhenItShouldBe:
@@ -141,12 +138,12 @@ class TestTheImageIsOnlyPublishedWhenItShouldBe:
     than what it publishes."""
 
     def test_nothing_is_published_until_the_checks_have_passed(self):
-        assert re.search(r"needs:\s*\[?\s*checks", commands("publish"))
+        assert re.search(r"needs:\s*\[?\s*checks", job("publish"))
 
     def test_only_a_push_to_the_default_branch_publishes(self):
         """A pull request may come from a fork, and a fork must not be able to put an image
         where the deploy will find it — quite apart from its token being read-only."""
-        condition = re.search(r"(?m)^\s+if:\s*(.+)$", commands("publish"))
+        condition = re.search(r"(?m)^\s+if:\s*(.+)$", job("publish"))
 
         assert condition
         assert "github.event_name == 'push'" in condition.group(1)
@@ -155,7 +152,7 @@ class TestTheImageIsOnlyPublishedWhenItShouldBe:
     def test_it_asks_for_no_more_than_writing_a_package(self):
         """The workflow reads the repository; this one job also writes to the registry, and
         that difference is stated here rather than granted to everything."""
-        granted = re.findall(r"(?m)^\s+([\w-]+):\s*(read|write)$", commands("publish"))
+        granted = re.findall(r"(?m)^\s+([\w-]+):\s*(read|write)$", job("publish"))
 
         assert ("packages", "write") in granted
         assert ("contents", "write") not in granted
@@ -163,14 +160,14 @@ class TestTheImageIsOnlyPublishedWhenItShouldBe:
 
 class TestTheTagTheDeployWillAskFor:
     def test_the_image_is_the_one_the_deploy_pulls(self):
-        assert "ghcr.io/tvalverde/soccertime" in commands("publish")
+        assert "ghcr.io/tvalverde/soccertime" in job("publish")
 
     def test_the_commit_tag_carries_the_whole_hash(self):
         """`git rev-parse HEAD` prints forty characters and the deploy asks for all of them;
         `type=sha` on its own publishes `sha-1234567`, which nothing would ever pull."""
-        assert "type=sha,format=long" in commands("publish")
+        assert "type=sha,format=long" in job("publish")
 
     def test_the_published_image_carries_no_test_toolchain(self):
         """The production build is the one that says nothing: `INSTALL_DEV` defaults to
         false, and an image carrying pytest and mypy is not the one that was rehearsed."""
-        assert "INSTALL_DEV" not in commands("publish")
+        assert "INSTALL_DEV" not in job("publish")
