@@ -94,6 +94,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sites the scraper reads, and a check that fails when somebody else's website is down is a
   check nobody believes. `test_ci_workflow.py` pins each of those, comments stripped, so a
   workflow that explains them and runs none of them cannot pass.
+- **Dependabot proposes the updates nothing else was proposing.** Twelve pinned production
+  dependencies, Django, DRF and Pillow among them, and no alerts and no update pull requests:
+  a published advisory reached this project only if the author happened to read about it.
+  Weekly updates are on for the three kinds of manifest here — the requirements files, the
+  actions the workflow pins, and the base image, which needs it precisely because it stopped
+  following a floating tag. `test_dependency_updates.py` derives that list from the files in
+  the repository, so a new kind of manifest cannot arrive unwatched.
+
 ### Changed
 - **The image is pinned to the interpreter it already runs.** `python:3-alpine` resolves at
   build time, on whichever machine builds it, so the interpreter under the site could move a
