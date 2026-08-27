@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scraper health monitoring** in `scrapit` to report total active future events and warn if the upcoming agenda drops to 0.
 - **End-to-end ordering regression tests** in `test_views.py` ensuring landing page and agenda strictly preserve chronological sorting and tie-breaking hierarchy.
 
-- **Every push runs the suite, the linters and the type checker.** The 1,094 tests only ever
+- **Every push runs the suite, the linters and the type checker.** The 1,133 tests only ever
   ran on a laptop, by hand: there was no `.github/` at all, so a push carrying a broken
   migration, an unformatted file or a failing test looked exactly like a good one until
   somebody deployed it. GitHub Actions now runs `ruff check`, `ruff format --check`, `mypy`

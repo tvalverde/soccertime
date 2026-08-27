@@ -37,6 +37,13 @@ This document provides the necessary context for understanding and working on th
 
 -   **Production Deployment:**
     -   Execute `make deploy-production` to deploy the application to the production server.
+    -   The image is built by GitHub Actions and published to `ghcr.io/tvalverde/soccertime`,
+        and the deploy pulls the tag of the commit being deployed. **A commit that is not
+        pushed, or whose CI run is not green, cannot be deployed**: the pull fails by name,
+        before anything on the server has changed. The only files still uploaded are
+        `.env.production` and `compose.production.yaml`, which describe how to run the image
+        there. Roll back with `soccertime:previous` on the host or
+        `make deploy-production DEPLOY_TAG=sha-<commit>`.
 
 ## 4. Guardrails & Knowledge
 

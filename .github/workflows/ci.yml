@@ -79,7 +79,8 @@ jobs:
           # `format=long` is not decoration: the deploy asks for `sha-$(git rev-parse HEAD)`,
           # all forty characters of it, and the default abbreviated tag would publish an
           # image no deploy can name — a failure that arrives on the server, at the pull.
-          # `latest` is what the host retags after pulling, and what a person reads.
+          # `latest` is not what a deploy asks for; it names the newest published image for
+          # whoever pulls one by hand, which is otherwise a hash nobody can type.
           tags: |
             type=sha,format=long
             type=raw,value=latest,enable={{is_default_branch}}
