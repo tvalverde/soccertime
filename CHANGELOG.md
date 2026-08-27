@@ -103,6 +103,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the repository, so a new kind of manifest cannot arrive unwatched.
 
 ### Changed
+- **The build context carries the application and nothing else.** Nothing here depended on
+  `.dockerignore` being right while the server built from `git archive HEAD`, which contains
+  tracked files and only those. A build from a working copy is another thing: 20 MB of
+  database copies under `db/`, 53 MB of snapshots under `backups/` and the replica's private
+  TLS key under `.docker/` were all being copied in, and `*.sqlite3` covered none of them —
+  a `.dockerignore` pattern's `*` does not cross a `/`, so it matched `db.sqlite3` at the
+  root and nothing inside the directory where the file actually lives. Now that the image is
+  built by CI and published where anyone can pull it, that is disclosure rather than wasted
+  space. `test_published_image.py` reimplements Docker's matching, difference and all, and
+  asserts each of those paths is left out. The image also declares the repository it was
+  built from, which is what links the published package to this code.
 - **The image is pinned to the interpreter it already runs.** `python:3-alpine` resolves at
   build time, on whichever machine builds it, so the interpreter under the site could move a
   minor version without a line of this repository changing — and two builds of the same

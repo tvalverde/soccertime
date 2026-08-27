@@ -9,6 +9,10 @@ FROM python:3.14-alpine
 # What lets the deploy prune this project's superseded images without touching the ones
 # other services on the host built and cannot re-pull.
 LABEL org.opencontainers.image.title="soccertime"
+# What ties the published package to the code it was built from. The registry reads this to
+# link the package to its repository, and it is the only thing inside the image that says
+# where it came from — which matters now that production pulls it instead of building it.
+LABEL org.opencontainers.image.source="https://github.com/tvalverde/soccertime"
 ARG DOCKER_UID=1000
 ARG DOCKER_GID=1000
 ENV PYTHONDONTWRITEBYTECODE=1 \
