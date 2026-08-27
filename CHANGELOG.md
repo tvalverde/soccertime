@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   withheld: there the URL is the payload, and handing it to whoever renders this JSON would
   reopen from the outside the hole `link_button.html` closed. Search is bounded to the length
   of the fields it looks in, as `EventQuerySet.search` already was.
+- **`make replica-up`**, which starts the local production replica in a state that serves.
+  Two things stood between the documented `docker compose … up` and a working stack, and
+  both looked like a broken deploy rather than what they were. The database volume carries a
+  copy of production's, so its files belong to production's UID while the replica runs as
+  this machine's — a mismatch that used to cost only writes and, with the write-ahead log,
+  costs reads too, because reading the journal means creating the shared-memory index beside
+  it. And static files were collected after the container was already serving, so the process
+  had cached a manifest that did not name them: the incident `CLAUDE.md` documents, reproduced
+  exactly by doing it in that order. The target hands the volume over first and collects
+  before anything serves, which is the order `remote_deploy` uses — the point of a rehearsal
+  being that it runs the same way. Verified from the broken state: every page and the whole
+  API answered 200 with no manual step.
 - **A rate limit at the proxy for `/soccertime/api`**, on a router of its own beside the ones
   the admin and the favourites endpoint already had. The application's limit is precise —
   thirty a minute per caller, counted from the address Traefik reports — but it refuses

@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -31,6 +31,7 @@ help:
 	@echo "  remote-check         Run Django's deployment checks on production"
 	@echo "  remote-pull          Refresh remote images, skipping the ones built on the host"
 	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200)"
+	@echo "  replica-up           Start the local production replica, ready to serve"
 	@echo "  replica-migrate      Migrate the local production replica as its database owner"
 	@echo "  replica-relay        Rehearse the deploy handover against the replica"
 	@echo "  remote-smoke-test    Verify a live deploy from outside (health + public pages)"
@@ -746,11 +747,42 @@ MANAGE ?= migrate
 #
 #   make replica-migrate
 #   make replica-manage MANAGE="showmigrations soccertime"
+# The replica's database volume carries a copy of production's, so its files belong to
+# production's UID while the replica runs as this machine's — 1000 against 1001 here. That
+# mismatch used to cost only writes; with the write-ahead log it costs reads too, because
+# reading the journal means creating the shared-memory index beside it. The stack comes up
+# healthy and answers 500 to every page that touches the database, which reads like a broken
+# deploy rather than a permissions problem.
+#
+# The user cannot simply be production's: `./media` and `./static` are bind mounts of this
+# working copy and belong to whoever checked it out, so the replica has to run as them. So
+# the volume is handed over instead, the same way `remote_deploy` hands the static volume to
+# whoever production runs as. Doing it here rather than leaving it to be remembered is the
+# point: the README's bare `docker compose up` is what produced the 500s.
+REPLICA_DB_VOLUME ?= $(notdir $(CURDIR))_soccertime-db
+
+# The steps run in the order `remote_deploy` runs them, which is the other half of what
+# makes this a rehearsal: static files are collected **before** anything serves them. A
+# process reads the manifest once, at startup, and caches it for its whole life — so
+# collecting after `up` leaves the container answering 500 to every page while its health
+# check stays green. That is the incident `CLAUDE.md` documents, and doing it in the wrong
+# order here reproduced it exactly.
+replica-up:
+	@echo "--- Handing the database volume to the user the replica runs as ---"
+	@docker run --rm -v $(REPLICA_DB_VOLUME):/db alpine chown -R $(DOCKER_UID):$(DOCKER_GID) /db
+	@echo "--- Building the replica image ---"
+	@docker compose $(REPLICA_COMPOSE) build $(REPLICA_SERVICE)
+	@echo "--- Collecting static files, before anything serves them ---"
+	@docker compose $(REPLICA_COMPOSE) run --rm --no-deps -u $(DOCKER_UID):$(DOCKER_GID) \
+		$(REPLICA_SERVICE) python manage.py collectstatic --noinput
+	@echo "--- Starting the replica ---"
+	@docker compose $(REPLICA_COMPOSE) up -d traefik $(REPLICA_SERVICE) soccertime-nginx
+
 replica-manage:
 	@owner=$$(docker compose $(REPLICA_COMPOSE) exec -T $(REPLICA_SERVICE) \
 		stat -c "%u:%g" /code/db/db.sqlite3 2>/dev/null | tr -d "\r"); \
 	if [ -z "$$owner" ]; then \
-		echo "The replica is not running. Start it with the command in README.md."; \
+		echo "The replica is not running. Start it with 'make replica-up'."; \
 		exit 1; \
 	fi; \
 	echo "--- Running '$(MANAGE)' on the replica as $$owner ---"; \

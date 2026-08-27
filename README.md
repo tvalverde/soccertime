@@ -275,7 +275,7 @@ openssl req -x509 -nodes -newkey rsa:2048 \
 3. Start the local production stack:
 
 ```bash
-docker compose -f compose.yaml -f compose.production.yaml -f compose.production.local.yaml up -d --build
+make replica-up
 ```
 
 4. Optionally map local hostnames in `/etc/hosts`:
