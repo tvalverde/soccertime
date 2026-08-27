@@ -23,7 +23,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        db_path = settings.DATABASES["default"]["NAME"]
+        # A settings entry may be a path, a string or, for the engine's own options, a
+        # mapping; `NAME` is only ever the first two, and saying so is what lets `os` take it.
+        db_path = str(settings.DATABASES["default"]["NAME"])
 
         if not options["noinput"]:
             confirm = input(f"This will delete the database at {db_path}. Are you sure? [y/N]: ")

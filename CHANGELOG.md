@@ -152,6 +152,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
+- **`resetdb` no longer passes `os.path` something that may not be a path**: the database
+  name comes out of the settings as the union of everything a connection entry can hold, and
+  the mapping the engine's own options are in is one of those. Found by the type checker on
+  the very first CI run, on a machine with no cache to hide it — the local one had been
+  answering "no issues" from a result computed before the code it describes.
 - **Channel names arriving as mojibake from a remote list**: `requests` decodes a charset-less
   `text/*` response as ISO-8859-1, so every accented name in a UTF-8 playlist matched nothing.
   Bodies are now decoded as UTF-8 explicitly, and a byte order mark is stripped from local files.
