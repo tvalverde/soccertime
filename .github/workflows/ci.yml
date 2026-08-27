@@ -48,3 +48,52 @@ jobs:
         run: |
           mkdir -p db
           pytest -m "not integration"
+
+  # The image production runs. It is built here, once, from a clean checkout, and pulled by
+  # the deploy — rather than built on the server from an uploaded tarball, which meant the
+  # code lived there, the base image was resolved there, and two deploys of one commit could
+  # produce two different images.
+  publish:
+    needs: [checks]
+    # Never from a pull request: it may come from a fork, and a fork must not be able to put
+    # an image where the deploy will find it. Its token could not push one anyway, which is
+    # the sort of failure that is better refused than discovered.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The one thing this workflow writes. Granted to this job alone rather than to the
+      # workflow, so the job that runs the tests cannot publish anything.
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/tvalverde/soccertime
+          # `format=long` is not decoration: the deploy asks for `sha-$(git rev-parse HEAD)`,
+          # all forty characters of it, and the default abbreviated tag would publish an
+          # image no deploy can name — a failure that arrives on the server, at the pull.
+          # `latest` is what the host retags after pulling, and what a person reads.
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # No build arguments: the production build is the one that says nothing, and an
+          # image carrying pytest and mypy is not the one this suite rehearsed.
+          #
+          # Provenance off keeps the push a single image manifest rather than an index. The
+          # server resolves what it pulled with `docker image inspect` and hands that id to
+          # the relay, which compares it against the running container's — an attestation
+          # index answers that question with a digest no container ever reports.
+          provenance: false

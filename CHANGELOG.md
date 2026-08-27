@@ -94,6 +94,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sites the scraper reads, and a check that fails when somebody else's website is down is a
   check nobody believes. `test_ci_workflow.py` pins each of those, comments stripped, so a
   workflow that explains them and runs none of them cannot pass.
+- **The production image is built once, by CI, and published to the registry.** Every push
+  to `main` whose checks pass builds the image from a clean checkout and pushes it to
+  `ghcr.io/tvalverde/soccertime`, tagged with the full commit hash and with `latest`. Until
+  now the server built its own from an uploaded tarball, which is three problems in one: the
+  code had to live there, the base image and every wheel were resolved there and at that
+  moment, and two deploys of the same commit could produce two different images — the reason
+  the outgoing one is kept as the only rollback that is a known quantity. The tag carries all
+  forty characters of the hash because the deploy asks for exactly what `git rev-parse HEAD`
+  prints; the abbreviated default would publish an image no deploy can name, and that failure
+  arrives on the server, at the pull. Only a push publishes, never a pull request, which may
+  come from a fork; and the registry write is granted to that job alone, so the job that runs
+  the tests cannot publish anything.
 - **Dependabot proposes the updates nothing else was proposing.** Twelve pinned production
   dependencies, Django, DRF and Pillow among them, and no alerts and no update pull requests:
   a published advisory reached this project only if the author happened to read about it.

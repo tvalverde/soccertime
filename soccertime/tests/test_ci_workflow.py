@@ -1,6 +1,6 @@
 """What the workflow that runs on every push has to keep doing.
 
-The suite is 1071 tests that nothing ever ran outside a laptop: the repository had no
+The suite is a thousand tests that nothing ever ran outside a laptop: the repository had no
 `.github/` at all, so a push carrying a broken migration or an unformatted file looked
 exactly like a good one until someone deployed it. This pins the parts of the workflow
 whose loss is silent — a green run that checked less than it appears to.
@@ -19,6 +19,11 @@ website went down, and the only defence against that is to stop believing CI.
 `db/` is not in the repository — it is ignored — and it is where `DATABASES` puts the
 SQLite file, so pytest-django creates its test database inside a directory that does not
 exist on a fresh checkout. Nothing else in the run would say so.
+
+The same workflow publishes the image production runs, which adds a fourth: the tag. The
+deploy asks for `sha-<commit>` using the full hash `git rev-parse` prints, so a workflow
+tagging with the abbreviated one would publish an image no deploy can name — and the failure
+arrives on the server, at the pull, with the site still up and nothing else wrong.
 
 Parsed with `re` rather than a YAML library, following `test_compose_images.py` and
 `test_requirements.py`: a parser is not worth a dependency for a handful of fields.
@@ -71,8 +76,9 @@ class TestTheWorkflowIsReadable:
     def test_the_workflow_exists(self):
         assert WORKFLOW.is_file()
 
-    def test_the_checks_job_has_a_body(self):
-        assert job("checks").strip()
+    @pytest.mark.parametrize("name", ["checks", "publish"])
+    def test_the_job_has_a_body(self, name):
+        assert job(name).strip()
 
 
 class TestItRunsWhereItMatters:
@@ -127,4 +133,44 @@ class TestThePythonIsTheOneProductionRuns:
         assert base_image_python_version() is not None
 
     def test_the_runner_uses_it(self):
-        assert f'python-version: "{base_image_python_version()}"' in job("checks")
+        assert f'python-version: "{base_image_python_version()}"' in commands("checks")
+
+
+class TestTheImageIsOnlyPublishedWhenItShouldBe:
+    """Production pulls what this job pushes, so what it refuses to publish matters more
+    than what it publishes."""
+
+    def test_nothing_is_published_until_the_checks_have_passed(self):
+        assert re.search(r"needs:\s*\[?\s*checks", commands("publish"))
+
+    def test_only_a_push_to_the_default_branch_publishes(self):
+        """A pull request may come from a fork, and a fork must not be able to put an image
+        where the deploy will find it — quite apart from its token being read-only."""
+        condition = re.search(r"(?m)^\s+if:\s*(.+)$", commands("publish"))
+
+        assert condition
+        assert "github.event_name == 'push'" in condition.group(1)
+        assert "refs/heads/main" in condition.group(1)
+
+    def test_it_asks_for_no_more_than_writing_a_package(self):
+        """The workflow reads the repository; this one job also writes to the registry, and
+        that difference is stated here rather than granted to everything."""
+        granted = re.findall(r"(?m)^\s+([\w-]+):\s*(read|write)$", commands("publish"))
+
+        assert ("packages", "write") in granted
+        assert ("contents", "write") not in granted
+
+
+class TestTheTagTheDeployWillAskFor:
+    def test_the_image_is_the_one_the_deploy_pulls(self):
+        assert "ghcr.io/tvalverde/soccertime" in commands("publish")
+
+    def test_the_commit_tag_carries_the_whole_hash(self):
+        """`git rev-parse HEAD` prints forty characters and the deploy asks for all of them;
+        `type=sha` on its own publishes `sha-1234567`, which nothing would ever pull."""
+        assert "type=sha,format=long" in commands("publish")
+
+    def test_the_published_image_carries_no_test_toolchain(self):
+        """The production build is the one that says nothing: `INSTALL_DEV` defaults to
+        false, and an image carrying pytest and mypy is not the one that was rehearsed."""
+        assert "INSTALL_DEV" not in commands("publish")
