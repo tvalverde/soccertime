@@ -125,8 +125,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they always named, so the registry is transport rather than a second contract. The pull is
   the first step of the deploy, because it is the one most likely to fail — the commit may
   not be published yet — and failing it after the snapshots and the configuration upload
-  would leave work half done. `.env.production` is still uploaded and still the local file of
-  record: it holds the secret key, which is exactly why it cannot be in a published image.
+  would leave work half done. Two files still travel with a deploy, both of them descriptions
+  of how to run the image here rather than code: `.env.production`, whose local copy stays
+  the one of record because it holds the secret key and therefore cannot be in a public
+  image, and `compose.production.yaml`, which the server's own `docker-compose.yml`
+  `include`s out of the uploaded directory instead of defining itself. The archive used to
+  carry that one along with everything else, and a deploy that stopped sending it would have
+  gone on running the definition uploaded last — with nothing anywhere to say it was old.
   Rolling back gained a second route that does not depend on the server still holding
   `:previous`: `make deploy-production DEPLOY_TAG=sha-<commit>` reaches anything CI published.
   `make replica-up-published` rehearses that same artefact locally, which a rebuild of the

@@ -22,7 +22,7 @@ help:
 	@echo ""
 	@echo "DEPLOY:"
 	@echo "  deploy-production    Full deploy (pull the published image and hand over)"
-	@echo "  upload-config        Upload only .env.production"
+	@echo "  upload-config        Upload .env.production and compose.production.yaml"
 	@echo "  remote-restart       Recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo "  remote-install-import-cron  Install the periodic link import (SOURCE=, URL=)"
@@ -213,8 +213,14 @@ format:
 
 # === Deployment Commands ===
 
-# Configuration files to upload
+# Configuration files to upload. Both describe how to run the image on this server, which is
+# the one thing the image itself cannot carry: the environment file holds the secret key and
+# is deliberately not in the repository, and the compose file is what the server's own
+# `~/docker/docker-compose.yml` includes from the uploaded directory rather than defining
+# itself. That include is why the compose file has to keep travelling now that the archive
+# does not — a definition left behind would go on being used, with nothing to say it is old.
 ENV_PROD_FILE = .env.production
+COMPOSE_PROD_FILE = compose.production.yaml
 
 # The published image, and the tag of the commit being deployed. CI tags with the full hash
 # — `type=sha,format=long` — which is what `git rev-parse` prints, so the two agree by
@@ -316,17 +322,18 @@ remote_deploy:
 		sh -s $(REMOTE_SOCCERTIME_SERVICE) $(APP_NAME):latest \
 	' < scripts/relay.sh
 
-# Target to upload only configuration file (.env.production).
-# This is the whole of what the deploy still puts on the server: the file is deliberately not
-# in the repository — it holds the secret key — so the local copy is the one of record, and
-# it cannot be baked into a published image for the same reason.
+# Target to upload the configuration the server needs and the image cannot carry: the
+# environment file, which is not in the repository, and the compose file, which the server
+# includes from this directory. This is now the whole of what a deploy puts there.
 upload-config:
-	@echo "--- Uploading configuration file only ---"
+	@echo "--- Uploading the configuration the server runs the image with ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_APP_PATH)'
+	@echo "Uploading $(COMPOSE_PROD_FILE)..."
+	scp -P$(REMOTE_PORT) $(COMPOSE_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/
 	@if [ -f "$(ENV_PROD_FILE)" ]; then \
 		echo "Uploading $(ENV_PROD_FILE)..."; \
 		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/; \
-		echo "Configuration file uploaded successfully."; \
+		echo "Configuration uploaded successfully."; \
 	else \
 		echo "Warning: $(ENV_PROD_FILE) not found locally. Nothing uploaded."; \
 	fi

@@ -80,6 +80,28 @@ class TestTheImageArrivesFromTheRegistry:
         assert "upload-config" in prerequisites("deploy-production")
 
 
+class TestWhatTheServerStillNeedsSent:
+    """The image carries the code. It cannot carry the two files that say how to run it here.
+
+    `.env.production` is the obvious one — it holds the secret key, which is why it is
+    neither in the repository nor in a public image. The compose file is the one that is easy
+    to miss and expensive to miss: the server's `~/docker/docker-compose.yml` does not define
+    this service, it `include`s `compose.production.yaml` out of the uploaded directory. While
+    the deploy shipped the whole archive that file came along with everything else. It no
+    longer does, so a deploy that stopped sending it would go on running whichever definition
+    was uploaded last — including, right now, one that still declares a `build:` pointing at
+    code the server is no longer given. Nothing would report that: compose has no notion of a
+    definition being out of date, and the container would come up and answer its health check.
+    """
+
+    @pytest.mark.parametrize("path", ["$(ENV_PROD_FILE)", "$(COMPOSE_PROD_FILE)"])
+    def test_it_is_uploaded(self, path):
+        assert f"scp -P$(REMOTE_PORT) {path} $(REMOTE_HOST):$(REMOTE_APP_PATH)/" in recipe("upload-config")
+
+    def test_the_compose_file_uploaded_is_the_one_this_repository_holds(self):
+        assert re.search(r"(?m)^COMPOSE_PROD_FILE = compose\.production\.yaml", MAKEFILE.read_text())
+
+
 class TestTheTagIsTheOneThatWasPublished:
     def test_the_deploy_asks_for_the_commit_it_is_deploying(self):
         assert re.search(r"(?m)^DEPLOY_TAG \?= *sha-\$\(shell git rev-parse HEAD\)", MAKEFILE.read_text())
