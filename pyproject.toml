@@ -31,8 +31,10 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-# Ships no type information of its own.
-module = ["adminsortable2.*"]
+# Ship no type information of their own. `djangorestframework-stubs` pins its own DRF and
+# Django versions and would take over the resolution of both, which is a larger commitment
+# than the API code here repays.
+module = ["adminsortable2.*", "rest_framework.*"]
 ignore_missing_imports = true
 
 [tool.django-stubs]

@@ -93,8 +93,13 @@ REMOTE_DB_FILE_IN_VOLUME ?= db.sqlite3
 REMOTE_CACHE_FILE_IN_VOLUME ?= soccertime_data_cache.sqlite
 
 # Public entry point and pages checked after a deploy. Override in .env if they change.
+# The API listing and its documentation page are in here because they are the only things
+# that would notice a production image built without the new dependencies: `/healthz/`
+# renders no template and answers green either way, which is exactly how a deploy reported
+# success while every page returned 500. The smoke test appends `?smoke=<pid>`, which the
+# API ignores by design — an unknown parameter must never turn a listing into a 400.
 PRODUCTION_URL ?= https://www.mojon.es/soccertime
-SMOKE_PATHS ?= /healthz/ /favorites/ /agenda/ /competitions/ /channels/
+SMOKE_PATHS ?= /healthz/ /favorites/ /agenda/ /competitions/ /channels/ /api/v1/events/ /api/v1/docs/
 
 # Defaults for `remote-logs`. `SINCE` accepts anything `docker compose logs --since` does,
 # so `10m`, `1h` or an ISO timestamp. `GREP` is a plain pattern, empty for everything.
@@ -443,16 +448,17 @@ restore-remote-db:
 	@echo "--- Restoring remote database from $(BACKUP) ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
-		docker run --rm -v $(REMOTE_DB_VOLUME):/db -v $(REMOTE_BACKUP_PATH):/backups:ro alpine sh -c " \
-			test -f /backups/$(BACKUP) || { echo Snapshot $(BACKUP) not found; exit 1; }; \
-			cp /db/$(REMOTE_DB_FILE_IN_VOLUME) /db/$(REMOTE_DB_FILE_IN_VOLUME).pre-restore; \
-			gunzip -c /backups/$(BACKUP) > /db/$(REMOTE_DB_FILE_IN_VOLUME); \
-			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /db/$(REMOTE_DB_FILE_IN_VOLUME) \
-		"; \
+		test -f $(REMOTE_BACKUP_PATH)/$(BACKUP) || { echo Snapshot $(BACKUP) not found; exit 1; }; \
 		cd $(REMOTE_DOCKER_PATH); \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) restart $(REMOTE_SOCCERTIME_SERVICE) \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) stop $(REMOTE_SOCCERTIME_SERVICE); \
+		docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) -v $(REMOTE_DB_VOLUME):/db -v $(REMOTE_BACKUP_PATH):/backups:ro $(REMOTE_IMAGE) sh -c " \
+			python -m soccertime.backups snapshot-db /db/$(REMOTE_DB_FILE_IN_VOLUME) /db/db.$(BACKUP_TIMESTAMP).pre-restore.sqlite3.gz; \
+			gunzip -c /backups/$(BACKUP) > /db/$(REMOTE_DB_FILE_IN_VOLUME); \
+			rm -f /db/$(REMOTE_DB_FILE_IN_VOLUME)-wal /db/$(REMOTE_DB_FILE_IN_VOLUME)-shm \
+		"; \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) start $(REMOTE_SOCCERTIME_SERVICE) \
 	'
-	@echo "Database restored and service restarted."
+	@echo "Database restored and service started."
 
 
 # Restore flag images whose file went missing from the media volume, re-fetching them
@@ -827,31 +833,40 @@ remote-check:
 download-db:
 	@echo "--- Downloading database from remote volume ---"
 	@if [ -f "$(LOCAL_DB_PATH)" ]; then \
-		echo "Backing up local database to $(LOCAL_DB_PATH)$(BACKUP_SUFFIX)"; \
-		cp $(LOCAL_DB_PATH) $(LOCAL_DB_PATH)$(BACKUP_SUFFIX); \
+		echo "Snapshotting local database to $(LOCAL_DB_PATH)$(BACKUP_SUFFIX).gz"; \
+		python3 -m soccertime.backups snapshot-db $(LOCAL_DB_PATH) $(LOCAL_DB_PATH)$(BACKUP_SUFFIX).gz; \
 	fi
 	@mkdir -p $(dir $(LOCAL_DB_PATH))
-	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'HOST_UID=$$(id -u); HOST_GID=$$(id -g); docker run --rm -v $(REMOTE_DB_VOLUME):/from -v /tmp:/to alpine sh -c "cp /from/$(REMOTE_DB_FILE_IN_VOLUME) /to/$(APP_NAME)-db.sqlite3 && chown $$HOST_UID:$$HOST_GID /to/$(APP_NAME)-db.sqlite3"'
-	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-db.sqlite3 $(LOCAL_DB_PATH)
-	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-db.sqlite3'
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) -v $(REMOTE_DB_VOLUME):/db:ro -v /tmp:/to $(REMOTE_IMAGE) python -m soccertime.backups snapshot-db /db/$(REMOTE_DB_FILE_IN_VOLUME) /to/$(APP_NAME)-db.sqlite3.gz'
+	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-db.sqlite3.gz /tmp/$(APP_NAME)-db.sqlite3.gz
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-db.sqlite3.gz'
+	@docker compose stop web >/dev/null 2>&1 || true
+	gunzip -c /tmp/$(APP_NAME)-db.sqlite3.gz > $(LOCAL_DB_PATH)
+	@rm -f $(LOCAL_DB_PATH)-wal $(LOCAL_DB_PATH)-shm /tmp/$(APP_NAME)-db.sqlite3.gz
+	@docker compose start web >/dev/null 2>&1 || true
 	@echo "Database downloaded successfully."
 
 # Upload database to remote DB volume (with remote backup)
 upload-db:
 	@echo "--- Uploading database to remote volume ---"
-	scp -P$(REMOTE_PORT) $(LOCAL_DB_PATH) $(REMOTE_HOST):~/$(APP_NAME)-db.sqlite3
+	python3 -m soccertime.backups snapshot-db $(LOCAL_DB_PATH) /tmp/$(APP_NAME)-db.sqlite3.gz
+	scp -P$(REMOTE_PORT) /tmp/$(APP_NAME)-db.sqlite3.gz $(REMOTE_HOST):~/$(APP_NAME)-db.sqlite3.gz
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
-		docker run --rm -v $(REMOTE_DB_VOLUME):/data -v $$HOME:/src alpine sh -c " \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) stop $(REMOTE_SOCCERTIME_SERVICE); \
+		docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) -v $(REMOTE_DB_VOLUME):/data -v $$HOME:/src $(REMOTE_IMAGE) sh -c " \
 			if [ -f /data/$(REMOTE_DB_FILE_IN_VOLUME) ]; then \
-				echo Backing up remote database; \
-				cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.$$(date +%Y%m%d_%H%M%S); \
+				echo Snapshotting the database being replaced; \
+				python -m soccertime.backups snapshot-db /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/db.$(BACKUP_TIMESTAMP).pre-upload.sqlite3.gz; \
 			fi; \
-			cp /src/$(APP_NAME)-db.sqlite3 /data/$(REMOTE_DB_FILE_IN_VOLUME); \
-			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME) \
+			gunzip -c /src/$(APP_NAME)-db.sqlite3.gz > /data/$(REMOTE_DB_FILE_IN_VOLUME); \
+			rm -f /data/$(REMOTE_DB_FILE_IN_VOLUME)-wal /data/$(REMOTE_DB_FILE_IN_VOLUME)-shm \
 		"; \
-		rm -f ~/$(APP_NAME)-db.sqlite3 \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) start $(REMOTE_SOCCERTIME_SERVICE); \
+		rm -f ~/$(APP_NAME)-db.sqlite3.gz \
 	'
+	@rm -f /tmp/$(APP_NAME)-db.sqlite3.gz
 	@echo "Database uploaded successfully."
 
 # Download cache from remote DB volume (with local backup)

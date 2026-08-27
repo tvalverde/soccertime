@@ -9,6 +9,7 @@ Django application for aggregating and displaying sports events (football, cycli
 - **Unified Visual Experience:** Consistent dark-themed UI across all event listings (favorites, daily agenda, sports, channels, and competitions).
 - **Accessibility:** Accessible UI components with semantic HTML and ARIA labels.
 - **Developer Friendly:** Clean architecture using polymorphism patterns (`child_event`) and standardized component structures.
+- **REST API:** Everything the site shows, readable as JSON under `/api/v1/`, described by an OpenAPI document the code generates and browsable at `/api/v1/docs/`.
 
 ## Requirements
 
@@ -31,6 +32,7 @@ soccertime/
 ├── soccertime/               # Django application
 │   ├── models.py             # Data models (Event, Match, Race, etc.)
 │   ├── views.py              # View functions
+│   ├── api/                  # Read-only REST API (DRF) and its OpenAPI schema
 │   ├── admin.py              # Django admin configuration
 │   ├── static/               # Static assets (CSS, JS)
 │   ├── tests/                # Test suite (pytest)
@@ -196,6 +198,56 @@ docker compose exec web ruff format soccertime/
 # Check formatting without applying changes
 docker compose exec web ruff format soccertime/ --check
 ```
+
+## REST API
+
+Everything the site shows is also readable as JSON, under `/api/v1/`. The API is
+**read-only**: the only write the site accepts is the favourites cookie, which belongs to a
+browser rather than to a caller, so every endpoint answers `405` to anything but a `GET`.
+Nothing authenticates, exactly as the pages do not.
+
+| Endpoint | What it lists |
+| --- | --- |
+| `/api/v1/events/` | Every event — matches, races and simple events in one chronological listing |
+| `/api/v1/competitions/` | Competitions, with their sport, flag and how many events they still have |
+| `/api/v1/sports/` | Sports, in the order the site groups them |
+| `/api/v1/teams/` | Teams and their crests |
+| `/api/v1/flags/` | Flags competitions are shown with |
+| `/api/v1/channels/` | Channels, each with the links it carries |
+| `/api/v1/channel-links/` | The link directory `/channels/` renders |
+| `/api/v1/channel-link-sources/` | Where those links were imported from |
+| `/api/v1/favorites/` | The owner's curated favourites |
+| `/api/v1/schema/` | The OpenAPI 3 document, generated from the code (`?format=json` for JSON) |
+| `/api/v1/docs/` | Swagger UI, served from this origin |
+
+### Reading it
+
+```bash
+# What is on today, with something to watch it on
+curl 'http://localhost:8000/api/v1/events/?today_onwards=true&watchable=true'
+
+# One competition, newest first, fifty to a page
+curl 'http://localhost:8000/api/v1/events/?competition=12&ordering=-date&page_size=50'
+
+# What a search box would return
+curl 'http://localhost:8000/api/v1/events/?search=real%20madrid'
+
+# The owner's favourites, which is what the landing page shows
+curl 'http://localhost:8000/api/v1/events/?favorites=true&upcoming=true'
+```
+
+Listings are paginated (`page`, `page_size`, 25 by default and 100 at most) and travel in a
+`{count, next, previous, results}` envelope. Every filter a listing accepts is described in
+the schema, because the same declaration is what applies it — see
+`soccertime/api/filtering.py`. A parameter that cannot be read is refused with a `400` naming
+it, rather than ignored.
+
+Times are expressed in `Europe/Madrid`, with the offset attached, which is the clock the site
+is read in. `is_favorite` and `watchable` mean exactly what the corresponding queryset
+selects, so a client can draw the same stars and play buttons the pages do.
+
+Reading is limited to 120 requests a minute per address by default
+(`DJANGO_API_THROTTLE_RATE`); the counters need a cache, so the limit is inert in development.
 
 ## Local production simulation (Traefik + HTTPS)
 

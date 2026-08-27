@@ -1,0 +1,30 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+Swagger UI, initialised without a single inline byte.
+
+The page drf-spectacular ships loads the library from a CDN and starts it from an inline
+`<script>`. Both are refused here: `script-src` is `self` and there is no nonce, because
+every public page is cached whole for an hour and a nonce minted after the body was stored
+would only ever match for the visitor who populated the cache. So the assets come from the
+sidecar package through `collectstatic`, and `api_docs.js` reads the schema URL from the
+data attribute below.
+
+Standalone rather than an extension of `base.html`: the site chrome would sit above a tool
+that already has its own, and the stylesheet is Swagger's own.
+{% endcomment %}
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <title>Soccertime :: API</title>
+    <link rel="icon" href="{% static 'drf_spectacular_sidecar/swagger-ui-dist/favicon-32x32.png' %}" sizes="32x32">
+    <link rel="stylesheet" href="{% static 'drf_spectacular_sidecar/swagger-ui-dist/swagger-ui.css' %}">
+    <link rel="stylesheet" href="{% static 'soccertime/css/api_docs.css' %}">
+</head>
+<body>
+    <div id="swagger-ui" data-schema-url="{% url 'api-schema' %}?format=json"></div>
+    <script src="{% static 'drf_spectacular_sidecar/swagger-ui-dist/swagger-ui-bundle.js' %}"></script>
+    <script src="{% static 'soccertime/js/api_docs.js' %}"></script>
+</body>
+</html>

@@ -65,6 +65,18 @@ cache either.
 - Views are wrapped in `@cache_page`. Never put per-request state into a cached response:
   a `messages` entry ends up in the shared page cache and is served to everyone else.
   Empty states travel in the context and render `soccertime/empty_state.html`.
+- The API's documentation page cannot be drf-spectacular's own: it pulls Swagger UI from a
+  CDN and initialises it from an inline `<script>`, and `script-src` here is `self` with no
+  nonce. `templates/soccertime/api_docs.html` serves the sidecar assets from this origin and
+  passes the schema URL through a data attribute that `api_docs.js` reads.
+- `SCHEMA_PATH_PREFIX_INSERT` is fed from `FORCE_SCRIPT_NAME`. Without it every path in the
+  schema would be one production does not answer — and it is invisible locally, where the
+  prefix is empty.
+- The database keeps a **write-ahead log**, so it is two files: the newest commits sit in
+  `db.sqlite3-wal` until a checkpoint. Never move or replace it with `cp` — take it through
+  a connection with `python -m soccertime.backups snapshot-db`, and when replacing one,
+  stop the service and delete the `-wal` and `-shm` beside it first. SQLite reads a leftover
+  log as belonging to whatever file it finds, which is corruption rather than staleness.
 - `Event.Meta.ordering` is deliberately the bare `date`. Ordering by related fields makes
   every count, lookup and admin query join those tables. Listings opt in with
   `EventQuerySet.chronological()`.

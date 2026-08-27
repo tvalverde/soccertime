@@ -1,6 +1,7 @@
 """Tests for the generational retention policy and the database snapshot."""
 
 import gzip
+import shutil
 import sqlite3
 
 import pytest
@@ -140,3 +141,65 @@ class TestSnapshotDatabase:
         snapshot_database(source, tmp_path / "db.20260810_120000.sqlite3.gz")
 
         assert not (tmp_path / "db.20260810_120000.sqlite3").exists()
+
+
+class TestTheSnapshotSurvivesWriteAheadLogging:
+    """What makes `snapshot_database` the only safe way to move this database.
+
+    In WAL mode a committed transaction lives in `db.sqlite3-wal` until a checkpoint folds
+    it back into the main file, and nothing says when that happens. Copying the main file
+    alone therefore yields a database that is missing its most recent writes — silently,
+    with no error and no corruption to notice. The online backup API reads *through* a
+    connection, so it sees the log as well as the file.
+
+    This is a characterisation test rather than a fix: the implementation already uses that
+    API, and the docstring already says why. What it stops is somebody replacing it with a
+    `shutil.copy` that passes every other test in this file.
+    """
+
+    def wal_database_with_an_uncheckpointed_row(self, path):
+        """A database whose newest committed row is only in the log, connection still open."""
+        connection = sqlite3.connect(path)
+        connection.execute("PRAGMA journal_mode=WAL;")
+        connection.execute("CREATE TABLE event (name TEXT);")
+        connection.execute("INSERT INTO event VALUES ('checkpointed');")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(FULL);")
+        connection.execute("INSERT INTO event VALUES ('only in the log');")
+        connection.commit()
+        return connection
+
+    def rows_in(self, path):
+        with gzip.open(path, "rb") as compressed:
+            plain = path.with_suffix(".plain")
+            plain.write_bytes(compressed.read())
+        connection = sqlite3.connect(plain)
+        try:
+            return {row[0] for row in connection.execute("SELECT name FROM event;")}
+        finally:
+            connection.close()
+
+    def test_it_captures_a_row_that_is_still_only_in_the_log(self, tmp_path):
+        source = tmp_path / "db.sqlite3"
+        open_connection = self.wal_database_with_an_uncheckpointed_row(source)
+        try:
+            snapshot_database(source, tmp_path / "db.20260101_000000.sqlite3.gz")
+        finally:
+            open_connection.close()
+
+        assert self.rows_in(tmp_path / "db.20260101_000000.sqlite3.gz") == {"checkpointed", "only in the log"}
+
+    def test_copying_the_file_alone_would_have_lost_it(self, tmp_path):
+        """The failure this guards against, demonstrated rather than asserted from memory."""
+        source = tmp_path / "db.sqlite3"
+        open_connection = self.wal_database_with_an_uncheckpointed_row(source)
+        try:
+            shutil.copy(source, tmp_path / "naive.sqlite3")
+        finally:
+            open_connection.close()
+
+        naive = sqlite3.connect(tmp_path / "naive.sqlite3")
+        try:
+            assert {row[0] for row in naive.execute("SELECT name FROM event;")} == {"checkpointed"}
+        finally:
+            naive.close()

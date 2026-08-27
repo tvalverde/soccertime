@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A read-only REST API under `/api/v1/`**, serving everything the site shows — the events
+  listing with its matches, races and simple events flattened into one shape, the
+  competitions, sports, teams and flags behind it, the channel directory and the owner's
+  curated favourites — described by an OpenAPI 3 document generated from the code and
+  browsable through Swagger UI at `/api/v1/docs/`. Every endpoint answers `405` to anything
+  but a `GET`: the site's only write is a signed cookie belonging to a browser, and there is
+  nothing a caller could hold that would authorise one. Times carry the `Europe/Madrid`
+  offset, `is_favorite` and `watchable` select exactly what `EventQuerySet.favorites()` and
+  `watchable()` do — pinned row by row against those querysets — and images report the
+  dimensions stored on the row, never the ones in the file, which is what returned 500 from
+  `/competitions/` when 49 flags had lost theirs. Each filter is declared once and read twice,
+  to narrow the listing and to document itself, so one cannot exist without the other; a
+  value that cannot be parsed is refused with a `400` naming it rather than silently ignored.
+  Swagger UI is served from this origin and started from a static file, because the stock
+  page loads a CDN and an inline script and the Content-Security-Policy refuses both. 193
+  tests, including that `collectstatic` still post-processes the new assets — the deploy step
+  that once answered 500 to every page while the health check stayed green.
+
+  Being public and unauthenticated, the read limit is part of the feature rather than a
+  setting: **30 requests a minute per caller**, sized against what one costs on the single
+  CPU the production container is allowed, and counted per real client address. `NUM_PROXIES`
+  is pinned to 1 so that identity comes from the entry Traefik appends and not from the
+  `X-Forwarded-For` a caller writes — without it DRF reads the whole header, and anybody
+  varying it mints a fresh allowance per request. The counters live in a store of their own
+  with a raised `MAX_ENTRIES`, because every cache backend here culls itself at 300 entries,
+  which would have let a few hundred callers evict each other's counts and quietly suspend
+  the limit. A link whose scheme the site refuses to render is listed but its URL is
+  withheld: there the URL is the payload, and handing it to whoever renders this JSON would
+  reopen from the outside the hole `link_button.html` closed. Search is bounded to the length
+  of the fields it looks in, as `EventQuerySet.search` already was.
 - **`--url` input for `addlinksource` and `importm3u`**, mutually exclusive with `--file`, so a
   published playlist is imported without downloading it first. `make remote-import-links` takes
   `URL=` as an alternative to `FILE=`, and lets the production container do the fetching.
@@ -25,6 +55,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`purge_old_events` management command** to purge historical events older than a configurable retention threshold (`--days`, default 90), with `--dry-run` and `--before-date` options, cascaded to child event models.
 - **Scraper health monitoring** in `scrapit` to report total active future events and warn if the upcoming agenda drops to 0.
 - **End-to-end ordering regression tests** in `test_views.py` ensuring landing page and agenda strictly preserve chronological sorting and tie-breaking hierarchy.
+
+### Changed
+- **SQLite writes through a write-ahead log now.** Under the default rollback journal a
+  writer takes an exclusive lock over the whole file, so readers wait and then get
+  `database is locked` — a 500 to whoever was reading. That was survivable while every page
+  came from an hour-long cache and the only writer was the hourly scrape: the two rarely
+  met. The API is not cached, so every request reaches the database and the meeting became
+  likely. With `journal_mode=WAL`, `synchronous=NORMAL` and `transaction_mode=IMMEDIATE`,
+  **a request served while a writer holds an exclusive transaction open answers in 158 ms
+  instead of waiting twenty seconds and failing** — measured against production data, with
+  the agenda answering in 91 ms beside it. A test holds that transaction open and reads
+  through it, and it fails with the production error message without the change.
+- **Every path that copies or replaces the database goes through a connection.** This is
+  the half of the write-ahead log that is invisible until it costs something: the newest
+  commits live in `db.sqlite3-wal` until a checkpoint folds them in, so `cp` of the main
+  file yields a database missing its last transactions — silently, with nothing to notice
+  until the day it is restored. `deploy-production` was already safe, because
+  `soccertime/backups.py` uses SQLite's online backup API; `download-db`, `upload-db` and
+  `restore-remote-db` were not, and now use the same snapshot. They also stop the service
+  before writing and delete the `-wal` and `-shm` left by the previous database, which
+  SQLite would otherwise read as belonging to the new one — a stale backup is an
+  inconvenience, that is a corrupt database. `test_backups.py` demonstrates the row a plain
+  copy loses rather than asserting it, and `test_database_transport.py` pins the recipes.
+- **`EventQuerySet.watchable()` asks an `EXISTS` instead of joining and de-duplicating.**
+  `filter(channels__links__enabled=True)` multiplies the event row by every enabled link
+  reaching it, so it needed `distinct()` to put back — and what the paginator counts is that
+  `SELECT DISTINCT` over the whole product. **Measured against production data: the API
+  listing of watchable events went from 1,433 ms to 355 ms, and the count on its own — what a
+  page number past the end pays before it can answer 404 — from 436 ms to 86 ms.**
+  `/agenda/?watchable=1` pays the same count and got the same back. Same rows, and the
+  subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
 - **Channel names arriving as mojibake from a remote list**: `requests` decodes a charset-less
