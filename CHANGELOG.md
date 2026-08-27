@@ -82,6 +82,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scraper health monitoring** in `scrapit` to report total active future events and warn if the upcoming agenda drops to 0.
 - **End-to-end ordering regression tests** in `test_views.py` ensuring landing page and agenda strictly preserve chronological sorting and tie-breaking hierarchy.
 
+- **Every push runs the suite, the linters and the type checker.** The 1,094 tests only ever
+  ran on a laptop, by hand: there was no `.github/` at all, so a push carrying a broken
+  migration, an unformatted file or a failing test looked exactly like a good one until
+  somebody deployed it. GitHub Actions now runs `ruff check`, `ruff format --check`, `mypy`
+  and `pytest` on every push to `main` and on every pull request, on the interpreter the
+  image is pinned to — read from the Dockerfile rather than declared again, because a suite
+  green on a Python production does not run reports nothing about production. The run needs
+  `DJANGO_DEBUG` to import the settings at all, since the secret key is deliberately not in
+  the repository, and it excludes the integration tests: those make real requests to the
+  sites the scraper reads, and a check that fails when somebody else's website is down is a
+  check nobody believes. `test_ci_workflow.py` pins each of those, comments stripped, so a
+  workflow that explains them and runs none of them cannot pass.
 ### Changed
 - **The image is pinned to the interpreter it already runs.** `python:3-alpine` resolves at
   build time, on whichever machine builds it, so the interpreter under the site could move a

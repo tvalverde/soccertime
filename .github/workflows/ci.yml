@@ -1,0 +1,50 @@
+name: CI
+
+# Pull requests as well as pushes: a branch can be merged without ever having been pushed to
+# `main` on its own, and that merge is exactly the change nobody ran the suite against.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Nothing here writes to the repository. Stated rather than inherited, because the default
+# for a workflow that says nothing is whatever the repository settings happen to be.
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      # `settings.py` raises `ImproperlyConfigured` without a `DJANGO_SECRET_KEY` unless debug
+      # is on, and that key is deliberately not in the repository. Losing this line does not
+      # break one step, it breaks every step that imports Django — including mypy, whose
+      # django-stubs plugin loads the settings module.
+      DJANGO_DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          # The interpreter the image is pinned to, read from the Dockerfile by
+          # `test_ci_workflow.py` so the two cannot drift apart. A suite green on an
+          # interpreter production does not run says nothing about production.
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install the application and its toolchain
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Lint
+        run: ruff check soccertime/
+      - name: Formatting
+        run: ruff format --check soccertime/
+      - name: Types
+        run: mypy soccertime/
+      # `db/` is not in the repository — it is ignored — and `DATABASES` puts the SQLite file
+      # inside it, so pytest-django creates its test database in a directory a fresh checkout
+      # does not have. The integration tests are excluded because they make real requests to
+      # the sites the scraper reads: included, this job would report the project broken on the
+      # day somebody else's website went down, and a check nobody believes checks nothing.
+      - name: Tests
+        run: |
+          mkdir -p db
+          pytest -m "not integration"
