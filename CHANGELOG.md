@@ -83,6 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **End-to-end ordering regression tests** in `test_views.py` ensuring landing page and agenda strictly preserve chronological sorting and tie-breaking hierarchy.
 
 ### Changed
+- **The image is pinned to the interpreter it already runs.** `python:3-alpine` resolves at
+  build time, on whichever machine builds it, so the interpreter under the site could move a
+  minor version without a line of this repository changing — and two builds of the same
+  commit were never the same image, which is the reason the previous one is kept as a
+  rollback. The tag now names `3.14`, the version it already resolved to, so nothing about
+  what runs changes. It is also the number CI installs on its runner, read from the
+  Dockerfile rather than written twice: a suite that passes on an interpreter production
+  does not run reports nothing about production.
 - **SQLite writes through a write-ahead log now.** Under the default rollback journal a
   writer takes an exclusive lock over the whole file, so readers wait and then get
   `database is locked` — a 500 to whoever was reading. That was survivable while every page
