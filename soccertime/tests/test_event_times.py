@@ -114,8 +114,16 @@ class TestTheDayHeader:
         assert "15" in header
         assert "14" not in header
 
+    @override_settings(TIME_ZONE="Europe/Madrid")
     def test_the_header_names_the_day_the_site_would_call_it(self, match_at):
-        """The neutral half of the pair, true before and after the migration."""
-        event = match_at(timezone.now() + datetime.timedelta(days=4))
+        """The neutral half of the pair, true before and after the migration.
 
-        assert timezone.localtime(event.date).strftime("%d") in day_header(event)
+        A fixed day rather than four days from now. The event moved with the clock and the
+        assertion compared `%d`, which pads to two digits, against a header that does not
+        pad — so it passed for three weeks out of every four and failed on the first nine
+        days of a month. It was CI that ran it on the first of September.
+        """
+        timezone.activate(MADRID)
+        event = match_at(datetime.datetime(2026, 9, 1, 20, 0, tzinfo=MADRID))
+
+        assert "1 de septiembre de 2026" in day_header(event)

@@ -115,6 +115,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the repository, so a new kind of manifest cannot arrive unwatched.
 
 ### Changed
+- **A deploy pulls the published image instead of shipping the code.** `deploy-production`
+  used to `git archive HEAD`, scp the tarball, unpack it on the server and build there — so
+  the application's source sat on a machine whose only job is to serve, the base image and
+  every wheel were resolved at deploy time, and the image that ended up serving had been
+  built by nobody's tests. It now pulls `ghcr.io/tvalverde/soccertime:sha-<commit>` and
+  retags it to `soccertime:latest` before anything else runs. That retag is the point: the
+  compose file, `relay.sh`, the backups, the restores and the prune all go on naming the tag
+  they always named, so the registry is transport rather than a second contract. The pull is
+  the first step of the deploy, because it is the one most likely to fail — the commit may
+  not be published yet — and failing it after the snapshots and the configuration upload
+  would leave work half done. `.env.production` is still uploaded and still the local file of
+  record: it holds the secret key, which is exactly why it cannot be in a published image.
+  Rolling back gained a second route that does not depend on the server still holding
+  `:previous`: `make deploy-production DEPLOY_TAG=sha-<commit>` reaches anything CI published.
+  `make replica-up-published` rehearses that same artefact locally, which a rebuild of the
+  working copy cannot do — two builds of one commit are not the same image.
 - **The build context carries the application and nothing else.** Nothing here depended on
   `.dockerignore` being right while the server built from `git archive HEAD`, which contains
   tracked files and only those. A build from a working copy is another thing: 20 MB of
@@ -175,6 +191,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
+- **A day-header test that only passed for three weeks of every month**: it placed its event
+  four days from whenever it ran and compared `%d`, which pads to two digits, against a
+  header that does not pad — so it failed on the first nine days of a month and nowhere else.
+  It now names a day. Also found by CI, which ran it on the first of September.
 - **`resetdb` no longer passes `os.path` something that may not be a path**: the database
   name comes out of the settings as the union of everything a connection entry can hold, and
   the mapping the engine's own options are in is one of those. Found by the type checker on
