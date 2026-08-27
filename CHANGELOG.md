@@ -38,6 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   withheld: there the URL is the payload, and handing it to whoever renders this JSON would
   reopen from the outside the hole `link_button.html` closed. Search is bounded to the length
   of the fields it looks in, as `EventQuerySet.search` already was.
+- **A rate limit at the proxy for `/soccertime/api`**, on a router of its own beside the ones
+  the admin and the favourites endpoint already had. The application's limit is precise —
+  thirty a minute per caller, counted from the address Traefik reports — but it refuses
+  inside Python, so every refusal still costs a request cycle. This one refuses at the edge:
+  sixty a minute with a burst of thirty, deliberately above the application's own so it never
+  turns away a caller the application would have served. Rehearsed on the local replica
+  against the real proxy, where a burst of forty requests came back as thirty-one 200s and
+  then `Too Many Requests` in plain text — Traefik's answer, not the JSON one DRF sends.
+  Routing a path separately is easy to get wrong in ways nothing notices: forget the
+  strip-prefix middleware and Django is handed `/soccertime/api/...` and 404s the whole API;
+  get the priority wrong and the catch-all wins, so the limit is configured and never
+  applied. `test_proxy_routing.py` compares the label sets for both. It also found that
+  `soccertime-favorite` had never been given a rule in the replica, so the one route that
+  accepts a write had never been exercised through a proxy locally.
 - **`--url` input for `addlinksource` and `importm3u`**, mutually exclusive with `--file`, so a
   published playlist is imported without downloading it first. `make remote-import-links` takes
   `URL=` as an alternative to `FILE=`, and lets the production container do the fetching.

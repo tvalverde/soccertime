@@ -67,6 +67,13 @@ services:
       # than a proxy with nothing to match on.
       - "traefik.http.routers.soccertime-app.rule=Host(`mojon.local`) && PathPrefix(`/soccertime`)"
       - "traefik.http.routers.soccertime-admin.rule=Host(`mojon.local`) && PathPrefix(`/soccertime/admin`)"
+      # Every router production defines needs its rule restated here, or it is not rehearsed
+      # at all — it would inherit one built from `${TRAEFIK_HOST_RULE}`, which is exactly the
+      # variable the note above explains this file cannot rely on. `soccertime-favorite` had
+      # been missing since it was added, so the one route that accepts a write had never been
+      # exercised through the proxy locally.
+      - "traefik.http.routers.soccertime-favorite.rule=Host(`mojon.local`) && PathPrefix(`/soccertime/favorite/toggle`)"
+      - "traefik.http.routers.soccertime-api.rule=Host(`mojon.local`) && PathPrefix(`/soccertime/api`)"
       # The probe has to name a host this stack answers to, or Traefik marks the only server
       # down and the replica serves 503 to everything. `www.mojon.es` is not in the replica's
       # ALLOWED_HOSTS, so leaving this uninherited is the mistake to avoid.
