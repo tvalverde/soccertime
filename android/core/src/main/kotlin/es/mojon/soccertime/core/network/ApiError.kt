@@ -1,6 +1,7 @@
 package es.mojon.soccertime.core.network
 
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -46,6 +47,14 @@ suspend fun <T> safeCall(block: suspend () -> T): ApiResult<T> =
         ApiResult.Failure(errorFrom(e))
     } catch (e: IOException) {
         ApiResult.Failure(ApiError.Offline)
+    } catch (e: CancellationException) {
+        // Rethrown, and first, because it is an `Exception` like any other and the catch-all
+        // below would otherwise turn "this request was abandoned" into "this request failed".
+        // A caught cancellation is not a cancellation: the coroutine goes on to publish an
+        // answer nobody is waiting for. That is what made a filtered agenda flick back to the
+        // whole one seconds after it appeared — the load `collectLatest` had replaced arriving
+        // late and winning.
+        throw e
     } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
         ApiResult.Failure(ApiError.Unexpected(e))
     }
