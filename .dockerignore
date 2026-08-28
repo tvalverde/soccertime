@@ -43,6 +43,10 @@ backups/
 TODO.md
 # What GitHub runs, not what the container does.
 .github/
+# The Android project. It shares this repository and nothing else with the site: the image
+# runs Django, and `COPY . .` would otherwise carry the whole Gradle tree — sources, caches
+# and any APK left behind by a local build — into every layer.
+android/
 # External channel lists and captures: other people's data, and never part of a release.
 # `addlinksource` reads them from a mount, which is the only place they belong.
 *.m3u
