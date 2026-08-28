@@ -83,13 +83,17 @@ class TestItRefusesToPublishSomethingNobodyCanInstall:
 
 
 class TestTheKeyNeverLandsWhereItCouldEscape:
-    def test_it_is_written_outside_the_workspace(self):
+    def test_it_is_written_outside_the_workspace_on_ci(self):
         """Anything inside the checkout can reach an artifact, a cache or a commit."""
         assert re.search(r"RUNNER_TEMP|runner\.temp", workflow())
 
-    def test_no_keystore_is_committed(self):
-        assert not list(ROOT.rglob("*.jks"))
-        assert not list(ROOT.rglob("*.keystore"))
+    def test_the_workflow_never_writes_it_into_the_checkout(self):
+        """`> release.jks` with no directory would land it beside the sources."""
+        assert not re.search(r">\s*\.?/?release\.jks", workflow())
+
+    # Whether a keystore on somebody's machine can be committed is asserted in
+    # `test_ignore_rules.py`, which pins the `*.jks` and `*.keystore` patterns. Holding one
+    # locally is how a release is built at all — the defect is committing it, not having it.
 
 
 class TestTheVersionIsOneThing:
