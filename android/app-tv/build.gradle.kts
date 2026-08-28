@@ -29,9 +29,15 @@ android {
         if (releaseKeystore != null) {
             create("release") {
                 storeFile = file(releaseKeystore)
-                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                val store = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                storePassword = store
                 keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+                // A PKCS12 keystore has one password. `keytool` says so outright when asked
+                // for two — "Different store and key passwords not supported for PKCS12
+                // KeyStores" — and ignores the second, so the key's password *is* the store's.
+                // Falling back means forgetting the fourth secret costs nothing rather than
+                // failing a release build with an authentication error nobody expects.
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: store
             }
         }
     }

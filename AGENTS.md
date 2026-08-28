@@ -149,10 +149,16 @@ so `COPY . .` never carries it.
     base64 -w0 soccertime-release.jks   # the value of ANDROID_KEYSTORE_B64
     ```
 
-    Four repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`,
-    `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. The same four exist as environment variables
-    locally, which is all `make android-release` needs; without them `assembleRelease` still
-    builds, unsigned, which is what makes it a check anybody can run against R8.
+    Three repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD` and
+    `ANDROID_KEY_ALIAS`. There is a fourth, `ANDROID_KEY_PASSWORD`, and it is optional because
+    **a PKCS12 keystore has one password** — `keytool` refuses to set two ("Different store and
+    key passwords not supported for PKCS12 KeyStores") and ignores the second, so the key's
+    password *is* the store's. The build falls back to it rather than failing a release with an
+    authentication error nobody would expect.
+
+    The same variables work locally, which is all `make android-release` needs; without them
+    `assembleRelease` still builds, unsigned, which is what makes it a check anybody can run
+    against R8.
 -   Everything in section 2 applies here unchanged: English in all source and comments,
     Conventional Commits, tests with every change, and a `CHANGELOG.md` entry.
 
