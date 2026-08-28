@@ -277,6 +277,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hours long, and that arithmetic would silently drop a match at half past eleven at night in
   October or claim one at half past midnight in March. Both of those days are now tests.
 
+- **The Android agenda spans yesterday and today, and opens on what is on rather than at the
+  top.** Midnight is not a boundary anybody observes: at 00:20 the match that kicked off at
+  23:00 is still running, and a listing that began at the stroke of the hour had nothing to
+  show. Two days do not fit in one response — a hundred is the largest page the API serves —
+  so it is two requests, and their order is the design. Today is asked for first because it is
+  where the reader is and it alone positions the list; it renders while yesterday is still in
+  flight. Yesterday follows, asked for `ordering=-date` so a busy day keeps the hours next to
+  midnight instead of spending its hundred on the small hours, and is reversed back before
+  being prepended. Losing it costs the tail of the window and leaves today standing; losing
+  today does not go on to ask.
+
+  The list opens on the first event that has **not finished**, which is two hours after its
+  start — the same rule as the live badge and as the site's own `AGENDA_LOOKBACK`, not the
+  three hours of the favourites window. Anchoring on a row the app had already stopped calling
+  live would have been the app saying two things at once. A race that began ninety minutes ago
+  is therefore still what you are shown, and everything earlier is a scroll away. Moving
+  between days, and a calendar, are deliberately still not here.
+
+- **What the reader follows is now a way in, not a legend.** Pressing an entry in the
+  favourites strip opens the agenda narrowed to that team or that competition, through the
+  `team=` and `competition=` filters the API already served and nothing used. On the
+  television BACK returns to Favourites and drops the filter in one press — the same press
+  that arrived, rather than dropping the reader into the whole two-day agenda, a screen they
+  never asked for. On the phone it is the Agenda tab with the filter on it, so the bottom bar
+  stays and both BACK and the tab itself clear it. The chip carries the crest and the name
+  rather than the kind, because "Competición" reads as a category and not as the competition
+  that was pressed.
+
+- **On the television, the fill says the state and the halo says the cursor.** Four separate
+  faults were one fault: a control drawing "you are here" and "the cursor is here" with the
+  same resource, so where the two met one swallowed the other. It is now a single rule in
+  `TvFocus.kt` that the rail, the channel column, the link tiles, the followed avatars and the
+  event rows all use — background and border belong to state, a halo and a tenth of extra size
+  belong to focus, and nothing else uses either. The growth is drawn rather than laid out, so
+  a moving cursor no longer shoves its neighbours aside.
+
 - **A deploy pulls the published image instead of shipping the code.** `deploy-production`
   used to `git archive HEAD`, scp the tarball, unpack it on the server and build there — so
   the application's source sat on a machine whose only job is to serve, the base image and
@@ -358,6 +394,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
+- **The television's link panel closed itself to open a link, on top of a footer telling you to
+  try the next one.** It stays open now, marks the one that was launched and keeps its channel
+  selected, so a stream that does not start costs one press instead of finding the row again.
+  It also puts the "nothing on this box opens that" notice *over* the links rather than
+  instead of them, so BACK from it lands where the next attempt is made.
+
+- **The cursor disappeared on the navigation rail.** `selected` was resolved before `focused`
+  in the same `when`, so arriving at the icon of the screen you were already on changed
+  nothing at all. The icon under the cursor also stayed muted, which was the other half of it.
+
+- **The remote could get into the channel column and not back out.** The two columns were
+  siblings with no focus rules, so the return trip was left to geometry — and moving onto a
+  channel selects it, which rebuilds the whole right-hand column underneath the search that
+  was about to look through it. LEFT and RIGHT are named explicitly now. The channel being
+  read and the channel under the cursor were also drawn identically, by an `if (selected ||
+  focused)`, which mattered precisely when the cursor had moved to the links.
+
+- **UP from the first event jumped diagonally onto the rail.** Nothing sits above the top row,
+  so the focus search settled for the nearest thing in any direction, which was a menu up and
+  to the left. The list is a focus enclosure now: UP at the top, DOWN at the bottom and RIGHT
+  anywhere are cancelled, and LEFT is the only way out — which is what the rail was always
+  documented to be reached by.
+
+- **The remote's play key did nothing.** A hand holding a remote at a listing of things to
+  watch reaches for it; on a focused row it now opens the channels, as OK does. Both the
+  dedicated play and the play/pause toggle, because the hardware is not consistent. Each
+  television screen also carries a line of hints, since ☰ has always followed a team and
+  nothing ever said so, and a D-pad has no hover to discover it with.
+
 - **Two `.gitignore` entries that hid more of the tree than they were written for**: a pattern
   with no slash is matched against every path segment at every depth, so bare `media` and `db`
   — meant for the media root and the directory the SQLite file lives in — also covered any

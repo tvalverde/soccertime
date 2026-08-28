@@ -92,8 +92,11 @@ class AgendaViewModelTest {
     /** A page of events at exactly the instants a test needs, built from the recorded one. */
     private fun pageOf(vararg dates: String): Page<EventDto> {
         val template = fixture().results.first()
-        val events = dates.mapIndexed { index, date ->
-            template.copy(id = 900 + index, date = date, dateEnd = null)
+        // Derived from the instant, so two days built by two calls cannot collide on an id —
+        // which is exactly the clash the list would crash on, and therefore not one a test
+        // may manufacture for itself.
+        val events = dates.map { date ->
+            template.copy(id = date.hashCode() and 0xFFFFFF, date = date, dateEnd = null)
         }
         return fixture().copy(count = events.size, next = null, results = events)
     }
@@ -168,6 +171,33 @@ class AgendaViewModelTest {
         assertEquals(ApiError.Offline, state.error)
     }
 
+    /**
+     * The path the first version got wrong. A refresh is a load whose query has not moved, so
+     * "has the state changed" answers yes whether or not today came back — and yesterday was
+     * then prepended onto a list that already held it. Two rows per event, duplicate keys in
+     * the list, and a crash where the failure banner belonged.
+     */
+    @Test
+    fun `a refresh whose today fails does not fetch yesterday a second time`() = runTest(dispatcher) {
+        repository.perDay["2026-08-30"] = pageOf("2026-08-30T15:00:00Z")
+        repository.perDay["2026-08-29"] = pageOf("2026-08-29T22:00:00Z")
+        val model = viewModel()
+        advanceUntilIdle()
+        val whole = model.uiState.value.days.flatMap { it.events }
+        assertEquals(2, whole.size)
+
+        repository.failure = ApiError.Offline
+        repository.failOn = "2026-08-30"
+        clock.advance(Duration.ofSeconds(61))
+        model.onIntent(AgendaIntent.Resumed)
+        advanceUntilIdle()
+
+        val after = model.uiState.value.days.flatMap { it.events }
+        assertEquals("yesterday must not arrive twice", 2, after.size)
+        assertEquals("and no two rows may share an id", 2, after.map { it.id }.distinct().size)
+        assertEquals(ApiError.Offline, model.uiState.value.error)
+    }
+
     @Test
     fun `today failing does not go on to ask for yesterday`() = runTest(dispatcher) {
         repository.failure = ApiError.RateLimited(retryAfterSeconds = 30)
@@ -204,6 +234,28 @@ class AgendaViewModelTest {
         advanceUntilIdle()
 
         assertNull(model.uiState.value.anchorId)
+    }
+
+    /**
+     * The window and the headings have to agree on which day it is. They did not: the headings
+     * asked the device's zone and the window asked UTC, so in Spain between midnight and two
+     * the agenda fetched the day before the one it was labelling — the very hours a two-day
+     * window exists to cover.
+     */
+    @Test
+    fun `the window is the reader's two days, not UTC's`() = runTest(dispatcher) {
+        // 00:30 on the 31st in Madrid is still 22:30 on the 30th in UTC.
+        clock = Movable(Instant.parse("2026-08-30T22:30:00Z"))
+        val model = AgendaViewModel(
+            events = repository,
+            presenter = EventPresenter(EventTimes(clock = clock, zone = ZoneId.of("Europe/Madrid"))),
+            clock = clock,
+            favorites = followed,
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf("2026-08-31", "2026-08-30"), repository.asks.map { it.date })
+        assertEquals(LocalDate.of(2026, 8, 31), model.uiState.value.day)
     }
 
     @Test

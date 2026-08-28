@@ -30,9 +30,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
@@ -63,15 +69,24 @@ import es.mojon.soccertime.tv.ui.theme.TvTeamName
  * Channels carrying nothing are listed under the others and are not focusable. They are the
  * one fact a television agenda exists to give, and they are not somewhere the remote should
  * have to travel through.
+ *
+ * The route between the two columns is tied by hand rather than left to the focus search.
+ * Geometry got the remote there and could not get it back: moving onto a channel selects it,
+ * which rebuilds the entire right-hand column underneath the search that was about to look
+ * through it. LEFT and RIGHT are named here instead, so neither depends on what happens to be
+ * laid out where at the instant a key is pressed.
  */
 @Composable
 fun TvLinksPanel(
     links: EventLinks,
+    /** The one already launched, so the panel can say which it was. Null until one is. */
+    opened: LinkDto?,
     onOpen: (LinkDto) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var chosen by remember { mutableIntStateOf(0) }
     val firstLink = remember { FocusRequester() }
+    val currentChannel = remember { FocusRequester() }
     val channel = links.channels.getOrNull(chosen)
 
     // Opening the panel has to put the remote somewhere, and the first link of the best
@@ -99,7 +114,10 @@ fun TvLinksPanel(
                     Modifier
                         .width(262.dp)
                         .fillMaxHeight()
-                        .padding(vertical = 16.dp),
+                        .padding(vertical = 16.dp)
+                        // RIGHT from any channel lands on the first link of the best quality,
+                        // whichever channel the cursor is on and whatever was rebuilt.
+                        .focusProperties { right = firstLink },
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Text(
@@ -109,7 +127,12 @@ fun TvLinksPanel(
                         modifier = Modifier.padding(start = 20.dp, bottom = 8.dp),
                     )
                     links.channels.forEachIndexed { index, it ->
-                        ChannelItem(it, selected = index == chosen) { chosen = index }
+                        ChannelItem(
+                            channel = it,
+                            selected = index == chosen,
+                            focusRequester = if (index == chosen) currentChannel else null,
+                            onSelect = { chosen = index },
+                        )
                     }
                     if (links.silent.isNotEmpty()) SilentChannels(links.silent)
                 }
@@ -121,7 +144,10 @@ fun TvLinksPanel(
                         .weight(1f)
                         .fillMaxHeight()
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                        .padding(horizontal = 24.dp, vertical = 16.dp)
+                        // LEFT from any link goes back to the channel these links belong to,
+                        // rather than to whichever row happens to sit alongside.
+                        .focusProperties { left = currentChannel },
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     channel?.qualities?.forEachIndexed { groupIndex, group ->
@@ -140,6 +166,7 @@ fun TvLinksPanel(
                                 group.links.forEachIndexed { index, link ->
                                     LinkTile(
                                         number = index + 1,
+                                        opened = link == opened,
                                         onOpen = { onOpen(link) },
                                         focusRequester = if (groupIndex == 0 && index == 0) firstLink else null,
                                     )
@@ -149,10 +176,19 @@ fun TvLinksPanel(
                     }
 
                     Box(Modifier.weight(1f))
+                    // The advice is only worth giving because the panel stays open to take it.
                     Text(
-                        text = stringResource(R.string.try_the_next_one),
+                        text = if (opened == null) {
+                            stringResource(R.string.try_the_next_one)
+                        } else {
+                            stringResource(R.string.opened_try_the_next_one)
+                        },
                         style = TvMeta,
-                        color = Color(Palette.ON_BACKGROUND_FAINT),
+                        color = if (opened == null) {
+                            Color(Palette.ON_BACKGROUND_FAINT)
+                        } else {
+                            MaterialTheme.colorScheme.secondary
+                        },
                     )
                 }
             }
@@ -203,8 +239,21 @@ private fun Header(links: EventLinks) {
     }
 }
 
+/**
+ * One channel, in up to three states at once.
+ *
+ * `selected` means these are the links on the right; `focused` means the remote is here. They
+ * used to share one background and were therefore indistinguishable — and since arriving at a
+ * channel also selects it, the difference only ever shows once the cursor has moved to the
+ * links, which is exactly when the reader needs to know whose links they are.
+ */
 @Composable
-private fun ChannelItem(channel: ChannelLinks, selected: Boolean, onSelect: () -> Unit) {
+private fun ChannelItem(
+    channel: ChannelLinks,
+    selected: Boolean,
+    focusRequester: FocusRequester?,
+    onSelect: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
 
@@ -212,6 +261,8 @@ private fun ChannelItem(channel: ChannelLinks, selected: Boolean, onSelect: () -
         Modifier
             .fillMaxWidth()
             .height(46.dp)
+            .padding(horizontal = 8.dp)
+            .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onSelect()
@@ -220,14 +271,28 @@ private fun ChannelItem(channel: ChannelLinks, selected: Boolean, onSelect: () -
             // adding another puts the focus on the outer one while the inner one is what
             // handles OK — which is a control the remote can highlight and never activate.
             .clickable(interactionSource = interaction, indication = null, onClick = onSelect)
-            .background(if (selected || focused) Color(Palette.CARD_BORDER) else Color.Transparent)
-            .padding(start = 17.dp, end = 20.dp),
+            .cursorHalo(focused, radius = CHANNEL_RADIUS, grow = false)
+            .clip(RoundedCornerShape(CHANNEL_RADIUS))
+            .background(if (selected) Color(Palette.CARD_BORDER) else Color.Transparent)
+            .then(
+                if (focused) {
+                    Modifier.border(
+                        2.dp,
+                        MaterialTheme.colorScheme.primary,
+                        RoundedCornerShape(CHANNEL_RADIUS),
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .padding(start = 9.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
                 .width(3.dp)
-                .height(46.dp)
+                .height(30.dp)
+                .clip(RoundedCornerShape(2.dp))
                 .background(
                     if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
                 ),
@@ -237,7 +302,11 @@ private fun ChannelItem(channel: ChannelLinks, selected: Boolean, onSelect: () -
                 text = channel.name,
                 style = TvLabel,
                 fontSize = 13.5.sp,
-                color = MaterialTheme.colorScheme.secondary,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.secondary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -278,8 +347,21 @@ private fun SilentChannels(names: List<String>) {
     }
 }
 
+/**
+ * One link.
+ *
+ * Focus was the neon fill here until the panel began staying open, which gave the tile a
+ * second thing to say — this is the one you launched — and two fills cannot share a shape.
+ * The fill now belongs to that state, in the cyan this app already uses for a channel, and
+ * focus is the halo every other control on this screen uses.
+ */
 @Composable
-private fun LinkTile(number: Int, onOpen: () -> Unit, focusRequester: FocusRequester?) {
+private fun LinkTile(
+    number: Int,
+    opened: Boolean,
+    onOpen: () -> Unit,
+    focusRequester: FocusRequester?,
+) {
     var focused by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
 
@@ -288,16 +370,34 @@ private fun LinkTile(number: Int, onOpen: () -> Unit, focusRequester: FocusReque
             .size(width = 60.dp, height = 46.dp)
             .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
             .onFocusChanged { focused = it.isFocused }
-            .clickable(interactionSource = interaction, indication = null, onClick = onOpen)
-            .clip(RoundedCornerShape(11.dp))
-            .then(
-                if (focused) {
-                    Modifier.background(MaterialTheme.colorScheme.primary)
+            // The same key that opened this panel from the row opens the link inside it.
+            .onKeyEvent { key ->
+                if (key.type == KeyEventType.KeyDown && key.key in TvPlayKeys) {
+                    onOpen()
+                    true
                 } else {
-                    Modifier
-                        .background(Color(Palette.CARD_BORDER))
-                        .border(1.dp, MaterialTheme.colorScheme.border, RoundedCornerShape(11.dp))
+                    false
+                }
+            }
+            .clickable(interactionSource = interaction, indication = null, onClick = onOpen)
+            .cursorHalo(focused, radius = TILE_RADIUS, onFilledSurface = opened)
+            .clip(RoundedCornerShape(TILE_RADIUS))
+            .background(
+                if (opened) {
+                    MaterialTheme.colorScheme.secondary
+                } else {
+                    Color(Palette.CARD_BORDER)
                 },
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = when {
+                    focused && opened -> MaterialTheme.colorScheme.surface
+                    focused -> MaterialTheme.colorScheme.primary
+                    opened -> MaterialTheme.colorScheme.secondary
+                    else -> MaterialTheme.colorScheme.border
+                },
+                shape = RoundedCornerShape(TILE_RADIUS),
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -305,10 +405,17 @@ private fun LinkTile(number: Int, onOpen: () -> Unit, focusRequester: FocusReque
             text = "$number",
             style = TvLabel,
             fontSize = 16.sp,
-            color = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+            color = if (opened) {
+                MaterialTheme.colorScheme.onSecondary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
         )
     }
 }
+
+private val CHANNEL_RADIUS = 10.dp
+private val TILE_RADIUS = 11.dp
 
 /**
  * Nothing on the device answered. It names no application and offers no download — a

@@ -32,6 +32,12 @@ object Palette {
     const val SECONDARY: Long = 0xFF00E0FF
     const val ON_SECONDARY: Long = 0xFF00363F
 
+    /**
+     * The same cyan behind a chip rather than filling it. Used where the secondary has to read
+     * as a state on a dark surface without shouting as loudly as an openable channel does.
+     */
+    const val SECONDARY_TINT: Long = 0x1F00E0FF
+
     /** Something the reader chose to follow. */
     const val FAVOURITE: Long = 0xFFFFC107
 
