@@ -76,7 +76,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is frozen at 1.7.8 and would mean pinning one Compose artifact years behind the BOM
   managing every other. Countable strings are plurals, because Spanish says "1 resultado".
 
-  95 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
+  The television draws the same events with the same view models and a different hand. Its
+  links panel is master and detail rather than the phone's sheet — two presses of a remote
+  reach any link instead of twenty — and favourites are chosen on the phone, because typing a
+  team name with a D-pad is the worst thing a television asks of anyone and there is a phone
+  app here that does it well. Focus is drawn rather than delegated: `tv-material`'s `Surface`
+  carries its own scale and glow, and the design settled on a neon border and a halo.
+
+  `test_android_materials.py` refuses either application importing the other's Material.
+  Both are on the television's classpath — `tv-material` depends on `compose.material3`
+  itself — and both export types of the same name, so an import an editor completes builds and
+  ships, and is found by somebody in front of a television unable to reach a button.
+
+  95 JVM unit tests plus the repository's own, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
   unfiltered so gitleaks keeps reading pushes that touch only `android/` —
   `test_android_workflow.py` refuses a `paths` filter there, because adding one looks like a
   tidy-up and would quietly stop scanning the tree where keystore passwords live.
