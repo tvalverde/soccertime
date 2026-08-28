@@ -420,6 +420,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
+- **The phone's bottom bar was laid out but invisible, which left the Agenda unreachable.** Its
+  row said `fillMaxSize(fraction = 0f)` — zero per cent of *both* dimensions — and the `height`
+  beside it only put one of them back. Sixty-six points tall and nothing wide. It is
+  `fillMaxWidth` now, and the two tabs are on screen where they always claimed to be.
+
+- **The hour on every phone card wrapped to two lines, and the LIVE badge became a green disc.**
+  One measurement caused both: the column was fixed at 48 dp and `21:30` needs about 49, so the
+  time broke, and the badge — squeezed into a nearly square box carrying a 50% corner radius —
+  came out round. The column is 62 dp, which is what its two occupants ask for at their own type
+  sizes with slack, and the time additionally refuses to wrap at all. Fixed rather than
+  content-sized on purpose: a column that resized per row would zigzag by whether a row carried a
+  badge, and an agenda is read by running down the left edge.
+
+  Worth recording how this was diagnosed wrong first. The initial explanation was that the phone
+  was narrower than the mock-up with a larger font; measuring it said the opposite — 426 dp at a
+  font scale of 1.0, *wider* than the 390 dp drawn. The device had been blamed for what was a
+  constant in our own source.
+
+- **The bottom bar's icons sat flush against its top edge with the bottom half of the bar empty.**
+  Each tab's box wrapped its content — 37 points of icon, gap and label — so the row placed it
+  with its default alignment, which is top; the selected-tab indicator landed on the first row of
+  pixels and 42 points below the label were painted and empty. `fillMaxHeight` gives the box the
+  bar's full height so an alignment has something to align within, and the group rests on the
+  floor with 3 points under it.
+
+  Bottom, not centre, and the arithmetic is the reason. The bar paints edge to edge and holds the
+  gesture strip — 24 points, measured on the device — below its own height, so for `h` points of
+  bar the group's centre would be `h / 2` while the painted centre is `h / 2 + 12`. Centring
+  leaves it high *at every height*, which is why the first instinct, making the bar taller, would
+  have widened the gap rather than closed it. Measured after the change: 26 points above the
+  group, 27 below, its centre 0.5 points from the painted one.
+
+  These three are presentation-only and the app modules carry no test harness — all 131 tests
+  live in `:core`, which holds the logic. They were verified by measuring the rendered layout on
+  the device with `uiautomator dump` against the window insets `dumpsys window displays` reports,
+  which is repeatable and is what caught the top-alignment that reading the source had missed.
+
 - **The television's link panel closed itself to open a link, on top of a footer telling you to
   try the next one.** It stays open now, marks the one that was launched and keeps its channel
   selected, so a stream that does not start costs one press instead of finding the row again.

@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -202,8 +204,12 @@ private fun BottomBar(navController: NavHostController, onLeaveFilter: () -> Uni
     if (route == Routes.MANAGE) return
 
     Row(
+        // `fillMaxWidth`, not `fillMaxSize(fraction = 0f)`, which is what this said: that
+        // takes zero per cent of BOTH dimensions, and the `height` below only put one of them
+        // back. The bar was sixty-six points tall and nothing wide — present, laid out, and
+        // invisible — which left the Agenda tab unreachable on a phone.
         Modifier
-            .fillMaxSize(fraction = 0f)
+            .fillMaxWidth()
             .background(Color(Palette.HEADER))
             .windowInsetsPadding(WindowInsets.navigationBars)
             .height(66.dp),
@@ -238,7 +244,26 @@ private fun BottomItem(
     onClick: () -> Unit,
 ) {
     val tint = if (selected) MaterialTheme.colorScheme.primary else Color(Palette.ON_BACKGROUND_MUTED)
-    Box(modifier.clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+    // `fillMaxHeight` is what makes the alignment mean anything.
+    //
+    // Without it this box wraps its content — thirty-seven points of icon, gap and label — and
+    // the row lays that out with its own default, which is top. So the group sat flush against
+    // the bar's upper edge with the indicator on the very first row of pixels, and the fifty-three
+    // points below it read as a bar with nothing in the bottom half. Setting `contentAlignment`
+    // alone changes nothing, because a box the size of its content has no room to align within.
+    //
+    // Given the room, bottom is the right end to rest on. The bar paints itself edge to edge and
+    // then holds the gesture strip — twenty-four points on this phone, measured — below its own
+    // height, so what the eye reads as "the bar" is taller than the box these items live in.
+    // Centring would leave the group half that strip above the painted middle at *any* height:
+    // for h points of bar the group's centre is h / 2 while the painted centre is h / 2 + 12,
+    // which is why making the bar taller was the wrong instinct and would have widened the gap
+    // rather than closed it. Resting on the floor puts the centre within half a point of the
+    // painted one and still leaves twelve points of clearance above the gesture strip.
+    Box(
+        modifier.fillMaxHeight().clickable(onClick = onClick),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
         if (selected) {
             Box(
                 Modifier
@@ -250,6 +275,7 @@ private fun BottomItem(
             )
         }
         Column(
+            Modifier.padding(bottom = TAB_GROUP_FOOT),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
@@ -288,3 +314,6 @@ private fun OnResumed(ask: () -> Unit) {
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { ask() }
     }
 }
+
+/** What the tab group rests on, so its centre lands on the painted bar's centre. */
+private val TAB_GROUP_FOOT = 3.dp

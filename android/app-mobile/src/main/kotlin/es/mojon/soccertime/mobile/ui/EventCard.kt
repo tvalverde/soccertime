@@ -89,13 +89,31 @@ fun EventCard(
     }
 }
 
+/**
+ * The time, and whether it is on now.
+ *
+ * The width is fixed rather than left to the content, because a fixed one is what keeps every
+ * hour on the list aligned down the left edge — which is how an agenda is read at a glance,
+ * and what a column sized to its content would give up, zigzagging by whether a row carried a
+ * badge.
+ *
+ * It is [TIME_COLUMN] wide because that is what the two things living in it ask for: `00:00`
+ * at the time's 20sp, and `DIRECTO` at the badge's 8.5sp, with slack. At 48dp it was a
+ * point too narrow for either — `21:30` measures about 49 — so the hour wrapped to `21:3 / 0`
+ * on every screen, and the badge, squeezed into a nearly square box with a 50% corner radius,
+ * became a green disc. One measurement, two symptoms.
+ */
 @Composable
 private fun TimeColumn(event: EventUi) {
-    Column(Modifier.width(48.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Column(Modifier.width(TIME_COLUMN), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
             text = event.time,
             style = EventTimeStyle,
             color = if (event.live) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            // Belt and braces beside the width: an hour is five glyphs and never two lines,
+            // whatever a future type ramp or a reader's font scale does to it.
+            maxLines = 1,
+            softWrap = false,
         )
         if (event.live) LiveBadge()
     }
@@ -275,6 +293,9 @@ fun Crest(url: String?, size: Dp, rounded: Dp = size / 2) {
         modifier = Modifier.size(size).clip(shape),
     )
 }
+
+/** What `00:00` at 20sp and `DIRECTO` at 8.5sp both fit inside, with room to spare. */
+private val TIME_COLUMN = 62.dp
 
 private val CARD_RADIUS = 14.dp
 private val FAVOURITE_EDGE = 3.dp
