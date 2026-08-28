@@ -125,7 +125,10 @@ fun EventList(
         anchorPosition(anchorId, days) ?: (days.sumOf { 1 + it.events.size } - 1)
     }
     LaunchedEffect(days.firstOrNull()?.date, anchorId) {
-        if (days.isNotEmpty()) runCatching { listState.scrollToItem(opensOn.coerceAtLeast(0)) }
+        // Not wrapped in `runCatching`: that is a suspending call, and catching everything
+        // around one swallows its cancellation — which is precisely the mistake that let an
+        // abandoned load go on to publish its answer.
+        if (days.isNotEmpty()) listState.scrollToItem(opensOn.coerceAtLeast(0))
     }
 
     LazyColumn(

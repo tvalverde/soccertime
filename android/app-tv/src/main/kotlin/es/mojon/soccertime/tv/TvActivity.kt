@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -122,12 +123,12 @@ private fun SoccertimeTv(models: TvModels) {
                 TvDestination.Favorites -> {
                     val favorites = viewModel<FavoritesViewModel>(factory = models.favorites)
                     val state by favorites.uiState.collectAsStateWithLifecycle()
-                    LaunchedEffect(Unit) { favorites.onIntent(FavoritesIntent.Resumed) }
+                    OnResumed { favorites.onIntent(FavoritesIntent.Resumed) }
 
                     TvFavoritesScreen(
                         state = state,
                         following = following ?: Following(),
-                        clockLabel = models.now(),
+                        clockLabel = rememberClock(models),
                         covered = covered,
                         onOpen = { row ->
                             opened = null
@@ -146,7 +147,7 @@ private fun SoccertimeTv(models: TvModels) {
                 TvDestination.Agenda -> {
                     val agenda = viewModel<AgendaViewModel>(factory = models.agenda)
                     val state by agenda.uiState.collectAsStateWithLifecycle()
-                    LaunchedEffect(Unit) { agenda.onIntent(AgendaIntent.Resumed) }
+                    OnResumed { agenda.onIntent(AgendaIntent.Resumed) }
                     LaunchedEffect(narrowing) { agenda.onIntent(AgendaIntent.Narrow(narrowing)) }
 
                     TvAgendaScreen(
@@ -223,3 +224,40 @@ private fun SoccertimeTv(models: TvModels) {
 /** What the panel calls the event it was opened from. */
 private fun es.mojon.soccertime.core.ui.EventUi.label(): String =
     title ?: listOfNotNull(home?.name, away?.name).joinToString(" — ")
+
+/**
+ * Ask again every time the screen actually comes back.
+ *
+ * `LaunchedEffect(Unit)` fires when a branch enters composition, which is not the same thing:
+ * a television is switched off with the composition intact and woken days later, and the
+ * screen it comes back to had never been told to look again. `repeatOnLifecycle` runs this
+ * each time the lifecycle reaches RESUMED, which is what "came back" means.
+ */
+@Composable
+private fun OnResumed(ask: () -> Unit) {
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { ask() }
+    }
+}
+
+/**
+ * The clock in the corner, ticking.
+ *
+ * Read once during composition it was the time the screen was drawn, which on a television
+ * nobody has touched since lunchtime is a lie told confidently. It is a state that wakes each
+ * minute instead — and only while this screen is composed, so it costs nothing when it is not.
+ */
+@Composable
+private fun rememberClock(models: TvModels): String {
+    var label by remember { mutableStateOf(models.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(CLOCK_TICK_MILLIS)
+            label = models.now()
+        }
+    }
+    return label
+}
+
+private const val CLOCK_TICK_MILLIS = 30_000L

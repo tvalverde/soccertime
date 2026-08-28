@@ -65,13 +65,6 @@ class AgendaViewModel(
     private val events: EventsRepository,
     private val presenter: EventPresenter,
     private val clock: Clock = Clock.systemUTC(),
-    /**
-     * Taken from the presenter, which is the only thing here that knows where the reader is.
-     * Asking `LocalDate.now(clock)` was asking UTC: in Spain, between midnight and two in the
-     * morning, that is yesterday — so the window fetched was the day before the one every
-     * heading on it named, in exactly the hours this two-day window exists to serve.
-     */
-    private val today: LocalDate = presenter.times.today(),
     favorites: Flow<Favorites> = flowOf(Favorites.NONE),
 ) : ViewModel() {
 
@@ -85,7 +78,7 @@ class AgendaViewModel(
 
     private val search = MutableStateFlow("")
     private val filters = MutableStateFlow(Filters(watchableOnly = false, narrowing = null))
-    private val state = MutableStateFlow(AgendaUiState(day = today))
+    private val state = MutableStateFlow(AgendaUiState(day = today()))
 
     val uiState: StateFlow<AgendaUiState> = state.asStateFlow()
 
@@ -97,6 +90,15 @@ class AgendaViewModel(
 
     /** Which load owns the screen. An older one that answers late is no longer entitled to. */
     private var generation = 0
+
+    /**
+     * Whether a load that will replace the whole listing is in the air.
+     *
+     * While one is, `loadedFor` and `nextPage` still describe the listing being thrown away,
+     * so its next page is a page of nothing the reader is looking at. Asking for it and
+     * appending the answer put an event from the plain agenda inside a followed team's.
+     */
+    private var replacing = false
 
     init {
         viewModelScope.launch {
@@ -146,6 +148,16 @@ class AgendaViewModel(
         }
     }
 
+    /**
+     * Today, where the reader is, asked afresh for every load.
+     *
+     * Held once, it was whatever day the view model happened to be built on. A television is
+     * left composed for days at a time, so the morning after, the agenda would still be
+     * fetching the window it was born with — under headings naming a date that had moved on.
+     * Taken from the presenter, which is the only thing here that knows where the reader is.
+     */
+    private fun today(): LocalDate = presenter.times.today()
+
     /** The two sides and the competition of one row, for the panel that follows them. */
     fun followablesFor(id: Int): List<Followable> =
         loaded.firstOrNull { it.id == id }?.let(presenter::followables).orEmpty()
@@ -156,32 +168,64 @@ class AgendaViewModel(
     private fun refresh(minimumAge: Duration) {
         val since = loadedAt?.let { Duration.between(it, clock.instant()) }
         if (since != null && since < minimumAge) return
-        // Nothing has finished loading yet, so the pipeline is already on its way with the
-        // current query and a second trip would only cancel and restart it.
-        if (loadedFor == null) return
+        // Only while the very first load is still in the air is the pipeline already on its
+        // way with the current query. Once it has failed there is nothing running, and
+        // refusing here left the failure banner offering a Retry that did nothing at all.
+        if (loadedFor == null && replacing) return
         reloads.value++
     }
 
     private fun loadMore() {
+        // Not while the listing underneath is being replaced. The generation cannot catch
+        // this on its own: the replacement has already claimed the number by the time the
+        // page is asked for, so both would agree and the page would be let in.
+        if (replacing) return
         val query = loadedFor ?: return
         val page = nextPage ?: return
-        viewModelScope.launch { load(query.copy(page = page), appending = true) }
+        // Taken now, so a second press before the first page lands asks for nothing. Nothing
+        // else stopped it: the number only advances when a page *arrives*, so two presses
+        // fetched the same page twice and appended it twice — and a list keyed by event id
+        // does not survive the same id appearing on it twice.
+        nextPage = null
+        viewModelScope.launch {
+            val joined = load(query.copy(page = page), appending = true, joining = generation)
+            // Put it back if the page never came, or the button is gone for good.
+            if (!joined && mineIsCurrent(generation)) nextPage = page
+        }
     }
 
-    private suspend fun load(query: Query, appending: Boolean) {
-        // Which load this is. Appending joins the one already on screen; anything else
-        // replaces it, and from that moment the ones before it may no longer speak.
-        val mine = if (appending) generation else ++generation
+    private fun mineIsCurrent(mine: Int) = mine == generation
+
+    /**
+     * [joining] is set only when appending, and names the load whose list this page belongs
+     * to. Anything else starts a new one and silences everything before it.
+     */
+    private suspend fun load(query: Query, appending: Boolean, joining: Int? = null): Boolean {
+        val mine = joining ?: ++generation
+        // One day for both halves of one load, so a window opened across midnight cannot ask
+        // for a today and a yesterday that are not next to each other.
+        val day = today()
         if (appending) {
-            fetch(query, appending = true, mine = mine)
-            return
+            return fetch(query, day, appending = true, mine = mine)
         }
+        replacing = true
+        try {
+            replace(query, day, mine)
+        } finally {
+            // In a `finally` because being cancelled is the ordinary way this ends, and a flag
+            // left set would refuse every later page for the life of the screen.
+            if (mine == generation) replacing = false
+        }
+        return true
+    }
+
+    private suspend fun replace(query: Query, day: LocalDate, mine: Int) {
         // Strictly the result of *this* request, never a comparison against what was loaded
         // before. On a refresh the previous query is the same one, so "did the state move"
         // answers yes whether or not today came back — and prepending yesterday onto a list
         // that already held it produced two rows per event, duplicate keys, and a crash in
         // the list rather than the failure banner the reader should have seen.
-        if (fetch(query, appending = false, mine = mine)) fetchYesterday(query, mine)
+        if (fetch(query, day, appending = false, mine = mine)) fetchYesterday(query, day, mine)
     }
 
     /**
@@ -191,8 +235,8 @@ class AgendaViewModel(
      * the reader came for. Reversing is what turns the newest-first page back into the order
      * the listing reads in.
      */
-    private suspend fun fetchYesterday(query: Query, mine: Int) {
-        val answer = events.onDate(query.asRequest(day = today.minusDays(1), newestFirst = true))
+    private suspend fun fetchYesterday(query: Query, day: LocalDate, mine: Int) {
+        val answer = events.onDate(query.asRequest(day = day.minusDays(1), newestFirst = true))
         // The request can finish in the instant between being abandoned and the next
         // suspension point, and writing state is not one — so it is asked for explicitly.
         currentCoroutineContext().ensureActive()
@@ -211,10 +255,10 @@ class AgendaViewModel(
     }
 
     /** True when the day arrived, which is what decides whether the second request is made. */
-    private suspend fun fetch(query: Query, appending: Boolean, mine: Int): Boolean {
+    private suspend fun fetch(query: Query, day: LocalDate, appending: Boolean, mine: Int): Boolean {
         state.value = state.value.copy(loading = true, error = null)
 
-        val answer = events.onDate(query.asRequest(day = today, newestFirst = false))
+        val answer = events.onDate(query.asRequest(day = day, newestFirst = false))
         currentCoroutineContext().ensureActive()
         if (mine != generation) return false
 
@@ -225,6 +269,7 @@ class AgendaViewModel(
                 loaded = if (appending) loaded + answer.value.results else answer.value.results
                 nextPage = if (answer.value.next != null) query.page + 1 else null
                 state.value.copy(
+                    day = day,
                     days = presenter.days(loaded, marked),
                     anchorId = presenter.anchor(loaded),
                     count = answer.value.count,
@@ -245,11 +290,22 @@ class AgendaViewModel(
             } else {
                 val sameQuery = loadedFor?.copy(page = EventsRepository.FIRST_PAGE) ==
                     query.copy(page = EventsRepository.FIRST_PAGE)
+                // Following something re-marks the rows from `loaded` without asking the
+                // server. Leaving the old query's events there while clearing the days let
+                // that redraw resurrect them: the whole plain agenda reappearing under a
+                // followed team's chip, with the failure banner still on it.
+                if (!sameQuery) {
+                    loaded = emptyList()
+                    nextPage = null
+                    loadedFor = null
+                }
                 state.value.copy(
                     days = if (sameQuery) state.value.days else emptyList(),
+                    anchorId = if (sameQuery) state.value.anchorId else null,
                     loading = false,
                     error = answer.error,
                     showingStale = sameQuery && state.value.days.isNotEmpty(),
+                    canLoadMore = if (sameQuery) state.value.canLoadMore else false,
                 )
             }
         }

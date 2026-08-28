@@ -153,10 +153,11 @@ class ManageFavoritesViewModelTest {
     fun `following a team is written and the row shows it`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
-        val first = model.uiState.value.results.first().item
+        val row = model.uiState.value.results.first()
+        val first = row.item
         val before = catalog.teamSearches.size
 
-        model.onIntent(ManageIntent.Follow(first, followed = true))
+        model.onIntent(ManageIntent.Follow(first, followed = true, kind = row.kind))
         advanceUntilIdle()
 
         assertEquals("the store is what marks it, not a hopeful redraw", listOf(first), store.following.first().teams)
@@ -168,15 +169,42 @@ class ManageFavoritesViewModelTest {
     fun `unfollowing removes it again`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
-        val first = model.uiState.value.results.first().item
-        model.onIntent(ManageIntent.Follow(first, followed = true))
+        val row = model.uiState.value.results.first()
+        val first = row.item
+        model.onIntent(ManageIntent.Follow(first, followed = true, kind = row.kind))
         advanceUntilIdle()
 
-        model.onIntent(ManageIntent.Follow(first, followed = false))
+        model.onIntent(ManageIntent.Follow(first, followed = false, kind = row.kind))
         advanceUntilIdle()
 
         assertTrue(store.following.first().teams.isEmpty())
         assertFalse(model.uiState.value.results.first { it.item.id == first.id }.followed)
+    }
+
+    /**
+     * Switching tabs changes the tab at once and then waits on the network without clearing
+     * the rows, so for those seconds the screen shows teams under a heading that says
+     * competitions — for good, if that load fails. Deciding what a row *is* from the tab
+     * therefore wrote a team into the store's competitions, where it stayed, and where
+     * `Favorites.covers` matched its id against every event's competition.
+     */
+    @Test
+    fun `a row is followed as what it is, not as what the tab now says`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        val stillOnScreen = model.uiState.value.results.first()
+        assertEquals(FollowableKind.Teams, stillOnScreen.kind)
+
+        // The tab moves on; the rows from before are still the ones being looked at.
+        model.onIntent(ManageIntent.Show(FollowableKind.Competitions))
+        model.onIntent(
+            ManageIntent.Follow(stillOnScreen.item, followed = true, kind = stillOnScreen.kind),
+        )
+        advanceUntilIdle()
+
+        val following = store.following.first()
+        assertEquals(listOf(stillOnScreen.item), following.teams)
+        assertTrue("a team must never be stored as a competition", following.competitions.isEmpty())
     }
 
     @Test
@@ -184,9 +212,10 @@ class ManageFavoritesViewModelTest {
         val model = viewModel()
         model.onIntent(ManageIntent.Show(FollowableKind.Competitions))
         advanceUntilIdle()
-        val first = model.uiState.value.results.first().item
+        val row = model.uiState.value.results.first()
+        val first = row.item
 
-        model.onIntent(ManageIntent.Follow(first, followed = true))
+        model.onIntent(ManageIntent.Follow(first, followed = true, kind = row.kind))
         advanceUntilIdle()
 
         val following = store.following.first()
