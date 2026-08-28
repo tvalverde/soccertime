@@ -3,7 +3,7 @@
 
 # Testing
 pytest==8.3.5
-pytest-django==4.9.0
+pytest-django==4.14.0
 pytest-cov==6.0.0
 
 # Linting & Formatting
