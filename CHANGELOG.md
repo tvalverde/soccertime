@@ -88,6 +88,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   itself — and both export types of the same name, so an import an editor completes builds and
   ships, and is found by somebody in front of a television unable to reach a button.
 
+  Tagging `android-v<version>` publishes both signed APKs as a GitHub release. The signing key
+  exists for one reason — Android refuses to install a version signed with a different key, and
+  uninstalling takes the favourites with it — so the workflow verifies the signature rather
+  than assuming it: a signing config that finds no keystore is not an error in Gradle, it is
+  simply absent, and `assembleRelease` then writes an unsigned APK and reports success.
+
   95 JVM unit tests plus the repository's own, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
   unfiltered so gitleaks keeps reading pushes that touch only `android/` —
   `test_android_workflow.py` refuses a `paths` filter there, because adding one looks like a

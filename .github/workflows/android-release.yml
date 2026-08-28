@@ -1,0 +1,89 @@
+name: Android release
+
+# Cutting a release is tagging. `android-v*` and not `v*`, because this repository also holds
+# the website and a bare version tag would be ambiguous about which of the two it names.
+on:
+  push:
+    tags:
+      - "android-v*"
+
+# The only workflow here that writes anything: it creates the release the tag names.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+
+      # The tag is what a person will read the version off, and the APK is what a device
+      # reads it off. If they disagree, the wrong one is the one nobody notices — so they are
+      # compared here rather than trusted.
+      - name: Check the tag matches what the apps will report
+        run: |
+          tagged="${GITHUB_REF_NAME#android-v}"
+          for module in app-mobile app-tv; do
+            declared=$(grep -oP 'versionName = "\K[^"]+' "android/$module/build.gradle.kts")
+            if [ "$declared" != "$tagged" ]; then
+              echo "::error::$module declares versionName $declared but the tag says $tagged"
+              exit 1
+            fi
+          done
+          echo "version=$tagged" >> "$GITHUB_ENV"
+
+      # Written outside the workspace on purpose: anything inside it can end up in an
+      # artifact, a cache or a diff, and this is the one file that must never leave the runner.
+      - name: Take the signing key out of the secret
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::ANDROID_KEYSTORE_B64 is not set; a release cannot be signed"
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      # A missing password does not fail the build: the signing config is simply absent and
+      # Gradle writes `-release-unsigned.apk` instead. Publishing that would be a release
+      # nobody can install over the last one, so the signature is verified rather than assumed.
+      - name: Verify both are signed
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
+          for module in app-mobile app-tv; do
+            apk="android/$module/build/outputs/apk/release/$module-release.apk"
+            [ -f "$apk" ] || { echo "::error::$apk is missing; the build produced no signed APK"; exit 1; }
+            "$apksigner" verify --min-sdk-version 25 --print-certs "$apk"
+          done
+
+      - name: Name them after the version
+        run: |
+          mkdir -p release
+          cp "android/app-mobile/build/outputs/apk/release/app-mobile-release.apk" \
+             "release/soccertime-$version.apk"
+          cp "android/app-tv/build/outputs/apk/release/app-tv-release.apk" \
+             "release/soccertime-tv-$version.apk"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Soccertime Android $version" \
+            --notes "Sideload \`soccertime-$version.apk\` on a phone and \`soccertime-tv-$version.apk\` on the Fire TV. Both are signed with the same key, so each installs over its own previous version without losing the favourites stored on the device." \
+            release/soccertime-"$version".apk \
+            release/soccertime-tv-"$version".apk

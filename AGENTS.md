@@ -134,10 +134,25 @@ so `COPY . .` never carries it.
     player: a link is fired as a plain `ACTION_VIEW` and the system decides who answers it —
     no install check, no `<queries>` block, and no third-party app is ever named.
 -   **Releases** are cut by tagging `android-v<version>`, which is what
-    `.github/workflows/android-release.yml` runs on. The signing keystore is never committed;
-    it is held as a base64 GitHub secret and made once with
-    `keytool -genkeypair -keystore soccertime-release.jks -alias soccertime -keyalg RSA
-    -keysize 4096 -validity 10000`.
+    `.github/workflows/android-release.yml` runs on. It refuses to publish anything it cannot
+    verify: a missing secret stops the run rather than producing an unsigned APK, and
+    `apksigner verify --min-sdk-version 25` is run on both before the release is created.
+    The tag and the `versionName` in both modules must agree, and the workflow checks that too.
+-   **The signing key exists for one reason: updating without uninstalling.** Android refuses
+    to install a version signed with a different key, and uninstalling takes the favourites
+    with it, because they live on the device and nowhere else. Made once, never committed,
+    kept somewhere with a backup — losing it means no installed copy can ever be updated again:
+
+    ```
+    keytool -genkeypair -v -keystore soccertime-release.jks -alias soccertime \
+      -keyalg RSA -keysize 4096 -validity 10000 -storetype PKCS12
+    base64 -w0 soccertime-release.jks   # the value of ANDROID_KEYSTORE_B64
+    ```
+
+    Four repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`,
+    `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. The same four exist as environment variables
+    locally, which is all `make android-release` needs; without them `assembleRelease` still
+    builds, unsigned, which is what makes it a check anybody can run against R8.
 -   Everything in section 2 applies here unchanged: English in all source and comments,
     Conventional Commits, tests with every change, and a `CHANGELOG.md` entry.
 
