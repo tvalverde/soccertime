@@ -133,6 +133,7 @@ private fun SoccertimeTv(models: TvModels) {
                         state = state,
                         following = following ?: Following(),
                         clockLabel = models.now(),
+                        covered = covered,
                         onOpen = { row ->
                             opened = null
                             showing = favorites.linksFor(row.id)
@@ -155,6 +156,7 @@ private fun SoccertimeTv(models: TvModels) {
 
                     TvAgendaScreen(
                         state = state,
+                        covered = covered,
                         onOpen = { row ->
                             opened = null
                             showing = agenda.linksFor(row.id)

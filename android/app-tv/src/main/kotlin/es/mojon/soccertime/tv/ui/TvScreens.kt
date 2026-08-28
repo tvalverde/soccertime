@@ -66,6 +66,8 @@ fun TvFavoritesScreen(
     state: FavoritesUiState,
     following: Following,
     clockLabel: String,
+    /** A panel is over this screen, so nothing here may hold the cursor. */
+    covered: Boolean,
     onOpen: (EventUi) -> Unit,
     onFollow: (EventUi) -> Unit,
     onNarrow: (AgendaFilter) -> Unit,
@@ -121,6 +123,7 @@ fun TvFavoritesScreen(
             // Not an anchored listing: these are the next things coming up, in order, and
             // the top of them is the answer. Only the agenda opens partway down.
             anchor = Anchored.No,
+            covered = covered,
             onOpen = onOpen,
             onFollow = onFollow,
             absorbing = listOf(FocusDirection.Down, FocusDirection.Right),
@@ -138,6 +141,7 @@ fun TvFavoritesScreen(
 @Composable
 fun TvAgendaScreen(
     state: AgendaUiState,
+    covered: Boolean,
     onOpen: (EventUi) -> Unit,
     onFollow: (EventUi) -> Unit,
     modifier: Modifier = Modifier,
@@ -192,6 +196,7 @@ fun TvAgendaScreen(
         TvEventList(
             days = state.days,
             anchor = Anchored.At(state.anchorId),
+            covered = covered,
             onOpen = onOpen,
             onFollow = onFollow,
             absorbing = listOf(FocusDirection.Up, FocusDirection.Down, FocusDirection.Right),
@@ -286,6 +291,7 @@ private fun TvHints(vararg hints: Pair<String, String>) {
 private fun TvEventList(
     days: List<AgendaDay>,
     anchor: Anchored,
+    covered: Boolean,
     onOpen: (EventUi) -> Unit,
     onFollow: (EventUi) -> Unit,
     absorbing: List<FocusDirection>,
@@ -299,15 +305,31 @@ private fun TvEventList(
     // row of yesterday would be dragged back to the small hours by one press of the D-pad.
     val opening = remember(days, anchor) { Opening.of(anchor, days) }
 
+    // Which row the cursor is on, and which row to put it back on.
+    //
+    // A panel is an overlay in this same composition: opening one takes the focus into it and
+    // closing one destroys the node that held it, leaving the cursor nowhere. The rail still
+    // answered — it is outside this group — so the screen looked alive while the list could
+    // not be reached at all. Nothing in Compose restores this for us; this version of
+    // Foundation has no focus restorer.
+    var onRow by remember { mutableStateOf<Int?>(null) }
+    var putBackOn by remember { mutableStateOf<Int?>(null) }
+
     LaunchedEffect(days.firstOrNull()?.date, anchor) {
         if (days.isEmpty()) return@LaunchedEffect
         listState.scrollToItem(opening.index)
         // The anchor is partway down and a lazy list composes from the top, so the row the
         // requester is attached to does not exist until the scroll has been laid out. Asking
         // before then throws, which is how the screen used to open with nothing focused at all.
-        repeat(FOCUS_ATTEMPTS) {
-            withFrameNanos { }
-            if (runCatching { opensHere.requestFocus() }.isSuccess) return@LaunchedEffect
+        takeFocus(opensHere)
+    }
+
+    LaunchedEffect(covered) {
+        if (covered) {
+            // Remembered on the way in, because on the way out the row that had it is gone.
+            putBackOn = onRow
+        } else if (putBackOn != null) {
+            takeFocus(opensHere)
         }
     }
 
@@ -330,7 +352,12 @@ private fun TvEventList(
                     event = event,
                     onOpen = { onOpen(event) },
                     onFollow = { onFollow(event) },
-                    focusRequester = if (event.id == opening.eventId) opensHere else null,
+                    focusRequester = if (event.id == (putBackOn ?: opening.eventId)) {
+                        opensHere
+                    } else {
+                        null
+                    },
+                    onFocused = { onRow = event.id },
                 )
             }
         }
@@ -373,7 +400,21 @@ private data class Opening(val index: Int, val eventId: Int?) {
     }
 }
 
-/** Frames to wait for the scrolled-to row to compose before giving up on focusing it. */
+/**
+ * Ask for the focus once the row is there to take it.
+ *
+ * A row that has just been scrolled to, or has just stopped being covered by a panel, is not
+ * attached on the frame the request is made, and asking then throws. Retried across a few
+ * frames rather than assumed.
+ */
+private suspend fun takeFocus(requester: FocusRequester) {
+    repeat(FOCUS_ATTEMPTS) {
+        withFrameNanos { }
+        if (runCatching { requester.requestFocus() }.isSuccess) return
+    }
+}
+
+/** Frames to wait for the row to compose before giving up on focusing it. */
 private const val FOCUS_ATTEMPTS = 4
 
 @Composable

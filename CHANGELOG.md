@@ -400,6 +400,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It also puts the "nothing on this box opens that" notice *over* the links rather than
   instead of them, so BACK from it lands where the next attempt is made.
 
+- **Two ways the remote could get stuck, both found by using one.** LEFT from the third link
+  of a channel jumped back to the channel instead of stepping to the second: the redirect that
+  belongs to the column's edge was written where every tile below it inherited it, so each one
+  carried an instruction meant for the boundary. And closing the panel left the cursor nowhere
+  at all — the node holding it is destroyed with the panel, the rail still answered because it
+  sits outside the list, and the screen therefore looked alive while the events could not be
+  reached. The list remembers which row it was on and asks for it back.
+
 - **The cursor disappeared on the navigation rail.** `selected` was resolved before `focused`
   in the same `when`, so arriving at the icon of the screen you were already on changed
   nothing at all. The icon under the cursor also stayed muted, which was the other half of it.

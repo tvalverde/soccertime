@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -30,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -122,9 +123,12 @@ fun TvLinksPanel(
                         .width(262.dp)
                         .fillMaxHeight()
                         .padding(vertical = 16.dp)
-                        // RIGHT from any channel lands on the first link of the best quality,
-                        // whichever channel the cursor is on and whatever was rebuilt.
-                        .focusProperties { right = firstLink },
+                        // RIGHT *out of* this column lands on the first link of the best
+                        // quality, whichever channel the cursor is on and whatever was rebuilt.
+                        // Above the group, so only the group reads it: written below, every
+                        // channel would inherit it and RIGHT would stop meaning anything else.
+                        .focusProperties { right = firstLink }
+                        .focusGroup(),
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Text(
@@ -152,9 +156,12 @@ fun TvLinksPanel(
                         .fillMaxHeight()
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 24.dp, vertical = 16.dp)
-                        // LEFT from any link goes back to the channel these links belong to,
-                        // rather than to whichever row happens to sit alongside.
-                        .focusProperties { left = currentChannel },
+                        // LEFT *out of* this column goes back to the channel these links
+                        // belong to. Inherited by the tiles instead of read by the group, it
+                        // sent LEFT from link 3 to the channel rather than to link 2 — every
+                        // tile carrying an instruction meant for the column's edge.
+                        .focusProperties { left = currentChannel }
+                        .focusGroup(),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     channel?.qualities?.forEachIndexed { groupIndex, group ->
