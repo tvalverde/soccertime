@@ -15,6 +15,7 @@
     <string name="refresh">Actualizar</string>
     <string name="clear_search">Borrar la búsqueda</string>
     <string name="load_more">Ver más</string>
+    <string name="loading">Cargando…</string>
     <string name="empty_agenda">No hay eventos para este día.</string>
     <string name="empty_search">Nada coincide con lo que buscas.</string>
 
