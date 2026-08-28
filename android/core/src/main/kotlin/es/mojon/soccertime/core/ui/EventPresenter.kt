@@ -6,6 +6,7 @@ import es.mojon.soccertime.core.model.ChannelDto
 import es.mojon.soccertime.core.model.EventDto
 import es.mojon.soccertime.core.model.LinkDto
 import es.mojon.soccertime.core.time.EventTimes
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -41,18 +42,32 @@ class EventPresenter(val times: EventTimes) {
             }
 
     /**
-     * The event the listing should open on: the first one that has not finished.
+     * The event the listing should open on: the last one that has already started.
      *
-     * Not the first one that has not *started*. A race that began ninety minutes ago is still
-     * what the reader turned the television on for, and scrolling past it to the next kick-off
-     * would hide the thing that is actually on. The rule is [EventTimes.hasFinished], which is
-     * the same two hours the site's own agenda anchors on.
+     * Not the first that has not finished, which is the *oldest* thing still running and can
+     * sit hours above the reader. And not the nearest in either direction either: at ten to
+     * nine, with a match at seven and another at half past nine, the nearest is the one that
+     * has not begun — and opening the agenda on something that is not on yet, with what *is*
+     * on pushed above the fold, is the wrong way round. What has just started goes at the top
+     * and everything to come reads downwards from it, which is how an agenda is read.
      *
-     * Null when every event in the window is over, which is a real state at four in the
-     * morning; the listing then simply opens at the end.
+     * One starting exactly now counts as started — the boundary is `start <= now`, not
+     * `start < now`, so the event whose hour has just struck is the one you land on.
+     *
+     * Ordered by start and then by id so the answer does not depend on how the two halves of
+     * the window were stitched together. When nothing has started — a window entirely ahead,
+     * which the favourites screen is most of the time — it is the earliest, so the listing
+     * opens at its top rather than nowhere.
      */
-    fun anchor(events: List<EventDto>): Int? =
-        events.firstOrNull { !times.hasFinished(it.date, it.dateEnd) }?.id
+    fun anchor(events: List<EventDto>): Int? {
+        val now = times.now()
+        val dated = events
+            .mapNotNull { event -> times.instantAt(event.date)?.let { Anchor(event.id, it) } }
+            .sortedWith(compareBy({ it.start }, { it.id }))
+        return (dated.lastOrNull { !it.start.isAfter(now) } ?: dated.firstOrNull())?.id
+    }
+
+    private data class Anchor(val id: Int, val start: Instant)
 
     fun present(
         event: EventDto,

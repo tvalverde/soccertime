@@ -6,8 +6,12 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -35,16 +39,33 @@ class FavoritesStore(private val store: DataStore<Preferences>) {
      * A read failure yields an empty selection rather than an exception. Losing the file is a
      * first-run screen asking the reader to choose again, which is recoverable; a crash on
      * launch is not.
+     *
+     * **And then it looks again.** `catch` would *complete* the flow after emitting, so a
+     * single `IOException` ended this collector for the life of the process: the screen kept
+     * the favourites it happened to hold and stopped reacting to every change after. `retryWhen`
+     * re-subscribes instead, so a busy disk costs one empty reading and nothing more.
+     *
+     * The retries do not give up, because giving up is the bug being fixed, and they back off
+     * to half a minute because four collectors share this flow and a television is left running
+     * for days. `distinctUntilChanged` is what makes emitting on every failure harmless: a
+     * broken streak collapses into one value, and an unchanged selection stops re-triggering
+     * the agenda's redraw.
      */
     val following: Flow<Following> =
         store.data
-            .catch { cause -> if (cause is IOException) emit(EMPTY) else throw cause }
+            .retryWhen { cause, attempt ->
+                if (cause !is IOException) return@retryWhen false
+                emit(EMPTY)
+                delay(backoffFor(attempt))
+                true
+            }
             .map { stored ->
                 Following(
                     teams = stored[TEAMS].parse(),
                     competitions = stored[COMPETITIONS].parse(),
                 )
             }
+            .distinctUntilChanged()
 
     /** What the filtering uses. Ids only, because that is all a rename cannot break. */
     val favorites: Flow<Favorites> = following.map { it.selection }
@@ -75,8 +96,15 @@ class FavoritesStore(private val store: DataStore<Preferences>) {
         this?.let { runCatching { JSON.decodeFromString<List<FollowedItem>>(it) }.getOrNull() }
             .orEmpty()
 
+    private fun backoffFor(attempt: Long): Duration =
+        FIRST_RETRY * (1 shl attempt.coerceAtMost(RETRY_DOUBLINGS).toInt())
+            .coerceAtMost(Int.MAX_VALUE)
+
     companion object {
         const val FILE_NAME: String = "favorites"
+
+        private val FIRST_RETRY = 250.milliseconds
+        private const val RETRY_DOUBLINGS = 7L
 
         private val TEAMS = stringPreferencesKey("teams")
         private val COMPETITIONS = stringPreferencesKey("competitions")

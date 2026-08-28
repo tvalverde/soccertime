@@ -24,6 +24,8 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -94,6 +96,41 @@ class FavoritesViewModelTest {
 
     @After
     fun tearDown() = Dispatchers.resetMain()
+
+    /**
+     * The screen has to say where to open, like the agenda does. It said nothing, so the
+     * television opened it at the top by default and the phone — which passed no anchor at
+     * all — fell through to the "open at the end" branch and scrolled to its last row.
+     */
+    @Test
+    fun `the screen says which row to open on`() = runTest(dispatcher) {
+        // Every competition on the recorded page, so more than one row is covered and "the
+        // first" and "the last" are different answers.
+        followed.value = Favorites(
+            competitionIds = repository.answer.results.mapTo(mutableSetOf()) { it.competition.id },
+        )
+        val model = viewModel()
+        advanceUntilIdle()
+
+        val shown = model.uiState.value.days.flatMap { it.events }
+        assertTrue("the fixture must give more than one row for this to mean anything", shown.size > 1)
+        // Everything recorded is ahead of this clock, so nothing has started and the listing
+        // opens at its top — and, the point of the test, not at its bottom.
+        assertEquals(shown.first().id, model.uiState.value.anchorId)
+    }
+
+    @Test
+    fun `following nothing leaves no row to open on`() = runTest(dispatcher) {
+        followed.value = Favorites(teamIds = setOf(aFollowedTeam))
+        val model = viewModel()
+        advanceUntilIdle()
+        assertNotNull(model.uiState.value.anchorId)
+
+        followed.value = Favorites.NONE
+        advanceUntilIdle()
+
+        assertNull(model.uiState.value.anchorId)
+    }
 
     @Test
     fun `following nothing asks for nothing`() = runTest(dispatcher) {

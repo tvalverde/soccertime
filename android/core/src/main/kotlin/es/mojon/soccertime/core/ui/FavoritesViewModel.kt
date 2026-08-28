@@ -72,14 +72,14 @@ class FavoritesViewModel(
                 when {
                     chosen.isEmpty -> {
                         loaded = emptyList()
-                        state.value = state.value.copy(days = emptyList(), error = null)
+                        state.value = state.value.copy(days = emptyList(), anchorId = null, error = null)
                     }
                     // Nothing was fetched while the selection was empty, so the first choice
                     // is what triggers the only load this screen makes.
                     wasEmpty || loaded.isEmpty() -> load()
                     // Otherwise the window on screen already contains the answer: following
                     // one more team narrows the same list rather than asking for another.
-                    else -> state.value = state.value.copy(days = present())
+                    else -> state.value = show(state.value)
                 }
             }
         }
@@ -128,7 +128,7 @@ class FavoritesViewModel(
             is ApiResult.Success -> {
                 loadedAt = clock.instant()
                 loaded = answer.value.results
-                state.value.copy(days = present(), loading = false, error = null, showingStale = false)
+                show(state.value).copy(loading = false, error = null, showingStale = false)
             }
             is ApiResult.Failure -> state.value.copy(
                 loading = false,
@@ -142,7 +142,8 @@ class FavoritesViewModel(
      * Nothing is marked here. Every row on this screen is a favourite already, and a mark
      * every row carries marks nothing — the same rule the site's own agenda item follows.
      */
-    private fun present(): List<AgendaDay> {
+    /** The events this screen actually draws: inside the window, and covered by the selection. */
+    private fun shown(): List<EventDto> {
         val now = clock.instant()
         val opens = now.minus(HOURS_BEFORE)
         val closes = now.plus(DAYS_AHEAD)
@@ -150,7 +151,22 @@ class FavoritesViewModel(
             val at = presenter.times.instantAt(event.date) ?: return@filter false
             !at.isBefore(opens) && !at.isAfter(closes)
         }
-        return presenter.days(following.filter(inWindow), following, markFavorites = false)
+        return following.filter(inWindow)
+    }
+
+    /**
+     * The rows and where to open on them, from one reading of what is shown.
+     *
+     * The anchor has to come from the drawn events rather than from everything fetched, or it
+     * could name a row the window or the selection has filtered out — and a listing told to
+     * open on something that is not on it opens nowhere.
+     */
+    private fun show(current: FavoritesUiState): FavoritesUiState {
+        val events = shown()
+        return current.copy(
+            days = presenter.days(events, following, markFavorites = false),
+            anchorId = presenter.anchor(events),
+        )
     }
 
     companion object {
@@ -164,6 +180,8 @@ class FavoritesViewModel(
 }
 
 data class FavoritesUiState(
+    /** The row to open on: the one nearest to now, as on the agenda. */
+    val anchorId: Int? = null,
     val following: Favorites = Favorites.NONE,
     val days: List<AgendaDay> = emptyList(),
     val loading: Boolean = false,

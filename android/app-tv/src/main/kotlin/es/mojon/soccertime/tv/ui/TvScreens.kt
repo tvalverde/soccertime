@@ -120,9 +120,7 @@ fun TvFavoritesScreen(
         // things and reaching it is a move the remote map promises.
         TvEventList(
             days = state.days,
-            // Not an anchored listing: these are the next things coming up, in order, and
-            // the top of them is the answer. Only the agenda opens partway down.
-            anchor = Anchored.No,
+            anchorId = state.anchorId,
             covered = covered,
             onOpen = onOpen,
             onFollow = onFollow,
@@ -195,7 +193,7 @@ fun TvAgendaScreen(
 
         TvEventList(
             days = state.days,
-            anchor = Anchored.At(state.anchorId),
+            anchorId = state.anchorId,
             covered = covered,
             onOpen = onOpen,
             onFollow = onFollow,
@@ -290,7 +288,7 @@ private fun TvHints(vararg hints: Pair<String, String>) {
 @Composable
 private fun TvEventList(
     days: List<AgendaDay>,
-    anchor: Anchored,
+    anchorId: Int?,
     covered: Boolean,
     onOpen: (EventUi) -> Unit,
     onFollow: (EventUi) -> Unit,
@@ -303,7 +301,7 @@ private fun TvEventList(
     // Where the list opens, and which row the cursor starts on. Both come from the anchor, so
     // they cannot disagree — a list scrolled to the current hour with the cursor on the first
     // row of yesterday would be dragged back to the small hours by one press of the D-pad.
-    val opening = remember(days, anchor) { Opening.of(anchor, days) }
+    val opening = remember(days, anchorId) { Opening.of(anchorId, days) }
 
     // Which row the cursor is on, and which row to put it back on.
     //
@@ -315,7 +313,7 @@ private fun TvEventList(
     var onRow by remember { mutableStateOf<Int?>(null) }
     var putBackOn by remember { mutableStateOf<Int?>(null) }
 
-    LaunchedEffect(days.firstOrNull()?.date, anchor) {
+    LaunchedEffect(days.firstOrNull()?.date, anchorId) {
         if (days.isEmpty()) return@LaunchedEffect
         listState.scrollToItem(opening.index)
         // The anchor is partway down and a lazy list composes from the top, so the row the
@@ -369,37 +367,20 @@ private fun TvEventList(
 }
 
 /**
- * Whether a listing positions itself at the current hour, and where.
- *
- * The distinction matters because "no anchor" means two different things. On the agenda it
- * means everything in the two-day window is over; on favourites it means the listing was never
- * anchored at all — those are the next things coming up, in order, and their top is the answer.
- * Collapsing the two opened favourites at its last row.
- */
-private sealed interface Anchored {
-    data object No : Anchored
-
-    data class At(val eventId: Int?) : Anchored
-}
-
-/**
  * Which item the list scrolls to and which row takes the cursor. One value, so the two cannot
  * disagree — a list scrolled to the current hour with the cursor on the first row of yesterday
  * would be dragged back to the small hours by one press of the D-pad.
+ *
+ * Both listings are anchored now, and the anchor is the row nearest to now, so it names
+ * something whenever there is anything. The top is only for a list with nothing on it, or one
+ * whose anchor has been filtered off it.
  */
 private data class Opening(val index: Int, val eventId: Int?) {
     companion object {
-        fun of(anchor: Anchored, days: List<AgendaDay>): Opening {
+        fun of(anchorId: Int?, days: List<AgendaDay>): Opening {
             if (days.isEmpty()) return Opening(0, null)
-            val top = Opening(0, days.first().events.firstOrNull()?.id)
-            if (anchor !is Anchored.At) return top
-
-            anchorPosition(anchor.eventId, days)?.let { return Opening(it, anchor.eventId) }
-            // Anchored, but nothing in the window is still to come: four in the morning. The
-            // end of the list is the most recent thing there is; the top is the small hours of
-            // a day already gone.
-            val items = days.sumOf { 1 + it.events.size }
-            return Opening((items - 1).coerceAtLeast(0), days.last().events.lastOrNull()?.id)
+            val at = anchorPosition(anchorId, days) ?: return Opening(0, days.first().events.firstOrNull()?.id)
+            return Opening(at, anchorId)
         }
     }
 }

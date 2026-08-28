@@ -131,33 +131,6 @@ class EventTimesTest {
         assertEquals(setOf(true), answers.toSet())
     }
 
-    /**
-     * The agenda's anchor. It has to be the same two hours as the badge: a listing that opened
-     * on a row it had already stopped calling live would be telling the reader two things.
-     */
-    @Test
-    fun `an event is not finished until the same two hours the badge uses`() {
-        fun finishedAt(now: String) = at("Europe/Madrid", now).hasFinished(kickOff, null)
-
-        assertFalse(finishedAt("2026-08-30T15:00:00Z"))
-        // Ninety minutes in — the case this whole window exists for.
-        assertFalse(finishedAt("2026-08-30T16:30:00Z"))
-        assertFalse(finishedAt("2026-08-30T16:59:59Z"))
-        assertTrue(finishedAt("2026-08-30T17:00:00Z"))
-    }
-
-    @Test
-    fun `nothing is both live and finished, and nothing is neither once it has started`() {
-        val zones = listOf("Europe/Madrid", "Atlantic/Canary", "UTC", "America/New_York")
-        listOf("2026-08-30T15:30:00Z", "2026-08-30T16:59:00Z", "2026-08-30T17:30:00Z").forEach { now ->
-            zones.forEach { zone ->
-                val times = at(zone, now)
-                assertFalse(times.isLive(kickOff, null) && times.hasFinished(kickOff, null))
-                assertTrue(times.isLive(kickOff, null) || times.hasFinished(kickOff, null))
-            }
-        }
-    }
-
     @Test
     fun `a date the parser cannot read costs one row, not the screen`() {
         val times = at("Europe/Madrid")
@@ -167,6 +140,5 @@ class EventTimesTest {
         assertEquals("", times.timeLabel("2026-08-30 17:00:00"))
         assertEquals("", times.dayLabel("nope"))
         assertFalse(times.isLive("nope", null))
-        assertFalse(times.hasFinished("nope", null))
     }
 }

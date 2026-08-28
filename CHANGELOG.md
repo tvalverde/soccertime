@@ -288,12 +288,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   being prepended. Losing it costs the tail of the window and leaves today standing; losing
   today does not go on to ask.
 
-  The list opens on the first event that has **not finished**, which is two hours after its
-  start — the same rule as the live badge and as the site's own `AGENDA_LOOKBACK`, not the
-  three hours of the favourites window. Anchoring on a row the app had already stopped calling
-  live would have been the app saying two things at once. A race that began ninety minutes ago
-  is therefore still what you are shown, and everything earlier is a scroll away. Moving
-  between days, and a calendar, are deliberately still not here.
+  Everything earlier is a scroll away, and moving between days, or a calendar, are deliberately
+  still not here.
 
 - **What the reader follows is now a way in, not a legend.** Pressing an entry in the
   favourites strip opens the agenda narrowed to that team or that competition, through the
@@ -399,6 +395,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selected, so a stream that does not start costs one press instead of finding the row again.
   It also puts the "nothing on this box opens that" notice *over* the links rather than
   instead of them, so BACK from it lands where the next attempt is made.
+
+- **The agenda opens on what has just started, not on the oldest thing still running.** It took
+  the first event that had not finished, which at half past six in the evening is a race that
+  began at five — an hour and a half above the reader, with everything they might want below the
+  fold. It is the last event whose hour has come: `start <= now`, so one starting exactly on the
+  hour is the one you land on, with what is still to come reading downwards from it. When
+  nothing has started, which is the favourites screen most of the time, it opens at the top.
+
+  Favourites had its own version. The television opened it at the top and the phone, which asked
+  for no anchor at all, fell through to a fallback and **scrolled to the last event on the
+  list**. Both carry the same anchor now, taken from the events actually drawn rather than from
+  everything fetched, so it can never name a row the window has filtered out.
+
+- **A listing left behind no longer lingers on screen.** The television keeps this view model
+  while the agenda is off screen, so returning through the rail painted the chip and the rows of
+  the followed team just left, under a screen that no longer said why. The rows go when the
+  filter does — guarded on the filter really changing, since both apps re-send it every time the
+  screen re-enters composition and blanking a good screen on the way back to a tab would be a
+  worse fault than the one being fixed.
+
+- **A favourites file that failed to be read once was never read again.** `Flow.catch` completes
+  the flow after emitting, so a single `IOException` from DataStore ended that collector for the
+  life of the process: the screen kept whatever it held and stopped reacting to every change
+  after it. It retries instead, backing off to half a minute, so a busy disk costs one empty
+  reading rather than a session.
 
 - **A sweep for everything else of the same shape.** Four bugs in a row had one cause —
   shared state written by the wrong thing, at the wrong time, or twice — so the rest were
