@@ -16,6 +16,16 @@ def event_pks(queryset):
     return list(queryset.values_list("pk", flat=True))
 
 
+def _match_at(competition, local, visitor, day, at):
+    """A match at a wall-clock time on a given day, where the site is read."""
+    return Match.objects.create(
+        competition=competition,
+        local=local,
+        visitor=visitor,
+        date=timezone.make_aware(datetime.datetime.combine(day, at)),
+    )
+
+
 class TestEventQuerySetTimeFilters:
     """Tests for time-based filtering methods."""
 
@@ -82,6 +92,59 @@ class TestEventQuerySetTimeFilters:
 
         # Should include events within range
         assert all_events["match"].pk in pks or all_events["match_in_progress"].pk in pks
+
+    def test_for_date_includes_the_first_and_last_instant_of_the_day(self, db, competition, team_home, team_away):
+        """Midnight belongs to its day, and so does the minute before the next one."""
+        day = timezone.now().date() + datetime.timedelta(days=5)
+        opens = _match_at(competition, team_home, team_away, day, datetime.time(0, 0))
+        closes = _match_at(competition, team_home, team_away, day, datetime.time(23, 59))
+
+        pks = event_pks(Event.objects.for_date(day))
+        assert opens.pk in pks
+        assert closes.pk in pks
+
+    def test_for_date_does_not_reach_into_the_next_day(self, db, competition, team_home, team_away):
+        """The half past midnight that `start_of_today` was written for, from the other side."""
+        day = timezone.now().date() + datetime.timedelta(days=5)
+        after = _match_at(competition, team_home, team_away, day + datetime.timedelta(days=1), datetime.time(0, 30))
+
+        assert after.pk not in event_pks(Event.objects.for_date(day))
+
+    def test_for_date_holds_a_day_the_clocks_lengthened(self, db, competition, team_home, team_away):
+        """25 October 2026 is twenty-five hours long in Madrid.
+
+        A bound built by adding twenty-four hours to midnight would close the day at eleven at
+        night and drop everything after it. Nothing about that failure is visible locally
+        unless a test puts the clocks where production will eventually put them.
+        """
+        long_day = datetime.date(2026, 10, 25)
+        late = _match_at(competition, team_home, team_away, long_day, datetime.time(23, 30))
+
+        assert late.pk in event_pks(Event.objects.for_date(long_day))
+
+    def test_for_date_holds_a_day_the_clocks_shortened(self, db, competition, team_home, team_away):
+        """29 March 2026 is twenty-three hours long, so the same arithmetic overshoots."""
+        short_day = datetime.date(2026, 3, 29)
+        next_morning = _match_at(
+            competition, team_home, team_away, short_day + datetime.timedelta(days=1), datetime.time(0, 30)
+        )
+
+        assert next_morning.pk not in event_pks(Event.objects.for_date(short_day))
+
+    def test_for_date_asks_in_a_shape_an_index_can_answer(self, db):
+        """The whole point of the change, and the only assertion here that fails without it.
+
+        `date__date=` wraps the column in `django_datetime_cast_date`, a Python function on the
+        SQLite connection: no index applies and every one of production's fifty-three thousand
+        rows is converted before it can be compared — twice per request, once for the
+        paginator's count. The tests above pass either way, because both forms select the same
+        events; this one is about how they are selected.
+        """
+        for query in (
+            Event.objects.for_date(datetime.date(2026, 8, 30)).query,
+            Event.objects.for_date_range(datetime.date(2026, 8, 29), datetime.date(2026, 8, 30)).query,
+        ):
+            assert "cast_date" not in str(query).lower()
 
     def test_upcoming_days(self, match, match_future):
         """Should return events in the next N days."""

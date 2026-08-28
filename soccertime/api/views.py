@@ -254,8 +254,8 @@ class EventViewSet(ReadOnlyViewSet):
         ),
         filtering.identifier("channel", "Only events broadcast on this channel.", "channels__pk"),
         filtering.day("date", "Only events on this day, read in Europe/Madrid.", lambda qs, day: qs.for_date(day)),
-        filtering.day("date_from", "Only events on or after this day.", lambda qs, day: qs.filter(date__date__gte=day)),
-        filtering.day("date_to", "Only events on or before this day.", lambda qs, day: qs.filter(date__date__lte=day)),
+        filtering.day("date_from", "Only events on or after this day.", lambda qs, day: qs.on_or_after(day)),
+        filtering.day("date_to", "Only events on or before this day.", lambda qs, day: qs.on_or_before(day)),
         QueryFilter(
             name="search",
             description="Case-insensitive match on the teams, the race or event name, the competition or the sport.",
