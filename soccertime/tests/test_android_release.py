@@ -31,9 +31,7 @@ MODULES = ("app-mobile", "app-tv")
 
 def workflow() -> str:
     """The workflow with its comments dropped, so a comment cannot satisfy an assertion."""
-    return "\n".join(
-        line for line in RELEASE.read_text().splitlines() if not line.lstrip().startswith("#")
-    )
+    return "\n".join(line for line in RELEASE.read_text().splitlines() if not line.lstrip().startswith("#"))
 
 
 def version_of(module: str) -> str | None:

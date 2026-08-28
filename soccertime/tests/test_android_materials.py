@@ -41,11 +41,7 @@ def sources(module: str) -> list[Path]:
 
 
 def imports(path: Path) -> list[str]:
-    return [
-        line.strip()
-        for line in path.read_text().splitlines()
-        if line.startswith("import ")
-    ]
+    return [line.strip() for line in path.read_text().splitlines() if line.startswith("import ")]
 
 
 class TestTheSourcesAreReadable:
@@ -63,11 +59,7 @@ class TestEachApplicationDrawsWithItsOwn:
     @pytest.mark.parametrize("module", sorted(MODULES))
     def test_it_imports_the_material_it_is_meant_to(self, module):
         allowed, _ = MODULES[module]
-        used = [
-            path
-            for path in sources(module)
-            if any(line.startswith(f"import {allowed}") for line in imports(path))
-        ]
+        used = [path for path in sources(module) if any(line.startswith(f"import {allowed}") for line in imports(path))]
         assert used, f"{module} imports nothing from {allowed}"
 
     @pytest.mark.parametrize("module", sorted(MODULES))
