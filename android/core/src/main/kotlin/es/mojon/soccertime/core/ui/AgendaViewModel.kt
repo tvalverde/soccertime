@@ -75,6 +75,14 @@ class AgendaViewModel(
     favorites: Flow<Favorites> = flowOf(Favorites.NONE),
 ) : ViewModel() {
 
+    /**
+     * Bumped to ask for the window again. A refresh goes through the same pipeline as every
+     * other load rather than launching one of its own: on its own it reloaded whatever was
+     * last loaded, which after moving from one followed thing to another is the one that was
+     * left behind — fetched alongside the new one, and its yesterday prepended onto it.
+     */
+    private val reloads = MutableStateFlow(0)
+
     private val search = MutableStateFlow("")
     private val filters = MutableStateFlow(Filters(watchableOnly = false, narrowing = null))
     private val state = MutableStateFlow(AgendaUiState(day = today))
@@ -87,6 +95,9 @@ class AgendaViewModel(
     private var nextPage: Int? = null
     private var marked: Favorites = Favorites.NONE
 
+    /** Which load owns the screen. An older one that answers late is no longer entitled to. */
+    private var generation = 0
+
     init {
         viewModelScope.launch {
             combine(
@@ -94,7 +105,8 @@ class AgendaViewModel(
                     .map(::effectiveSearch)
                     .distinctUntilChanged(),
                 filters,
-            ) { text, applied -> Query(text, applied.watchableOnly, applied.narrowing) }
+                reloads,
+            ) { text, applied, _ -> Query(text, applied.watchableOnly, applied.narrowing) }
                 // collectLatest, so a query that arrives while an older one is still in
                 // flight cancels it rather than queueing behind it.
                 .collectLatest { load(it, appending = false) }
@@ -144,8 +156,10 @@ class AgendaViewModel(
     private fun refresh(minimumAge: Duration) {
         val since = loadedAt?.let { Duration.between(it, clock.instant()) }
         if (since != null && since < minimumAge) return
-        val query = loadedFor ?: return
-        viewModelScope.launch { load(query, appending = false) }
+        // Nothing has finished loading yet, so the pipeline is already on its way with the
+        // current query and a second trip would only cancel and restart it.
+        if (loadedFor == null) return
+        reloads.value++
     }
 
     private fun loadMore() {
@@ -155,8 +169,11 @@ class AgendaViewModel(
     }
 
     private suspend fun load(query: Query, appending: Boolean) {
+        // Which load this is. Appending joins the one already on screen; anything else
+        // replaces it, and from that moment the ones before it may no longer speak.
+        val mine = if (appending) generation else ++generation
         if (appending) {
-            fetch(query, appending = true)
+            fetch(query, appending = true, mine = mine)
             return
         }
         // Strictly the result of *this* request, never a comparison against what was loaded
@@ -164,7 +181,7 @@ class AgendaViewModel(
         // answers yes whether or not today came back — and prepending yesterday onto a list
         // that already held it produced two rows per event, duplicate keys, and a crash in
         // the list rather than the failure banner the reader should have seen.
-        if (fetch(query, appending = false)) fetchYesterday(query)
+        if (fetch(query, appending = false, mine = mine)) fetchYesterday(query, mine)
     }
 
     /**
@@ -174,11 +191,12 @@ class AgendaViewModel(
      * the reader came for. Reversing is what turns the newest-first page back into the order
      * the listing reads in.
      */
-    private suspend fun fetchYesterday(query: Query) {
+    private suspend fun fetchYesterday(query: Query, mine: Int) {
         val answer = events.onDate(query.asRequest(day = today.minusDays(1), newestFirst = true))
         // The request can finish in the instant between being abandoned and the next
         // suspension point, and writing state is not one — so it is asked for explicitly.
         currentCoroutineContext().ensureActive()
+        if (mine != generation) return
         state.value = when (answer) {
             is ApiResult.Success -> {
                 loaded = answer.value.results.reversed() + loaded
@@ -193,11 +211,12 @@ class AgendaViewModel(
     }
 
     /** True when the day arrived, which is what decides whether the second request is made. */
-    private suspend fun fetch(query: Query, appending: Boolean): Boolean {
+    private suspend fun fetch(query: Query, appending: Boolean, mine: Int): Boolean {
         state.value = state.value.copy(loading = true, error = null)
 
         val answer = events.onDate(query.asRequest(day = today, newestFirst = false))
         currentCoroutineContext().ensureActive()
+        if (mine != generation) return false
 
         state.value = when (answer) {
             is ApiResult.Success -> {

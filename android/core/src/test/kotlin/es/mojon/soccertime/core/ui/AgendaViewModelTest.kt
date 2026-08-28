@@ -329,6 +329,49 @@ class AgendaViewModelTest {
         assertNull("an abandoned load is not a failure to report", model.uiState.value.error)
     }
 
+    /**
+     * Leaving one followed thing for another.
+     *
+     * Re-entering the agenda asks it to refresh, and a refresh reloaded whatever was last
+     * loaded rather than what is being shown now — in its own coroutine, outside the single
+     * flight the query pipeline gives. So the old filter's window was fetched alongside the
+     * new one and its yesterday prepended onto it: the header said MotoGP, the count said
+     * MotoGP, and a Barcelona match sat above them under AYER.
+     */
+    @Test
+    fun `a refresh reloads what is on screen, not what used to be`() = runTest(dispatcher) {
+        val barcelona = AgendaFilter(42, "FC Barcelona", null, FollowableKind.Teams)
+        val motogp = AgendaFilter(7, "MotoGP", null, FollowableKind.Competitions)
+        repository.answerFor = { query ->
+            when {
+                query.team == barcelona.id -> pageOf("2026-08-29T21:00:00Z")
+                query.competition == motogp.id -> pageOf("2026-08-30T13:00:00Z")
+                else -> pageOf()
+            }
+        }
+        val model = viewModel()
+        advanceUntilIdle()
+        model.onIntent(AgendaIntent.Narrow(barcelona))
+        advanceUntilIdle()
+
+        // The window the reader is leaving answers slowly, as a real one does, so a reload of
+        // it would land after the window they asked for.
+        repository.takes = { query -> if (query.team == barcelona.id) 3_000 else 10 }
+        model.onIntent(AgendaIntent.Narrow(motogp))
+        clock.advance(Duration.ofSeconds(61))
+        model.onIntent(AgendaIntent.Resumed)
+        advanceUntilIdle()
+
+        val shown = model.uiState.value.days.flatMap { it.events }
+        assertTrue(
+            "nothing from the filter that was left behind may remain",
+            shown.none { it.competition == "La Liga EA Sports" },
+        )
+        assertEquals(motogp, model.uiState.value.filter)
+        assertNull("the refresh must carry the filter that is on screen", repository.asks.last().team)
+        assertEquals(motogp.id, repository.asks.last().competition)
+    }
+
     @Test
     fun `clearing the filter asks for the whole window again`() = runTest(dispatcher) {
         val model = viewModel()

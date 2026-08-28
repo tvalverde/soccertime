@@ -400,6 +400,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It also puts the "nothing on this box opens that" notice *over* the links rather than
   instead of them, so BACK from it lands where the next attempt is made.
 
+- **One followed thing's events appearing inside another's.** Leaving FC Barcelona for MotoGP
+  gave a screen headed MotoGP, counting MotoGP's two events, with a Barcelona match sitting
+  above them under AYER. Re-entering the agenda asks it to refresh, and a refresh reloaded
+  whatever was *last loaded* rather than what is on screen — in a coroutine of its own,
+  outside the single flight the query pipeline gives — so the window being left was fetched
+  alongside the one being asked for and its yesterday prepended onto it. A refresh is a bump
+  of the same pipeline now, which both picks up the current filter and cancels whatever is in
+  the air. Every load also carries which load it is, and one that has been superseded stays
+  quiet however late it answers.
+
 - **A filtered agenda that reloaded itself back to everything.** Pressing a followed team
   narrowed the listing and then, seconds later, quietly replaced it with the whole two-day
   window again. `collectLatest` does cancel the load it replaces, but `safeCall` caught
