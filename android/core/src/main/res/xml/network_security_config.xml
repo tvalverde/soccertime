@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Why this file exists, so nobody deletes the four PEMs beside it.
+
+    www.mojon.es is served by Let's Encrypt, and the chain it presents today is
+
+        CN=mojon.es  <-  CN=YR1  <-  CN=Root YR, cross-signed by ISRG Root X1
+
+    so the anchor a client must hold is ISRG Root X1, and only devices whose trust store
+    was updated after 2016 hold it. The Fire TV Stick 4K runs Fire OS 6 on Android 7.1, and
+    Amazon's trust store there is Amazon's, not Google's — it may or may not carry X1, and
+    "may" is not something a release can be built on. There is no fallback to check against
+    either: the site sends HSTS and redirects http to https, so a failed handshake is a blank
+    app rather than a degraded one.
+
+    Both generations are bundled, not just the one in use. Let's Encrypt is migrating to the
+    Root YR / Root YE pair and will stop cross-signing them from X1 once enough devices carry
+    them — the day it does, an app trusting only X1 stops working on exactly the old hardware
+    this exists for. Bundling costs four kilobytes.
+
+    `src="system"` is kept and listed first: everything that already works must keep working,
+    and this only adds anchors. The user store is deliberately absent — nothing here needs to
+    be interceptable, and a debug-only override belongs in a debug manifest, not in this file.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/isrg_root_x1" />
+            <certificates src="@raw/isrg_root_x2" />
+            <certificates src="@raw/isrg_root_yr" />
+            <certificates src="@raw/isrg_root_ye" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -86,7 +86,62 @@ This document provides the necessary context for understanding and working on th
     -   **Empty States:** Pass `empty_message` / `empty_message_level` in the view context (see `empty_state()` in `views.py`) and include `soccertime/empty_state.html` when the listing is empty. Do **not** use the Django `messages` framework here: the listing views are wrapped in `@cache_page`, so a per-request message is stored in the shared page cache and served to every other visitor.
     -   **Accessibility:** Always provide `aria-label` for links and interactive elements, especially those containing only icons or images.
 
-## 6. Language & Localization
+## 6. The Android Apps (`android/`)
+
+Two native applications that read the same public API the site serves, living beside the
+Django project rather than in a repository of their own. They share this repository and
+nothing else: the image built from here runs Django, and `.dockerignore` refuses `android/`
+so `COPY . .` never carries it.
+
+-   **Layout.** One Gradle build, three modules. `:core` is everything that is not a screen —
+    the API client, the data layer, the time arithmetic and the view models — and both
+    applications are thin over it, so the phone and the television disagree about
+    presentation and about nothing else. `:app-mobile` is `es.mojon.soccertime`,
+    `:app-tv` is `es.mojon.soccertime.tv`; the application ids differ so both install on one
+    device. The TV activity is registered under `LEANBACK_LAUNCHER`, which is the only
+    category the Fire TV home screen lists.
+-   **Versions.** `android/gradle/libs.versions.toml` is the single place a version is
+    written, and it is the manifest the `gradle` entry in `.github/dependabot.yml` watches.
+    `soccertime/tests/test_dependency_updates.py` derives its expectation from the files
+    actually present, so a new kind of manifest and its Dependabot entry have to arrive in
+    the same commit.
+-   **AGP 9 compiles Kotlin itself.** Applying `org.jetbrains.kotlin.android` is no longer
+    redundant, it is a hard configuration error — the plugin refuses and the build never
+    reaches a module. Only the Compose and serialization compiler plugins are still applied
+    on their own; built-in Kotlin replaces the base Android Kotlin plugin and nothing else.
+    AGP pulls in an older Kotlin than the catalog names, so the root `build.gradle.kts` puts
+    `kotlin-gradle-plugin` on the buildscript classpath purely to raise it: without that pin
+    the apps compile with AGP's bundled version rather than the one Dependabot is watching.
+-   **`minSdk` is 25 and that is the whole point.** The Fire TV Stick 4K runs Fire OS 6 on
+    Android 7.1, where `java.time` does not exist; every instant this app handles arrives as
+    an ISO-8601 string with an offset, and it is core library desugaring that makes
+    `OffsetDateTime` available down there rather than a second date library.
+-   **Never delete the certificates in `core/src/main/res/raw/`.** `www.mojon.es` presents a
+    Let's Encrypt chain that anchors at ISRG Root X1 — today by way of Root YR cross-signed
+    from it — and an Android 7.1 trust store may not carry either. It is Amazon's store on
+    that hardware, not Google's, and "may" is not something a release is built on. Both
+    generations are bundled through `network_security_config.xml`, which is declared in
+    `:core`'s manifest so neither application can ship having forgotten it. There is no
+    fallback to fail over to: the site sends HSTS and redirects `http`, so a failed handshake
+    is a blank app rather than a degraded one.
+-   **Commands.** `make android-build`, `android-test`, `android-lint`, `android-release`,
+    `android-install-mobile`, and `android-install-tv ADB_HOST=<address>`. Gradle runs on the
+    host against a JDK and an Android SDK, not inside the `web` container.
+-   **Some things only the hardware can answer.** Whether the handshake succeeds on Android
+    7.1, whether anything on the device answers an `acestream://` intent, and whether every
+    control can be reached with a D-pad are invisible to the unit suite and to an emulator.
+    Sideload and look before believing any of the three. The apps never require a particular
+    player: a link is fired as a plain `ACTION_VIEW` and the system decides who answers it —
+    no install check, no `<queries>` block, and no third-party app is ever named.
+-   **Releases** are cut by tagging `android-v<version>`, which is what
+    `.github/workflows/android-release.yml` runs on. The signing keystore is never committed;
+    it is held as a base64 GitHub secret and made once with
+    `keytool -genkeypair -keystore soccertime-release.jks -alias soccertime -keyalg RSA
+    -keysize 4096 -validity 10000`.
+-   Everything in section 2 applies here unchanged: English in all source and comments,
+    Conventional Commits, tests with every change, and a `CHANGELOG.md` entry.
+
+## 7. Language & Localization
 
 -   **Conversations:** All chat conversations and explanations must be conducted in Castilian Spanish.
 -   **Code & Technical Artifacts:** All source code, in-code comments, documentation, commit messages, configuration files, and tests must be written strictly in English.

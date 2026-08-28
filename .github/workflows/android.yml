@@ -1,0 +1,58 @@
+name: Android
+
+# A workflow of its own rather than a job inside `ci.yml`. Nothing under `android/` can break
+# the Django suite and nothing in the Django tree can break the apps, so making either wait
+# for the other only buys slower feedback — and `ci.yml` deliberately has no `paths` filter,
+# because gitleaks has to keep reading every push, including one that touches only `android/`.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          # What the Android Gradle Plugin supports. The build compiles to bytecode 17
+          # regardless — this is the JVM Gradle itself runs on.
+          java-version: "21"
+      # Restores the Gradle and dependency caches and writes the build scan summary. It also
+      # validates the wrapper's checksum against Gradle's published list, which is the check
+      # that makes a committed `gradle-wrapper.jar` safe to run.
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          build-scan-publish: false
+
+      - name: Lint
+        run: ./gradlew lint --no-daemon
+      - name: Tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+      - name: Build
+        run: ./gradlew assembleDebug --no-daemon
+
+      # Kept because the only place the parts that matter can be proven — the TLS handshake on
+      # Android 7.1, the D-pad, the intents — is the hardware, and sideloading is how they get
+      # there. A run of this workflow is the shortest path from a commit to an installable APK.
+      - name: Keep the debug APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: soccertime-debug-apks
+          path: android/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
