@@ -47,6 +47,13 @@ tasks.withType<Test>().configureEach {
 dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
+    api(platform(libs.compose.bom))
+    // The font families, and nothing else of Compose: the view models below stay free of the
+    // toolkit, because the phone draws with Material 3 and the television with tv-material.
+    api(libs.compose.ui.text)
+
+    api(libs.androidx.lifecycle.viewmodel)
+    api(libs.androidx.datastore.preferences)
     api(libs.kotlinx.coroutines.android)
     api(libs.kotlinx.serialization.json)
     api(libs.retrofit)

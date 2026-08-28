@@ -108,6 +108,7 @@ soccertime_data_cache.sqlite
 # tree it builds, and one debug APK is larger than everything else here put together.
 # `build/` above is deliberately left unanchored: that is what covers every module's output.
 android/.gradle/
+android/.kotlin/
 android/.cxx/
 android/captures/
 android/local.properties
