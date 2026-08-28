@@ -93,12 +93,31 @@ screenshot*.png
 newera.txt
 elcano.txt
 soccertime_data_cache.sqlite
-media
-db
+# Anchored, because a `.gitignore` pattern with no slash is matched against every path
+# segment at every depth: bare `media` and `db` were written for these two directories at
+# the root and also hid any directory of those names anywhere else in the tree. Nothing in
+# the Python project is called either, which is why it never showed.
+/media/
+/db/
 /static/
 .env.production.local
 .docker/traefik/certs/mojon.local.key
 .docker/traefik/certs/mojon.local.crt
+
+# The Android project under `android/`. Gradle writes its caches and its output inside the
+# tree it builds, and one debug APK is larger than everything else here put together.
+# `build/` above is deliberately left unanchored: that is what covers every module's output.
+android/.gradle/
+android/.cxx/
+android/captures/
+android/local.properties
+android/**/build/
+*.apk
+*.aab
+# Signing material. The release keystore never enters the repository — CI holds it as a
+# base64 secret, and AGENTS.md says how it is made.
+*.jks
+*.keystore
 
 # Claude Code per-machine state. Project-wide configuration belongs in
 # .claude/settings.json, which stays tracked so it can be shared.

@@ -249,6 +249,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
+- **Two `.gitignore` entries that hid more of the tree than they were written for**: a pattern
+  with no slash is matched against every path segment at every depth, so bare `media` and `db`
+  — meant for the media root and the directory the SQLite file lives in — also covered any
+  directory of those names anywhere below. Nothing in the Python project is called either,
+  which is why it never showed, and a fresh clone missing a source file is how it would have.
+  Both are now anchored, and `soccertime/tests/test_ignore_rules.py` refuses the bare form.
+  The bare `build/` above them stays bare on purpose: that depth-matching is what covers every
+  Gradle module's output. `android/` is also refused by `.dockerignore` now, because
+  `COPY . .` would otherwise carry a whole second project into every layer of the image.
 - **A day-header test that only passed for three weeks of every month**: it placed its event
   four days from whenever it ran and compared `%d`, which pads to two digits, against a
   header that does not pad — so it failed on the first nine days of a month and nowhere else.
