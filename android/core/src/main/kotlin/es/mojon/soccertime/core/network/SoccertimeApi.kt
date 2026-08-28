@@ -22,6 +22,8 @@ interface SoccertimeApi {
         @Query("date") date: String?,
         @Query("search") search: String?,
         @Query("watchable") watchable: Boolean?,
+        @Query("team") team: Int?,
+        @Query("competition") competition: Int?,
         @Query("ordering") ordering: String?,
         @Query("page") page: Int?,
         @Query("page_size") pageSize: Int,

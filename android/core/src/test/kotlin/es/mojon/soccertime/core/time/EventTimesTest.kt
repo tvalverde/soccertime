@@ -57,12 +57,30 @@ class EventTimesTest {
     }
 
     @Test
-    fun `the day heading says today and tomorrow before it says a date`() {
+    fun `the day heading names the day and then dates it`() {
         val times = at("Europe/Madrid", now = "2026-08-30T12:00:00Z")
 
-        assertEquals("HOY", times.dayLabel(kickOff))
-        assertEquals("MAÑANA", times.dayLabel("2026-08-31T21:30:00+02:00"))
+        assertEquals("AYER · SÁB 29 AGO", times.dayLabel("2026-08-29T21:00:00+02:00"))
+        assertEquals("HOY · DOM 30 AGO", times.dayLabel(kickOff))
+        assertEquals("MAÑANA · LUN 31 AGO", times.dayLabel("2026-08-31T21:30:00+02:00"))
         assertEquals("MARTES 1 SEPTIEMBRE", times.dayLabel("2026-09-01T21:00:00+02:00"))
+    }
+
+    /**
+     * The listing spans two days, so the heading is what tells a reader which side of midnight
+     * a row is on. A bare `HOY` would say nothing about the row above it.
+     */
+    @Test
+    fun `a named day carries its date so two of them can be told apart`() {
+        val times = at("Europe/Madrid", now = "2026-08-30T12:00:00Z")
+
+        val yesterday = times.dayLabel("2026-08-29T21:00:00+02:00")
+        val today = times.dayLabel(kickOff)
+
+        assertTrue(yesterday.startsWith("AYER"))
+        assertTrue(today.startsWith("HOY"))
+        assertTrue(yesterday.contains("29"))
+        assertTrue(today.contains("30"))
     }
 
     @Test
@@ -72,8 +90,8 @@ class EventTimesTest {
         val lateKickOff = "2026-08-31T01:30:00+02:00"
         val now = "2026-08-30T20:00:00Z"
 
-        assertEquals("MAÑANA", at("Europe/Madrid", now).dayLabel(lateKickOff))
-        assertEquals("HOY", at("UTC", now).dayLabel(lateKickOff))
+        assertTrue(at("Europe/Madrid", now).dayLabel(lateKickOff).startsWith("MAÑANA"))
+        assertTrue(at("UTC", now).dayLabel(lateKickOff).startsWith("HOY"))
     }
 
     @Test
@@ -113,6 +131,33 @@ class EventTimesTest {
         assertEquals(setOf(true), answers.toSet())
     }
 
+    /**
+     * The agenda's anchor. It has to be the same two hours as the badge: a listing that opened
+     * on a row it had already stopped calling live would be telling the reader two things.
+     */
+    @Test
+    fun `an event is not finished until the same two hours the badge uses`() {
+        fun finishedAt(now: String) = at("Europe/Madrid", now).hasFinished(kickOff, null)
+
+        assertFalse(finishedAt("2026-08-30T15:00:00Z"))
+        // Ninety minutes in — the case this whole window exists for.
+        assertFalse(finishedAt("2026-08-30T16:30:00Z"))
+        assertFalse(finishedAt("2026-08-30T16:59:59Z"))
+        assertTrue(finishedAt("2026-08-30T17:00:00Z"))
+    }
+
+    @Test
+    fun `nothing is both live and finished, and nothing is neither once it has started`() {
+        val zones = listOf("Europe/Madrid", "Atlantic/Canary", "UTC", "America/New_York")
+        listOf("2026-08-30T15:30:00Z", "2026-08-30T16:59:00Z", "2026-08-30T17:30:00Z").forEach { now ->
+            zones.forEach { zone ->
+                val times = at(zone, now)
+                assertFalse(times.isLive(kickOff, null) && times.hasFinished(kickOff, null))
+                assertTrue(times.isLive(kickOff, null) || times.hasFinished(kickOff, null))
+            }
+        }
+    }
+
     @Test
     fun `a date the parser cannot read costs one row, not the screen`() {
         val times = at("Europe/Madrid")
@@ -122,5 +167,6 @@ class EventTimesTest {
         assertEquals("", times.timeLabel("2026-08-30 17:00:00"))
         assertEquals("", times.dayLabel("nope"))
         assertFalse(times.isLive("nope", null))
+        assertFalse(times.hasFinished("nope", null))
     }
 }

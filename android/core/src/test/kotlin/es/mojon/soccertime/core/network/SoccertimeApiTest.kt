@@ -56,6 +56,8 @@ class SoccertimeApiTest {
                 date = "2026-08-30",
                 search = null,
                 watchable = null,
+                team = null,
+                competition = null,
                 ordering = null,
                 page = page,
                 pageSize = MAX_PAGE_SIZE,
@@ -185,7 +187,7 @@ class SoccertimeApiTest {
         server.enqueue(MockResponse.Builder().code(304).setHeader("ETag", "\"v1\"").build())
 
         repeat(2) {
-            val page = cached.events(null, "2026-08-30", null, null, null, null, MAX_PAGE_SIZE)
+            val page = cached.events(null, "2026-08-30", null, null, null, null, null, null, MAX_PAGE_SIZE)
             assertEquals(3, page.results.size)
         }
 
