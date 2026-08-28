@@ -17,6 +17,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -56,13 +57,20 @@ class AgendaViewModelTest {
         var pageAnswer: Page<EventDto> = answer
         val perDay = mutableMapOf<String, Page<EventDto>>()
 
+        /** Answers chosen by the whole query, so a filtered call can differ from a plain one. */
+        var answerFor: (AgendaQuery) -> Page<EventDto>? = { null }
+
+        /** How long each call takes, so one can be made to finish after another. */
+        var takes: (AgendaQuery) -> Long = { 0 }
+
         override suspend fun upcoming(page: Int) = onDate(AgendaQuery(date = "", page = page))
 
         override suspend fun onDate(query: AgendaQuery): ApiResult<Page<EventDto>> {
             asks += query
+            delay(takes(query))
             val failing = failure?.takeIf { failOn == null || failOn == query.date }
             return failing?.let { ApiResult.Failure(it) }
-                ?: ApiResult.Success(perDay[query.date] ?: pageAnswer)
+                ?: ApiResult.Success(answerFor(query) ?: perDay[query.date] ?: pageAnswer)
         }
     }
 
@@ -286,6 +294,39 @@ class AgendaViewModelTest {
 
         assertEquals(7, repository.asks.last().competition)
         assertNull(repository.asks.last().team)
+    }
+
+    /**
+     * Pressing a followed team while the plain agenda is still loading.
+     *
+     * `collectLatest` cancels the load it replaces, but a cancellation that is caught and
+     * turned into a result is not a cancellation: the abandoned load went on to publish its
+     * own answer, and whichever finished last won. On the television that looked like the
+     * filtered agenda appearing and then, seconds later, reloading itself back to everything.
+     */
+    @Test
+    fun `a filter is not overwritten by the load it replaced`() = runTest(dispatcher) {
+        val barcelona = AgendaFilter(42, "FC Barcelona", null, FollowableKind.Teams)
+        repository.answerFor = { query ->
+            when {
+                // Yesterday has nothing to add either way; today is what the two loads differ on.
+                query.newestFirst -> pageOf()
+                query.team == barcelona.id -> pageOf("2026-08-30T18:00:00Z")
+                else -> pageOf("2026-08-30T15:00:00Z")
+            }
+        }
+        // The plain load is still in flight, and will answer well after the filtered one.
+        repository.takes = { query -> if (query.team == null) 5_000 else 10 }
+
+        val model = viewModel()
+        advanceTimeBy(100)
+        model.onIntent(AgendaIntent.Narrow(barcelona))
+        advanceUntilIdle()
+
+        val shown = model.uiState.value.days.flatMap { day -> day.events.map { it.time } }
+        assertEquals("only the filtered answer may be on screen", listOf("20:00"), shown)
+        assertEquals(barcelona, model.uiState.value.filter)
+        assertNull("an abandoned load is not a failure to report", model.uiState.value.error)
     }
 
     @Test

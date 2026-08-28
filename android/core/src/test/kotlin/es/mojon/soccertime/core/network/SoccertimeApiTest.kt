@@ -1,12 +1,17 @@
 package es.mojon.soccertime.core.network
 
 import es.mojon.soccertime.core.network.SoccertimeApi.Companion.MAX_PAGE_SIZE
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -63,6 +68,25 @@ class SoccertimeApiTest {
                 pageSize = MAX_PAGE_SIZE,
             )
         }
+
+    /**
+     * A caller that walked away is not a caller that failed.
+     *
+     * `CancellationException` is an `Exception`, so the catch-all here used to turn it into a
+     * result — and a coroutine whose cancellation is caught does not stop. It carried on and
+     * published an answer for a screen that had moved on, which on the television looked like
+     * a filtered agenda reloading itself back to the whole one a few seconds after it appeared.
+     */
+    @Test
+    fun `an abandoned call is abandoned, not reported as a failure`() = runTest {
+        var answered: ApiResult<Unit>? = null
+
+        val walkedAway = launch { answered = safeCall { awaitCancellation() } }
+        advanceUntilIdle()
+        walkedAway.cancelAndJoin()
+
+        assertNull("a call nobody is waiting for must produce no result at all", answered)
+    }
 
     @Test
     fun `a page comes back parsed and the query carries every filter that was set`() = runTest {

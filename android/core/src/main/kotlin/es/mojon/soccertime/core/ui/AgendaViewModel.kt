@@ -13,6 +13,8 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -174,6 +176,9 @@ class AgendaViewModel(
      */
     private suspend fun fetchYesterday(query: Query) {
         val answer = events.onDate(query.asRequest(day = today.minusDays(1), newestFirst = true))
+        // The request can finish in the instant between being abandoned and the next
+        // suspension point, and writing state is not one — so it is asked for explicitly.
+        currentCoroutineContext().ensureActive()
         state.value = when (answer) {
             is ApiResult.Success -> {
                 loaded = answer.value.results.reversed() + loaded
@@ -192,6 +197,7 @@ class AgendaViewModel(
         state.value = state.value.copy(loading = true, error = null)
 
         val answer = events.onDate(query.asRequest(day = today, newestFirst = false))
+        currentCoroutineContext().ensureActive()
 
         state.value = when (answer) {
             is ApiResult.Success -> {

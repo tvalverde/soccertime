@@ -400,6 +400,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It also puts the "nothing on this box opens that" notice *over* the links rather than
   instead of them, so BACK from it lands where the next attempt is made.
 
+- **A filtered agenda that reloaded itself back to everything.** Pressing a followed team
+  narrowed the listing and then, seconds later, quietly replaced it with the whole two-day
+  window again. `collectLatest` does cancel the load it replaces, but `safeCall` caught
+  `CancellationException` along with everything else — and a cancellation that is caught is
+  not a cancellation. The abandoned load carried on, published its own answer, and whichever
+  finished last won. It is rethrown now, first, before the catch-all, and the view model
+  additionally refuses to publish an answer whose work has been abandoned: a request can
+  return in the instant between being cancelled and the next suspension point, and writing
+  state is not one.
+
 - **A screen that could only be left once.** Marking everything behind an open panel
   unfocusable looked like the tidy way to keep the cursor out of the rows under the scrim. It
   is inherited by every focus target below it, the list's own group included, and once that
