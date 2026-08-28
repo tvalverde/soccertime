@@ -136,4 +136,54 @@ class EventPresenterTest {
         assertTrue(presenter(now = "2026-08-30T15:30:00Z").present(match).live)
         assertFalse(presenter(now = "2026-08-30T18:30:00Z").present(match).live)
     }
+
+    @Test
+    fun `the links of an event are grouped by channel and then by quality, best first`() {
+        val race = fixture("events_watchable_page1.json").first { it.eventType == "race" }
+
+        val links = presenter().links(race)
+
+        assertTrue(links.hasSomethingToOpen)
+        val channel = links.channels.first()
+        assertEquals("nine links on one channel", 9, channel.total)
+        assertEquals(channel.total, channel.qualities.sumOf { it.links.size })
+        assertEquals(listOf("FHD", "HD", "SD", "ANY"), channel.qualities.map { it.quality })
+        assertTrue("every link is openable", channel.qualities.all { group -> group.links.all { it.isOpenable } })
+    }
+
+    @Test
+    fun `channels carrying nothing are listed apart rather than dropped`() {
+        val race = fixture("events_watchable_page1.json").first { it.eventType == "race" }
+
+        val links = presenter().links(race)
+
+        assertTrue("the agenda still says where it is on", links.silent.isNotEmpty())
+        assertTrue(links.silent.none { name -> links.channels.any { it.name == name } })
+    }
+
+    @Test
+    fun `a quality the api invents later goes last instead of disappearing`() {
+        val race = fixture("events_watchable_page1.json").first { it.eventType == "race" }
+        val invented = race.copy(
+            channels = race.channels.map { channel ->
+                channel.copy(links = channel.links.map { it.copy(quality = "8K") })
+            },
+        )
+
+        val links = presenter().links(invented)
+
+        assertEquals(listOf("8K"), links.channels.first().qualities.map { it.quality })
+        assertEquals(9, links.channels.first().total)
+    }
+
+    @Test
+    fun `a match names both sides in the sheet header`() {
+        val match = fixture("events_day_page1.json").first { it.eventType == "match" }
+
+        val links = presenter().links(match)
+
+        assertTrue(links.title.contains("—"))
+        assertNotNull(links.home)
+        assertNotNull(links.away)
+    }
 }

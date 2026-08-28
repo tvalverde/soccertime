@@ -3,6 +3,7 @@ package es.mojon.soccertime.core.ui
 import es.mojon.soccertime.core.data.Favorites
 import es.mojon.soccertime.core.model.ChannelDto
 import es.mojon.soccertime.core.model.EventDto
+import es.mojon.soccertime.core.model.LinkDto
 import es.mojon.soccertime.core.time.EventTimes
 import java.time.LocalDate
 
@@ -67,12 +68,54 @@ class EventPresenter(val times: EventTimes) {
         )
     }
 
+    /**
+     * Everything that can be opened for one event, grouped the way the sheet draws it.
+     *
+     * Grouped by channel and then by quality because that is the shape of the problem: one
+     * match carries fifteen links on `M+ LALIGA` and eight on `Movistar Plus+`, all of them
+     * the same stream from different sources, and when one does not start the reader wants
+     * the next of the same quality. Numbering is left to the view — it is the position in the
+     * group, and it is what makes "the third one worked" a thing a person can say.
+     */
+    fun links(event: EventDto): EventLinks {
+        val openable = event.channelsByAvailability.filter { it.openableLinks.isNotEmpty() }
+        return EventLinks(
+            title = if (event.isMatch) {
+                listOfNotNull(event.local?.name, event.visitor?.name).joinToString(" — ")
+            } else {
+                (event.title ?: event.name).orEmpty()
+            },
+            time = times.timeLabel(event.date),
+            live = times.isLive(event.date, event.dateEnd),
+            competition = event.competition.name,
+            home = event.local?.let { Side(it.name, it.crest?.url) },
+            away = event.visitor?.let { Side(it.name, it.crest?.url) },
+            channels = openable.map { channel ->
+                ChannelLinks(
+                    name = channel.name,
+                    total = channel.openableLinks.size,
+                    qualities = channel.openableLinks
+                        .groupBy { it.quality.ifBlank { LinkDto.ANY_QUALITY } }
+                        .toList()
+                        .sortedBy { (quality, _) -> QUALITY_ORDER.indexOf(quality).takeIf { it >= 0 } ?: QUALITY_ORDER.size }
+                        .map { (quality, links) -> QualityGroup(quality, links) },
+                )
+            },
+            silent = event.channelsByAvailability
+                .filter { it.openableLinks.isEmpty() }
+                .map(ChannelDto::name),
+        )
+    }
+
     private fun chip(channel: ChannelDto) =
         ChannelChip(name = channel.name, openable = channel.openableLinks.isNotEmpty())
 
     companion object {
         /** What fits beside the play button on a phone before the row starts truncating. */
         const val CHANNELS_SHOWN: Int = 2
+
+        /** Best first. Anything the API invents later falls to the end rather than vanishing. */
+        private val QUALITY_ORDER = listOf("FHD", "HD", "SD", LinkDto.ANY_QUALITY)
     }
 }
 
@@ -109,3 +152,25 @@ data class Side(val name: String, val crestUrl: String?)
  * having once hidden it for 1,809 of 2,148 future events.
  */
 data class ChannelChip(val name: String, val openable: Boolean)
+
+/** One event's openable links, and the channels that carry none. */
+data class EventLinks(
+    val title: String,
+    val time: String,
+    val live: Boolean,
+    val competition: String,
+    val home: Side?,
+    val away: Side?,
+    val channels: List<ChannelLinks>,
+    val silent: List<String>,
+) {
+    val hasSomethingToOpen: Boolean get() = channels.isNotEmpty()
+}
+
+data class ChannelLinks(
+    val name: String,
+    val total: Int,
+    val qualities: List<QualityGroup>,
+)
+
+data class QualityGroup(val quality: String, val links: List<LinkDto>)
