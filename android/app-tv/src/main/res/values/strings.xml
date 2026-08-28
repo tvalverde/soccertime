@@ -1,9 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Soccertime</string>
-    <string name="loading">Cargando la agenda…</string>
+
+    <string name="favorites_title">Favoritos</string>
+    <string name="tab_agenda">Agenda</string>
+    <string name="live">DIRECTO</string>
+    <string name="play">Reproducir</string>
+    <string name="channels">CANALES</string>
+    <string name="quality_unspecified">SIN ESPECIFICAR</string>
+
+    <string name="empty_agenda">No hay eventos para este día.</string>
+    <string name="nothing_coming_up">Nada de lo que sigues se emite en los próximos tres días.</string>
+
+    <string name="first_run_title">Elige tus favoritos</string>
+    <!-- Typing a team name with a remote is the worst thing a television asks anyone to do,
+         and there is a phone app that does it well. So this says where, rather than making
+         the reader do it badly here. -->
+    <string name="first_run_body_tv">Marca tus equipos y competiciones en la app del móvil. Esta pantalla mostrará entonces solo lo tuyo, con sus canales y enlaces.</string>
+
+    <string name="try_the_next_one">Si uno no arranca, prueba el siguiente. ATRÁS vuelve a la lista.</string>
+    <string name="no_link_explained">Sin enlace: el evento se emite ahí, pero no hay nada que abrir.</string>
+    <string name="no_handler_title">Ninguna app abre este enlace</string>
+    <string name="no_handler_body_tv">No hay ninguna aplicación instalada en este dispositivo que atienda los enlaces %1$s.</string>
+    <string name="back_to_return">Pulsa ATRÁS para volver.</string>
+
     <string name="error_offline">Sin conexión con el servidor.</string>
     <string name="error_rate_limited">Demasiadas consultas seguidas. Inténtalo en unos segundos.</string>
     <string name="error_http">El servidor respondió %1$d.</string>
     <string name="error_unexpected">No se ha podido leer la respuesta.</string>
+    <string name="showing_stale">Mostrando lo último que se pudo cargar.</string>
+
+    <plurals name="event_count">
+        <item quantity="one">%1$d evento</item>
+        <item quantity="other">%1$d eventos</item>
+    </plurals>
+    <plurals name="link_count">
+        <item quantity="one">%1$d enlace</item>
+        <item quantity="other">%1$d enlaces</item>
+    </plurals>
 </resources>

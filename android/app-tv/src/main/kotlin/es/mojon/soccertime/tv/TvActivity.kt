@@ -1,121 +1,149 @@
 package es.mojon.soccertime.tv
 
+import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.tv.material3.Text
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.tv.material3.MaterialTheme
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.request.crossfade
 import es.mojon.soccertime.core.AppGraph
-import es.mojon.soccertime.core.model.EventDto
-import es.mojon.soccertime.core.network.ApiError
-import es.mojon.soccertime.core.network.ApiResult
-import es.mojon.soccertime.core.ui.Palette
+import es.mojon.soccertime.core.data.Following
+import es.mojon.soccertime.core.playback.PlayResult
+import es.mojon.soccertime.core.ui.AgendaIntent
+import es.mojon.soccertime.core.ui.AgendaViewModel
+import es.mojon.soccertime.core.ui.EventLinks
+import es.mojon.soccertime.core.ui.FavoritesIntent
+import es.mojon.soccertime.core.ui.FavoritesViewModel
+import es.mojon.soccertime.tv.ui.TvAgendaScreen
+import es.mojon.soccertime.tv.ui.TvDestination
+import es.mojon.soccertime.tv.ui.TvFavoritesScreen
+import es.mojon.soccertime.tv.ui.TvLinksPanel
+import es.mojon.soccertime.tv.ui.TvNoHandler
+import es.mojon.soccertime.tv.ui.TvRail
+import es.mojon.soccertime.tv.ui.theme.OverscanHorizontal
+import es.mojon.soccertime.tv.ui.theme.OverscanVertical
+import es.mojon.soccertime.tv.ui.theme.SoccertimeTvTheme
 
-/**
- * The walking skeleton on the television.
- *
- * Same purpose as the phone's, and the one that actually matters: the handshake with
- * www.mojon.es anchors at a root Android 7.1 may not carry, and the Fire TV Stick 4K is the
- * only place that can be found out. The outer padding is the overscan margin — 48x27 dp —
- * because a television crops what is drawn to the edge.
- */
+/** Holds the one graph, and points Coil at the client that carries the bundled trust anchors. */
+class SoccertimeTvApplication : Application(), SingletonImageLoader.Factory {
+
+    val graph: AppGraph by lazy { AppGraph.from(this) }
+
+    override fun newImageLoader(context: PlatformContext): ImageLoader =
+        ImageLoader.Builder(context)
+            .components { add(OkHttpNetworkFetcherFactory(callFactory = { graph.client })) }
+            .crossfade(true)
+            .build()
+}
+
 class TvActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val graph = AppGraph.from(applicationContext)
-        setContent { SkeletonAgenda(graph) }
+        val graph = (application as SoccertimeTvApplication).graph
+        setContent { SoccertimeTvTheme { SoccertimeTv(TvModels(graph, this)) } }
     }
 }
 
+/**
+ * The whole television app is two screens and one panel, so there is no navigation graph: a
+ * destination and a nullable panel say everything, and BACK reads better as "close what is
+ * open, then leave" written in one place than as a back stack to reason about.
+ */
 @Composable
-private fun SkeletonAgenda(graph: AppGraph) {
-    val state by produceState<ApiResult<List<EventDto>>?>(initialValue = null, graph) {
-        value = when (val result = graph.events.upcoming()) {
-            is ApiResult.Success -> ApiResult.Success(result.value.results)
-            is ApiResult.Failure -> result
-        }
-    }
+private fun SoccertimeTv(models: TvModels) {
+    var destination by remember { mutableStateOf(TvDestination.Favorites) }
+    var showing: EventLinks? by remember { mutableStateOf(null) }
+    var unopenable: PlayResult.NoHandler? by remember { mutableStateOf(null) }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(Color(Palette.BACKGROUND))
-            .padding(horizontal = OVERSCAN_HORIZONTAL, vertical = OVERSCAN_VERTICAL),
-    ) {
-        Text(
-            text = stringResource(R.string.app_name),
-            color = Color(Palette.ON_BACKGROUND_VARIANT),
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 16.dp),
-        )
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        val overlayOpen = showing != null || unopenable != null
 
-        when (val current = state) {
-            null -> Text(stringResource(R.string.loading), color = Color(Palette.ON_BACKGROUND_MUTED))
-            is ApiResult.Failure -> Text(
-                text = describe(current.error),
-                color = Color(Palette.DANGER),
-            )
-            is ApiResult.Success -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(current.value, key = EventDto::id) { EventRow(it) }
+        Row(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = OverscanHorizontal, vertical = OverscanVertical)
+                // Closed to the remote while something is over it. Without this the D-pad
+                // walks the list behind the panel, moving a highlight nobody can see.
+                .focusGroup()
+                .focusProperties { canFocus = !overlayOpen },
+            horizontalArrangement = Arrangement.spacedBy(26.dp),
+        ) {
+            TvRail(selected = destination, onSelect = { destination = it })
+
+            when (destination) {
+                TvDestination.Favorites -> {
+                    val favorites = viewModel<FavoritesViewModel>(factory = models.favorites)
+                    val state by favorites.uiState.collectAsStateWithLifecycle()
+                    val following by models.following.collectAsStateWithLifecycle(Following())
+                    LaunchedEffect(Unit) { favorites.onIntent(FavoritesIntent.Resumed) }
+
+                    TvFavoritesScreen(
+                        state = state,
+                        following = following,
+                        clockLabel = models.now(),
+                        onOpen = { showing = favorites.linksFor(it.id) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                TvDestination.Agenda -> {
+                    val agenda = viewModel<AgendaViewModel>(factory = models.agenda)
+                    val state by agenda.uiState.collectAsStateWithLifecycle()
+                    LaunchedEffect(Unit) { agenda.onIntent(AgendaIntent.Resumed) }
+
+                    TvAgendaScreen(
+                        state = state,
+                        onOpen = { showing = agenda.linksFor(it.id) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
-    }
-}
 
-@Composable
-private fun EventRow(event: EventDto) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = event.date.substringAfter('T').take(TIME_LENGTH),
-            color = Color(Palette.PRIMARY),
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(end = 18.dp),
-        )
-        Column {
-            Text(
-                text = event.title ?: event.name.orEmpty(),
-                color = Color(Palette.ON_BACKGROUND),
-                fontSize = 18.sp,
-            )
-            Text(
-                text = event.competition.name,
-                color = Color(Palette.ON_BACKGROUND_VARIANT),
-                fontSize = 13.sp,
+        showing?.let { links ->
+            TvLinksPanel(
+                links = links,
+                onOpen = { link ->
+                    showing = null
+                    when (val result = models.playback.open(link)) {
+                        is PlayResult.NoHandler -> unopenable = result
+                        else -> Unit
+                    }
+                },
             )
         }
+
+        unopenable?.let { TvNoHandler(scheme = it.scheme, link = it.link) }
+    }
+
+    // BACK closes whatever is open before it leaves the app, which is the one thing a remote's
+    // single back button has to get right.
+    BackHandler(enabled = unopenable != null) { unopenable = null }
+    BackHandler(enabled = unopenable == null && showing != null) { showing = null }
+    BackHandler(enabled = showing == null && unopenable == null && destination != TvDestination.Favorites) {
+        destination = TvDestination.Favorites
     }
 }
-
-@Composable
-private fun describe(error: ApiError): String = when (error) {
-    is ApiError.Offline -> stringResource(R.string.error_offline)
-    is ApiError.RateLimited -> stringResource(R.string.error_rate_limited)
-    is ApiError.BadRequest -> error.message
-    is ApiError.Http -> stringResource(R.string.error_http, error.code)
-    is ApiError.Unexpected -> stringResource(R.string.error_unexpected)
-}
-
-private val OVERSCAN_HORIZONTAL = 48.dp
-private val OVERSCAN_VERTICAL = 27.dp
-private const val TIME_LENGTH = 5
