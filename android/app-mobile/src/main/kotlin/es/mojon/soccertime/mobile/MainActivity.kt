@@ -27,6 +27,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,7 +113,7 @@ private fun Soccertime(models: Models) {
                 val following by models.following.collectAsStateWithLifecycle(
                     initialValue = es.mojon.soccertime.core.data.Following(),
                 )
-                LaunchedEffect(Unit) { favorites.onIntent(FavoritesIntent.Resumed) }
+                OnResumed { favorites.onIntent(FavoritesIntent.Resumed) }
 
                 FavoritesScreen(
                     state = state,
@@ -131,7 +132,7 @@ private fun Soccertime(models: Models) {
             composable(Routes.AGENDA) {
                 val agenda = viewModel<es.mojon.soccertime.core.ui.AgendaViewModel>(factory = models.agenda)
                 val state by agenda.uiState.collectAsStateWithLifecycle()
-                LaunchedEffect(Unit) { agenda.onIntent(AgendaIntent.Resumed) }
+                OnResumed { agenda.onIntent(AgendaIntent.Resumed) }
                 LaunchedEffect(narrowing) { agenda.onIntent(AgendaIntent.Narrow(narrowing)) }
 
                 // BACK undoes the filter before it leaves the tab, so the press that arrived
@@ -269,5 +270,21 @@ private fun NavHostController.navigateTop(route: String) {
         popUpTo(graph.startDestinationId) { saveState = true }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+/**
+ * Ask again every time the screen actually comes back.
+ *
+ * `LaunchedEffect(Unit)` fires when a branch enters composition, which is not the same thing:
+ * a television is switched off with the composition intact and woken days later, and the
+ * screen it comes back to had never been told to look again. `repeatOnLifecycle` runs this
+ * each time the lifecycle reaches RESUMED, which is what "came back" means.
+ */
+@Composable
+private fun OnResumed(ask: () -> Unit) {
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { ask() }
     }
 }

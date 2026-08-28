@@ -84,7 +84,7 @@ fun ManageFavoritesScreen(
             FailureBanner(
                 error = it,
                 showingStale = false,
-                onRetry = { onIntent(ManageIntent.Search(state.query)) },
+                onRetry = { onIntent(ManageIntent.Retry) },
                 modifier = Modifier.padding(horizontal = 14.dp).padding(bottom = 8.dp),
             )
         }
@@ -109,7 +109,7 @@ fun ManageFavoritesScreen(
 
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
             items(state.results, key = { it.item.id }) { row ->
-                FollowableRow(row) { onIntent(ManageIntent.Follow(row.item, !row.followed)) }
+                FollowableRow(row) { onIntent(ManageIntent.Follow(row.item, !row.followed, row.kind)) }
             }
         }
     }

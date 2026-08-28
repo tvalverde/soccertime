@@ -10,6 +10,8 @@ import es.mojon.soccertime.core.network.ApiResult
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +52,16 @@ class FavoritesViewModel(
     private var loaded: List<EventDto> = emptyList()
     private var following: Favorites = Favorites.NONE
 
+    /**
+     * Whether a load is already in the air.
+     *
+     * Nothing here cancels anything — this screen makes one request and has no query to
+     * change — so two overlapping loads would simply both answer, and the older could answer
+     * last and put a staler window on screen than the one it replaced. It only takes a load
+     * outliving the minute that makes the next resume ask again.
+     */
+    private var inFlight = false
+
     init {
         viewModelScope.launch {
             favorites.collect { chosen ->
@@ -89,16 +101,30 @@ class FavoritesViewModel(
     fun linksFor(id: Int): EventLinks? = loaded.firstOrNull { it.id == id }?.let(presenter::links)
 
     private fun refresh(minimumAge: Duration) {
-        if (following.isEmpty) return
+        if (following.isEmpty || inFlight) return
         val since = loadedAt?.let { Duration.between(it, clock.instant()) }
         if (since != null && since < minimumAge) return
         viewModelScope.launch { load() }
     }
 
     private suspend fun load() {
+        inFlight = true
+        try {
+            fetch()
+        } finally {
+            inFlight = false
+        }
+    }
+
+    private suspend fun fetch() {
         state.value = state.value.copy(loading = true, error = null)
 
-        state.value = when (val answer = events.upcoming()) {
+        val answer = events.upcoming()
+        // The request can return in the instant between this coroutine being abandoned and
+        // its next suspension point, and writing state is not one.
+        currentCoroutineContext().ensureActive()
+
+        state.value = when (answer) {
             is ApiResult.Success -> {
                 loadedAt = clock.instant()
                 loaded = answer.value.results

@@ -330,6 +330,10 @@ private fun TvEventList(
             putBackOn = onRow
         } else if (putBackOn != null) {
             takeFocus(opensHere)
+            // Forgotten once used. Left set, the requester stayed tied to a row that may no
+            // longer be on the list at all — following something from the panel can remove
+            // the very row the panel was opened from.
+            putBackOn = null
         }
     }
 

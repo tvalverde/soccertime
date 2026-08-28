@@ -10,6 +10,8 @@ import es.mojon.soccertime.core.network.ApiError
 import es.mojon.soccertime.core.network.ApiResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +47,19 @@ class ManageFavoritesViewModel(
 
     private var found: List<FollowedItem> = emptyList()
 
+    /**
+     * Which list the rows on screen came from.
+     *
+     * Not the same as the tab. Switching tabs changes the tab at once and then waits on the
+     * network without clearing the rows, so for those seconds — or for good, if that load
+     * fails — the screen shows teams under a heading that says competitions. Anything that
+     * reads the tab to decide what a row *is* gets it wrong for that whole window.
+     */
+    private var foundKind: FollowableKind = FollowableKind.Teams
+
+    /** Bumped to ask the same question again, which a `StateFlow` alone will not do. */
+    private val reloads = MutableStateFlow(0)
+
     init {
         viewModelScope.launch {
             combine(
@@ -52,7 +67,8 @@ class ManageFavoritesViewModel(
                     .map { it.trim().takeIf { text -> text.length >= AgendaViewModel.SHORTEST_SEARCH }.orEmpty() }
                     .distinctUntilChanged(),
                 kind,
-            ) { text, which -> text to which }
+                reloads,
+            ) { text, which, _ -> text to which }
                 .collectLatest { (text, which) -> load(text, which) }
         }
 
@@ -73,12 +89,16 @@ class ManageFavoritesViewModel(
                 kind.value = intent.kind
                 state.value = state.value.copy(kind = intent.kind)
             }
+            // The row says what it is. Reading the tab instead wrote a team into the
+            // competitions of the store — persistently, and `Favorites.covers` then matched
+            // its id against every event's competition.
             is ManageIntent.Follow -> viewModelScope.launch {
-                when (state.value.kind) {
+                when (intent.kind) {
                     FollowableKind.Teams -> store.setTeam(intent.item, intent.followed)
                     FollowableKind.Competitions -> store.setCompetition(intent.item, intent.followed)
                 }
             }
+            ManageIntent.Retry -> reloads.value++
             ManageIntent.DismissError -> state.value = state.value.copy(error = null)
         }
     }
@@ -95,9 +115,14 @@ class ManageFavoritesViewModel(
                 }
         }
 
+        // Typing again abandons this search; the answer to the one before it must not land
+        // on the list, and a request can return in the instant before the next suspension.
+        currentCoroutineContext().ensureActive()
+
         state.value = when (answer) {
             is ApiResult.Success -> {
                 found = answer.value.first
+                foundKind = which
                 state.value.copy(
                     results = mark(found, state.value.following),
                     total = answer.value.second,
@@ -110,11 +135,13 @@ class ManageFavoritesViewModel(
     }
 
     private fun mark(items: List<FollowedItem>, following: Following): List<FollowableUi> {
-        val followed = when (state.value.kind) {
+        val followed = when (foundKind) {
             FollowableKind.Teams -> following.selection.teamIds
             FollowableKind.Competitions -> following.selection.competitionIds
         }
-        return items.map { FollowableUi(item = it, followed = it.id in followed) }
+        return items.map {
+            FollowableUi(item = it, followed = it.id in followed, kind = foundKind)
+        }
     }
 
     private inline fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (this) {
@@ -125,7 +152,12 @@ class ManageFavoritesViewModel(
 
 enum class FollowableKind { Teams, Competitions }
 
-data class FollowableUi(val item: FollowedItem, val followed: Boolean)
+/** [kind] is the list this row came from, which is not always the tab now on screen. */
+data class FollowableUi(
+    val item: FollowedItem,
+    val followed: Boolean,
+    val kind: FollowableKind,
+)
 
 data class ManageUiState(
     val kind: FollowableKind = FollowableKind.Teams,
@@ -144,7 +176,14 @@ sealed interface ManageIntent {
 
     data class Show(val kind: FollowableKind) : ManageIntent
 
-    data class Follow(val item: FollowedItem, val followed: Boolean) : ManageIntent
+    data class Follow(
+        val item: FollowedItem,
+        val followed: Boolean,
+        val kind: FollowableKind,
+    ) : ManageIntent
+
+    /** Ask the same question again. Re-sending the search would be deduplicated away. */
+    data object Retry : ManageIntent
 
     data object DismissError : ManageIntent
 }

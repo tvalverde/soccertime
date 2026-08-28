@@ -400,6 +400,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It also puts the "nothing on this box opens that" notice *over* the links rather than
   instead of them, so BACK from it lands where the next attempt is made.
 
+- **A sweep for everything else of the same shape.** Four bugs in a row had one cause —
+  shared state written by the wrong thing, at the wrong time, or twice — so the rest were
+  looked for by reading rather than waited for. Found and fixed:
+
+  - **A followed team could be stored as a competition, permanently.** The star on a row
+    decided which list to write to by reading the tab, and switching tabs changes the tab at
+    once while leaving the old rows on screen for as long as the next request takes — for good
+    if it fails. A row now says what it is. Anything already miswritten can be un-followed and
+    followed again.
+  - **Two presses of "load more" crashed the app.** The page number only advanced when a page
+    arrived, so the second press fetched the same page again and appended it twice; a list
+    keyed by event id does not survive one id appearing twice. The number is taken when the
+    press happens and put back only if the page never comes.
+  - **A page of a listing being replaced could join the one replacing it.** Narrowing to a
+    followed team and asking for another page before it arrived appended the plain agenda's
+    next hundred to the team's. No page is fetched while the list beneath it is being replaced.
+  - **Retry did nothing.** On the agenda, after the first load of all had failed — the guard
+    that avoids a redundant refresh read a field only ever written on success. On managing
+    favourites, always: it re-sent the search text, and a `StateFlow` given what it already
+    holds emits nothing.
+  - **A failed narrowing could be undone by following something.** Re-marking rows redraws
+    from what is already in hand without asking the server, and a failure cleared the days
+    while leaving the events behind them — so the whole plain agenda came back under the
+    followed team's chip, error banner and all.
+  - **The window stopped following the day.** It was fixed when the screen was built, which on
+    a television left composed for days meant fetching the window it was born with. It is
+    asked for per load now, and coming back to the app is tied to the lifecycle rather than to
+    entering composition, so waking the television actually asks again.
+  - Smaller: the favourites screen could run two loads at once and let the older win; a
+    `runCatching` around a suspending scroll swallowed cancellation, the very mistake that
+    started this; the television's clock was read once and then told the time it was drawn at.
+
 - **One followed thing's events appearing inside another's.** Leaving FC Barcelona for MotoGP
   gave a screen headed MotoGP, counting MotoGP's two events, with a Barcelona match sitting
   above them under AYER. Re-entering the agenda asks it to refresh, and a refresh reloaded

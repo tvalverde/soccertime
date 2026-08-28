@@ -115,7 +115,6 @@ class AgendaViewModelTest {
         events = repository,
         presenter = EventPresenter(EventTimes(clock = clock, zone = ZoneId.of("Europe/Madrid"))),
         clock = clock,
-        today = august30,
         favorites = followed,
     )
 
@@ -370,6 +369,142 @@ class AgendaViewModelTest {
         assertEquals(motogp, model.uiState.value.filter)
         assertNull("the refresh must carry the filter that is on screen", repository.asks.last().team)
         assertEquals(motogp.id, repository.asks.last().competition)
+    }
+
+    /**
+     * Narrowing, and asking for another page before the narrowed listing has arrived.
+     *
+     * `loadedFor` and `nextPage` still describe the listing on its way out, so its next page
+     * belongs to a list about to be discarded. The generation cannot catch this alone: the
+     * replacement claimed the number before the page was even asked for, so both agree.
+     */
+    @Test
+    fun `a page of the listing being replaced never joins the new one`() = runTest(dispatcher) {
+        val barcelona = AgendaFilter(42, "FC Barcelona", null, FollowableKind.Teams)
+        repository.pageAnswer = repository.pageAnswer.copy(next = "https://www.mojon.es/…?page=2")
+        val model = viewModel()
+        advanceUntilIdle()
+        assertTrue(model.uiState.value.canLoadMore)
+
+        repository.answerFor = { query ->
+            when {
+                query.newestFirst -> pageOf()
+                query.page == 2 -> pageOf("2026-08-30T23:00:00Z")
+                query.team == barcelona.id -> pageOf("2026-08-30T18:00:00Z")
+                else -> pageOf()
+            }
+        }
+        // The page answers slowly, so it would land after the listing it does not belong to
+        // has already replaced what was on screen.
+        repository.takes = { query -> if (query.page == 2) 3_000 else 10 }
+
+        // Narrow first, then ask for another page while that is still in the air. The page
+        // is a page of the listing being thrown away — `loadedFor` still names it — and it
+        // has nothing to do with what the reader is now looking at.
+        model.onIntent(AgendaIntent.Narrow(barcelona))
+        advanceTimeBy(1)
+        model.onIntent(AgendaIntent.LoadMore)
+        advanceUntilIdle()
+
+        val shown = model.uiState.value.days.flatMap { day -> day.events.map { it.time } }
+        assertEquals("only the filtered listing may be on screen", listOf("20:00"), shown)
+    }
+
+    /**
+     * Nothing marked a page as being on its way: the page number only advanced when a page
+     * *arrived*, and the button stayed live meanwhile. Two presses on a slow connection
+     * fetched the same page twice and appended it twice — and a list keyed by event id does
+     * not survive the same id appearing on it twice; it throws, and the app goes with it.
+     */
+    @Test
+    fun `pressing for another page twice does not fetch it twice`() = runTest(dispatcher) {
+        repository.pageAnswer = repository.pageAnswer.copy(next = "https://www.mojon.es/…?page=2")
+        // Yesterday empty from the start, so the only way an id can repeat on this listing is
+        // the page arriving twice.
+        repository.perDay["2026-08-29"] = pageOf()
+        val model = viewModel()
+        advanceUntilIdle()
+        val asked = repository.asks.size
+        repository.answerFor = { query ->
+            if (query.page == 2) pageOf("2026-08-30T23:00:00Z") else null
+        }
+        repository.takes = { query -> if (query.page == 2) 3_000 else 0 }
+
+        model.onIntent(AgendaIntent.LoadMore)
+        model.onIntent(AgendaIntent.LoadMore)
+        advanceUntilIdle()
+
+        assertEquals("the second press must buy nothing", 1, repository.asks.size - asked)
+        val ids = model.uiState.value.days.flatMap { day -> day.events.map { it.id } }
+        assertEquals("and no id may appear twice", ids.size, ids.distinct().size)
+    }
+
+    /**
+     * The banner offers Retry, and Retry did nothing at all: the guard that stops a refresh
+     * before anything has loaded read a field only ever written on success, so once the very
+     * first load had failed there was no way back except changing the search or the filter.
+     */
+    @Test
+    fun `retry works after the first load of all failed`() = runTest(dispatcher) {
+        repository.failure = ApiError.Offline
+        val model = viewModel()
+        advanceUntilIdle()
+        val asked = repository.asks.size
+        assertEquals(ApiError.Offline, model.uiState.value.error)
+
+        repository.failure = null
+        model.onIntent(AgendaIntent.Refresh)
+        advanceUntilIdle()
+
+        assertTrue("Retry must actually ask again", repository.asks.size > asked)
+        assertTrue(model.uiState.value.days.isNotEmpty())
+        assertNull(model.uiState.value.error)
+    }
+
+    /**
+     * Following something re-marks the rows already in hand without asking the server. When a
+     * narrowed load had failed, the events it cleared from the screen were still held behind
+     * it — so that redraw put the whole plain agenda back, under the followed team's chip,
+     * with the failure banner still on it.
+     */
+    @Test
+    fun `a failed narrowing cannot be undone by following something`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        assertTrue(model.uiState.value.days.isNotEmpty())
+
+        repository.failure = ApiError.Offline
+        model.onIntent(AgendaIntent.Narrow(AgendaFilter(42, "FC Barcelona", null, FollowableKind.Teams)))
+        advanceUntilIdle()
+        assertEquals(emptyList<AgendaDay>(), model.uiState.value.days)
+
+        followed.value = Favorites(teamIds = setOf(42))
+        advanceUntilIdle()
+
+        assertEquals(
+            "nothing may come back that the failure took away",
+            emptyList<AgendaDay>(),
+            model.uiState.value.days,
+        )
+    }
+
+    /**
+     * A television is left composed for days. Held once at construction, the window was
+     * whatever day the view model was born on — so the morning after, it went on fetching
+     * yesterday and the day before, under headings naming a date that had moved on.
+     */
+    @Test
+    fun `the window follows the day, not the day the screen was built on`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        assertEquals(LocalDate.of(2026, 8, 30), model.uiState.value.day)
+
+        clock.advance(Duration.ofHours(24))
+        model.onIntent(AgendaIntent.Resumed)
+        advanceUntilIdle()
+
+        assertEquals(listOf("2026-08-31", "2026-08-30"), repository.asks.takeLast(2).map { it.date })
+        assertEquals(LocalDate.of(2026, 8, 31), model.uiState.value.day)
     }
 
     @Test
