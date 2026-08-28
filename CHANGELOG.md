@@ -123,13 +123,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the category a `DJANGO_SECRET_KEY` falls into: generic patterns, formerly non-provider
   patterns, which need a paid Secret Protection licence — the REST API accepts the request to
   enable them, answers 200 and leaves the setting disabled, which is how a licence looked like
-  a forgotten switch. `gitleaks` reads the history instead, over a full checkout, because a
-  scanner pointed at the single commit Actions clones by default finds nothing and reports
-  success. It is a smoke alarm rather than push protection — it reads commits that are already
-  public — but it is also a gate: the publish job waits for it, so no image is built from a
-  commit it flagged, and a key in a tracked file would be inside the image as well as the
-  repository. Run against the whole history before being wired in — 248 commits, no findings —
-  so a red run here means something new rather than something old.
+  a forgotten switch. `gitleaks` reads the commits instead, over a full checkout, because the
+  range a push carries is not in the single commit Actions clones by default and a scanner
+  with nothing to read reports success. It is a smoke alarm rather than push protection — the
+  commits it reads are already public — but it is also a gate: the publish job waits for it,
+  so no image is built from a commit it flagged, and a key in a tracked file would be inside
+  the image as well as the repository. It scans each push rather than the whole repository,
+  which is enough only because of the other change this week: the ruleset forbids force-pushes,
+  so the past cannot change. It was scanned once, over all 248 commits, with no findings.
 - **Dependabot proposes the updates nothing else was proposing.** Twelve pinned production
   dependencies, Django, DRF and Pillow among them, and no alerts and no update pull requests:
   a published advisory reached this project only if the author happened to read about it.

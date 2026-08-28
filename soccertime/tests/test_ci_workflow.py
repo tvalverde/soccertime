@@ -171,11 +171,16 @@ class TestTheScanForCommittedSecrets:
     and a key it finds is already public. What it buys is the difference between finding out
     in minutes and finding out never, and it also stops the leak travelling further — the
     publish job waits for it, so no image is built from a commit it flagged.
+
+    It scans what each push carries rather than the whole repository — confirmed by reading the
+    first run's log, which says "1 commits scanned" — and that is enough only because the
+    ruleset on `main` forbids force-pushes: the past cannot change, it was scanned once with no
+    findings, and from there only new commits can introduce a key.
     """
 
-    def test_it_can_see_the_history_it_is_meant_to_scan(self):
-        """Actions checks out one commit by default, and a scanner pointed at a shallow clone
-        finds nothing and says so cheerfully. This is the whole job, in one line of YAML."""
+    def test_it_can_see_the_commits_it_is_meant_to_scan(self):
+        """The range a push carries is not in the single-commit clone Actions makes by
+        default, and a scanner with nothing to read reports success. One line of YAML."""
         assert "fetch-depth: 0" in job("secrets")
 
     def test_it_runs_the_scanner(self):

@@ -58,15 +58,22 @@ jobs:
   # This is a smoke alarm and not push protection: it reads commits that have already been
   # pushed, so a key it finds is already public. What it buys is finding out in minutes rather
   # than never, and it stops the leak going further — `publish` waits for it, so no image is
-  # built from a commit it flagged. Verified against this repository's whole history before
-  # being wired in: 248 commits, no findings, so a red run here means something new.
+  # built from a commit it flagged.
+  #
+  # It scans what each push or pull request carries, not the whole repository, and that is
+  # enough here for a reason that only became true this week: the ruleset on `main` forbids
+  # force-pushes, so the past cannot change. It was scanned once, from a laptop, over all 248
+  # commits with no findings — `docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks
+  # git /repo --redact` repeats that — and from there only new commits can introduce a secret,
+  # which is exactly what this sees.
   secrets:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          # Actions checks out a single commit by default, and a scanner pointed at a shallow
-          # clone finds nothing and reports success. This line is the job.
+          # Actions clones a single commit by default, and the scan covers the range the
+          # push carries — commits a depth-one clone does not contain. Without this the job
+          # would have nothing to read and would say so as a success.
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v3
         env:
