@@ -2,7 +2,7 @@ package es.mojon.soccertime.core
 
 import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
-import es.mojon.soccertime.core.data.EventsRepository
+import es.mojon.soccertime.core.data.ApiEventsRepository
 import es.mojon.soccertime.core.data.FavoritesStore
 import es.mojon.soccertime.core.network.Network
 import es.mojon.soccertime.core.time.EventTimes
@@ -22,7 +22,7 @@ class AppGraph(
 ) {
     val client = Network.okHttp(cacheDirectory)
     val api = Network.api(baseUrl, client)
-    val events = EventsRepository(api)
+    val events = ApiEventsRepository(api)
 
     /** Reads the device's own zone and clock; both are arguments so tests can fix them. */
     val times = EventTimes()
