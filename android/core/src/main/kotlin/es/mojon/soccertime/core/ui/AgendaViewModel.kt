@@ -2,6 +2,7 @@ package es.mojon.soccertime.core.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import es.mojon.soccertime.core.data.AgendaQuery
 import es.mojon.soccertime.core.data.EventsRepository
 import es.mojon.soccertime.core.data.Favorites
 import es.mojon.soccertime.core.model.EventDto
@@ -26,7 +27,20 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * The agenda: a day, optionally narrowed by a search and by whether anything can be opened.
+ * The agenda: yesterday and today, optionally narrowed by a search, by a followed team or
+ * competition, and by whether anything can be opened.
+ *
+ * The window is two days because midnight is not a boundary the reader observes. At 00:20 the
+ * match that kicked off at 23:00 is still on, and a listing that began at the stroke of the
+ * hour would have nothing to show. Moving between days, and a calendar, are deliberately not
+ * here yet.
+ *
+ * Two days do not fit in one request — a hundred is the largest page the API serves and two
+ * days regularly exceed it — so it is two, and their order is the design: **today first**.
+ * Today is where the reader is, it is what positions the list, and it renders while yesterday
+ * is still in flight. Yesterday arrives second, is asked for newest-first so a busy day keeps
+ * the hours next to midnight, and is prepended. A failure there costs the tail of the window
+ * and leaves today standing.
  *
  * The whole shape of this class is the rate limit. Thirty requests a minute are counted per
  * address, which means shared by every device in the house and by a browser open on the same
@@ -49,13 +63,13 @@ class AgendaViewModel(
     private val events: EventsRepository,
     private val presenter: EventPresenter,
     private val clock: Clock = Clock.systemUTC(),
-    today: LocalDate = LocalDate.now(clock),
+    private val today: LocalDate = LocalDate.now(clock),
     favorites: Flow<Favorites> = flowOf(Favorites.NONE),
 ) : ViewModel() {
 
     private val search = MutableStateFlow("")
-    private val filters = MutableStateFlow(Filters(date = today, watchableOnly = false))
-    private val state = MutableStateFlow(AgendaUiState(date = today))
+    private val filters = MutableStateFlow(Filters(watchableOnly = false, narrowing = null))
+    private val state = MutableStateFlow(AgendaUiState(day = today))
 
     val uiState: StateFlow<AgendaUiState> = state.asStateFlow()
 
@@ -72,7 +86,7 @@ class AgendaViewModel(
                     .map(::effectiveSearch)
                     .distinctUntilChanged(),
                 filters,
-            ) { text, applied -> Query(applied.date, text, applied.watchableOnly) }
+            ) { text, applied -> Query(text, applied.watchableOnly, applied.narrowing) }
                 // collectLatest, so a query that arrives while an older one is still in
                 // flight cancels it rather than queueing behind it.
                 .collectLatest { load(it, appending = false) }
@@ -97,9 +111,9 @@ class AgendaViewModel(
                 search.value = intent.text
                 state.value = state.value.copy(query = intent.text)
             }
-            is AgendaIntent.PickDate -> {
-                filters.value = filters.value.copy(date = intent.date)
-                state.value = state.value.copy(date = intent.date)
+            is AgendaIntent.Narrow -> {
+                filters.value = filters.value.copy(narrowing = intent.filter)
+                state.value = state.value.copy(filter = intent.filter)
             }
             is AgendaIntent.OnlyWatchable -> {
                 filters.value = filters.value.copy(watchableOnly = intent.only)
@@ -133,14 +147,42 @@ class AgendaViewModel(
     }
 
     private suspend fun load(query: Query, appending: Boolean) {
+        if (appending) {
+            fetch(query, appending = true)
+            return
+        }
+        fetch(query, appending = false)
+        // Only worth a second request once the first one has something to add to. If today
+        // failed, the screen is already showing the failure and yesterday would not fix it.
+        if (loadedFor == query) fetchYesterday(query)
+    }
+
+    /**
+     * Yesterday, prepended.
+     *
+     * Its failure is reported but does not clear the screen: today is on it and is the part
+     * the reader came for. Reversing is what turns the newest-first page back into the order
+     * the listing reads in.
+     */
+    private suspend fun fetchYesterday(query: Query) {
+        val answer = events.onDate(query.asRequest(day = today.minusDays(1), newestFirst = true))
+        state.value = when (answer) {
+            is ApiResult.Success -> {
+                loaded = answer.value.results.reversed() + loaded
+                state.value.copy(
+                    days = presenter.days(loaded, marked),
+                    anchorId = presenter.anchor(loaded),
+                    error = null,
+                )
+            }
+            is ApiResult.Failure -> state.value.copy(error = answer.error)
+        }
+    }
+
+    private suspend fun fetch(query: Query, appending: Boolean) {
         state.value = state.value.copy(loading = true, error = null)
 
-        val answer = events.onDate(
-            date = query.date.toString(),
-            search = query.search.ifBlank { null },
-            watchableOnly = query.watchableOnly,
-            page = query.page,
-        )
+        val answer = events.onDate(query.asRequest(day = today, newestFirst = false))
 
         state.value = when (answer) {
             is ApiResult.Success -> {
@@ -150,6 +192,7 @@ class AgendaViewModel(
                 nextPage = if (answer.value.next != null) query.page + 1 else null
                 state.value.copy(
                     days = presenter.days(loaded, marked),
+                    anchorId = presenter.anchor(loaded),
                     count = answer.value.count,
                     loading = false,
                     error = null,
@@ -181,14 +224,24 @@ class AgendaViewModel(
     /** A single letter narrows nothing and costs a request across six joined tables. */
     private fun effectiveSearch(text: String) = text.trim().takeIf { it.length >= SHORTEST_SEARCH }.orEmpty()
 
-    private data class Filters(val date: LocalDate, val watchableOnly: Boolean)
+    private data class Filters(val watchableOnly: Boolean, val narrowing: AgendaFilter?)
 
     private data class Query(
-        val date: LocalDate,
         val search: String,
         val watchableOnly: Boolean,
+        val narrowing: AgendaFilter?,
         val page: Int = EventsRepository.FIRST_PAGE,
-    )
+    ) {
+        fun asRequest(day: LocalDate, newestFirst: Boolean) = AgendaQuery(
+            date = day.toString(),
+            search = search.ifBlank { null },
+            watchableOnly = watchableOnly,
+            team = narrowing?.id?.takeIf { narrowing.kind == FollowableKind.Teams },
+            competition = narrowing?.id?.takeIf { narrowing.kind == FollowableKind.Competitions },
+            newestFirst = newestFirst,
+            page = page,
+        )
+    }
 
     companion object {
         const val TYPING_PAUSE_MILLIS: Long = 400
@@ -199,10 +252,20 @@ class AgendaViewModel(
     }
 }
 
+/**
+ * What the agenda is showing. [day] is today; the window is the day before it and it.
+ */
 data class AgendaUiState(
-    val date: LocalDate,
+    val day: LocalDate,
     val query: String = "",
     val watchableOnly: Boolean = false,
+    /** Set when the reader arrived from a followed team or competition. */
+    val filter: AgendaFilter? = null,
+    /**
+     * The event the listing should open on — the first one that has not finished. Null when
+     * everything in the window is over, and the listing then opens at the end.
+     */
+    val anchorId: Int? = null,
     val days: List<AgendaDay> = emptyList(),
     val count: Int = 0,
     val loading: Boolean = false,
@@ -217,7 +280,8 @@ data class AgendaUiState(
 sealed interface AgendaIntent {
     data class Search(val text: String) : AgendaIntent
 
-    data class PickDate(val date: LocalDate) : AgendaIntent
+    /** Narrow to one followed team or competition, or pass null to show everything again. */
+    data class Narrow(val filter: AgendaFilter?) : AgendaIntent
 
     data class OnlyWatchable(val only: Boolean) : AgendaIntent
 
@@ -229,4 +293,28 @@ sealed interface AgendaIntent {
     data object LoadMore : AgendaIntent
 
     data object DismissError : AgendaIntent
+}
+
+/**
+ * The agenda narrowed to one thing the reader follows.
+ *
+ * It carries the name and the image as well as the id because it is drawn as a chip the moment
+ * it is applied — before any response has arrived — and the strip it was pressed on already
+ * holds both. Asking the server what a team is called in order to say which team is being
+ * shown would be a request bought with nothing.
+ */
+data class AgendaFilter(
+    val id: Int,
+    val name: String,
+    val imageUrl: String?,
+    val kind: FollowableKind,
+) {
+    companion object {
+        fun of(followable: Followable) = AgendaFilter(
+            id = followable.item.id,
+            name = followable.item.name,
+            imageUrl = followable.item.imageUrl,
+            kind = followable.kind,
+        )
+    }
 }

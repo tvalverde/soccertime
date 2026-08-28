@@ -1,5 +1,6 @@
 package es.mojon.soccertime.core.ui
 
+import es.mojon.soccertime.core.data.AgendaQuery
 import es.mojon.soccertime.core.data.EventsRepository
 import es.mojon.soccertime.core.data.Favorites
 import es.mojon.soccertime.core.model.EventDto
@@ -45,8 +46,7 @@ class FavoritesViewModelTest {
             return failure?.let { ApiResult.Failure(it) } ?: ApiResult.Success(answer)
         }
 
-        override suspend fun onDate(date: String, search: String?, watchableOnly: Boolean, page: Int) =
-            upcoming(page)
+        override suspend fun onDate(query: AgendaQuery) = upcoming(query.page)
     }
 
     private class Movable(var now: Instant) : Clock() {

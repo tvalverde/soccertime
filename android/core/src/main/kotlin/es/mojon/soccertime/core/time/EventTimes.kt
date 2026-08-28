@@ -51,17 +51,28 @@ class EventTimes(
     fun dayOf(iso: String): LocalDate? = at(iso)?.toLocalDate()
 
     /**
-     * `HOY`, `MAÑANA`, or `SÁBADO 30 AGOSTO`. Upper case because it is a section heading and
-     * the design sets it in letter-spaced capitals; `Locale` matters here, since Turkish
-     * would otherwise turn a dotted i into one nobody typed.
+     * `AYER · JUE 27 AGO`, `HOY · VIE 28 AGO`, or `SÁBADO 30 AGOSTO`. Upper case because it is
+     * a section heading and the design sets it in letter-spaced capitals; `Locale` matters
+     * here, since Turkish would otherwise turn a dotted i into one nobody typed.
+     *
+     * The named days carry their date too. On a listing of one day the name alone was enough;
+     * on one that spans yesterday and today, opened halfway down at the current hour, the
+     * heading is the only thing saying which side of midnight a row is on — and a reader who
+     * has scrolled past it deserves more than a word to come back to.
      */
     fun dayLabel(iso: String): String {
         val day = dayOf(iso) ?: return ""
         val today = LocalDate.now(clock.withZone(zone))
-        return when (day) {
+        val named = when (day) {
+            today.minusDays(1) -> YESTERDAY
             today -> TODAY
             today.plusDays(1) -> TOMORROW
-            else -> day.format(DAY.withLocale(locale)).uppercase(locale)
+            else -> null
+        }
+        return if (named == null) {
+            day.format(DAY.withLocale(locale)).uppercase(locale)
+        } else {
+            "$named · ${day.format(SHORT_DAY.withLocale(locale)).uppercase(locale).replace(".", "")}"
         }
     }
 
@@ -80,10 +91,27 @@ class EventTimes(
      */
     fun isLive(startIso: String, endIso: String?): Boolean {
         val start = instantAt(startIso) ?: return false
-        val end = endIso?.let(::instantAt) ?: start.plus(DEFAULT_LENGTH)
+        val end = endOf(start, endIso)
         val now = clock.instant()
         return !now.isBefore(start) && now.isBefore(end)
     }
+
+    /**
+     * Over, and therefore no longer what the reader opened the app for.
+     *
+     * This is the agenda's anchor: the listing opens on the first event this says no to, so a
+     * race that started an hour and a half ago is still what you are shown. It is deliberately
+     * the same two hours as [isLive] and as the site's own `AGENDA_LOOKBACK`, and not the
+     * three of the favourites window — one definition of "still on", or the listing would
+     * open on rows it had already stopped marking.
+     */
+    fun hasFinished(startIso: String, endIso: String?): Boolean {
+        val start = instantAt(startIso) ?: return false
+        return !clock.instant().isBefore(endOf(start, endIso))
+    }
+
+    private fun endOf(start: Instant, endIso: String?): Instant =
+        endIso?.let(::instantAt) ?: start.plus(DEFAULT_LENGTH)
 
     companion object {
         /** What the site assumes when no duration is stored, mirrored here. */
@@ -92,6 +120,8 @@ class EventTimes(
         private val SPAIN = Locale.forLanguageTag("es-ES")
         private val TIME = DateTimeFormatter.ofPattern("HH:mm")
         private val DAY = DateTimeFormatter.ofPattern("EEEE d MMMM")
+        private val SHORT_DAY = DateTimeFormatter.ofPattern("EEE d MMM")
+        private const val YESTERDAY = "AYER"
         private const val TODAY = "HOY"
         private const val TOMORROW = "MAÑANA"
     }

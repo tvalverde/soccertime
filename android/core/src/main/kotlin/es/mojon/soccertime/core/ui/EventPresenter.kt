@@ -40,6 +40,20 @@ class EventPresenter(val times: EventTimes) {
                 )
             }
 
+    /**
+     * The event the listing should open on: the first one that has not finished.
+     *
+     * Not the first one that has not *started*. A race that began ninety minutes ago is still
+     * what the reader turned the television on for, and scrolling past it to the next kick-off
+     * would hide the thing that is actually on. The rule is [EventTimes.hasFinished], which is
+     * the same two hours the site's own agenda anchors on.
+     *
+     * Null when every event in the window is over, which is a real state at four in the
+     * morning; the listing then simply opens at the end.
+     */
+    fun anchor(events: List<EventDto>): Int? =
+        events.firstOrNull { !times.hasFinished(it.date, it.dateEnd) }?.id
+
     fun present(
         event: EventDto,
         favorites: Favorites = Favorites.NONE,

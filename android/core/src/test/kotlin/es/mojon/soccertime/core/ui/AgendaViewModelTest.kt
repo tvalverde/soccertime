@@ -1,6 +1,7 @@
 package es.mojon.soccertime.core.ui
 
 import app.cash.turbine.test
+import es.mojon.soccertime.core.data.AgendaQuery
 import es.mojon.soccertime.core.data.EventsRepository
 import es.mojon.soccertime.core.data.Favorites
 import es.mojon.soccertime.core.model.EventDto
@@ -46,25 +47,30 @@ class AgendaViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private val august30 = LocalDate.of(2026, 8, 30)
 
-    private data class Ask(val date: String, val search: String?, val watchableOnly: Boolean, val page: Int)
-
-    private class Recording(private val answer: Page<EventDto>) : EventsRepository {
-        val asks = mutableListOf<Ask>()
+    private class Recording(answer: Page<EventDto>) : EventsRepository {
+        val asks = mutableListOf<AgendaQuery>()
         var failure: ApiError? = null
+
+        /** Set to fail only one of the two days a load asks for. */
+        var failOn: String? = null
         var pageAnswer: Page<EventDto> = answer
+        val perDay = mutableMapOf<String, Page<EventDto>>()
 
-        override suspend fun upcoming(page: Int) = onDate("", null, false, page)
+        override suspend fun upcoming(page: Int) = onDate(AgendaQuery(date = "", page = page))
 
-        override suspend fun onDate(
-            date: String,
-            search: String?,
-            watchableOnly: Boolean,
-            page: Int,
-        ): ApiResult<Page<EventDto>> {
-            asks += Ask(date, search, watchableOnly, page)
-            return failure?.let { ApiResult.Failure(it) } ?: ApiResult.Success(pageAnswer)
+        override suspend fun onDate(query: AgendaQuery): ApiResult<Page<EventDto>> {
+            asks += query
+            val failing = failure?.takeIf { failOn == null || failOn == query.date }
+            return failing?.let { ApiResult.Failure(it) }
+                ?: ApiResult.Success(perDay[query.date] ?: pageAnswer)
         }
     }
+
+    /**
+     * One load of the window is two requests, so counting requests no longer counts loads.
+     * Today is the one that is never asked for newest-first.
+     */
+    private val Recording.loads: Int get() = asks.count { !it.newestFirst }
 
     /** A clock the test moves, so staleness can be reached without waiting for it. */
     private class Movable(var now: Instant) : Clock() {
@@ -81,6 +87,15 @@ class AgendaViewModelTest {
         val body = checkNotNull(javaClass.classLoader?.getResourceAsStream("fixtures/events_day_page1.json"))
             .use { it.readBytes().decodeToString() }
         return Network.json.decodeFromString(body)
+    }
+
+    /** A page of events at exactly the instants a test needs, built from the recorded one. */
+    private fun pageOf(vararg dates: String): Page<EventDto> {
+        val template = fixture().results.first()
+        val events = dates.mapIndexed { index, date ->
+            template.copy(id = 900 + index, date = date, dateEnd = null)
+        }
+        return fixture().copy(count = events.size, next = null, results = events)
     }
 
     private val followed = MutableStateFlow(Favorites.NONE)
@@ -103,21 +118,143 @@ class AgendaViewModelTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
+    /**
+     * The window is yesterday and today, and the order is the whole design: today renders
+     * while yesterday is still in flight, because today is where the reader is.
+     */
     @Test
-    fun `it loads the day it opens on, once`() = runTest(dispatcher) {
+    fun `it opens on two days, and asks for today first`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
 
-        assertEquals(1, repository.asks.size)
-        assertEquals("2026-08-30", repository.asks.single().date)
-        assertEquals(3, model.uiState.value.days.sumOf { it.events.size })
+        assertEquals(2, repository.asks.size)
+        assertEquals("2026-08-30", repository.asks.first().date)
+        assertEquals("2026-08-29", repository.asks.last().date)
+        assertEquals(6, model.uiState.value.days.sumOf { it.events.size })
+    }
+
+    /**
+     * A page holds a hundred and a busy day carries more, so asking yesterday in reading order
+     * would spend the page on its small hours and drop the evening — the only part of it worth
+     * showing at midnight, and the reason it is fetched at all.
+     */
+    @Test
+    fun `yesterday is asked for from its end, and put back in reading order`() = runTest(dispatcher) {
+        repository.perDay["2026-08-30"] = pageOf("2026-08-30T15:00:00Z")
+        repository.perDay["2026-08-29"] = pageOf("2026-08-29T22:00:00Z", "2026-08-29T18:00:00Z")
+        val model = viewModel()
+        advanceUntilIdle()
+
+        assertTrue("only yesterday is reversed", repository.asks.last().newestFirst)
+        assertFalse(repository.asks.first().newestFirst)
+
+        val shown = model.uiState.value.days.flatMap { day -> day.events.map { it.time } }
+        assertEquals(listOf("20:00", "00:00", "17:00"), shown)
+    }
+
+    /**
+     * Today is the part the reader came for. Losing the tail of the window is worth saying,
+     * but not worth clearing the screen over.
+     */
+    @Test
+    fun `yesterday failing leaves today standing`() = runTest(dispatcher) {
+        repository.failure = ApiError.Offline
+        repository.failOn = "2026-08-29"
+        val model = viewModel()
+        advanceUntilIdle()
+
+        val state = model.uiState.value
+        assertEquals(3, state.days.sumOf { it.events.size })
+        assertEquals(ApiError.Offline, state.error)
+    }
+
+    @Test
+    fun `today failing does not go on to ask for yesterday`() = runTest(dispatcher) {
+        repository.failure = ApiError.RateLimited(retryAfterSeconds = 30)
+        val model = viewModel()
+        advanceUntilIdle()
+
+        assertEquals("a second request would only earn a second 429", 1, repository.asks.size)
+        assertEquals(ApiError.RateLimited(30), model.uiState.value.error)
+    }
+
+    /**
+     * Where the listing opens. Not the first event still to start: one that began ninety
+     * minutes ago is still on, and scrolling past it would hide what the reader turned the
+     * television on for.
+     */
+    @Test
+    fun `the listing opens on the first event that has not finished`() = runTest(dispatcher) {
+        // Noon UTC. The first is over, the second is halfway through, the third is to come.
+        repository.perDay["2026-08-30"] =
+            pageOf("2026-08-30T09:00:00Z", "2026-08-30T11:00:00Z", "2026-08-30T15:00:00Z")
+        repository.perDay["2026-08-29"] = pageOf()
+        val model = viewModel()
+        advanceUntilIdle()
+
+        val opensOn = model.uiState.value.anchorId
+        assertEquals(repository.perDay.getValue("2026-08-30").results[1].id, opensOn)
+    }
+
+    @Test
+    fun `an anchor is not offered when every event in the window is over`() = runTest(dispatcher) {
+        repository.perDay["2026-08-30"] = pageOf("2026-08-30T06:00:00Z")
+        repository.perDay["2026-08-29"] = pageOf("2026-08-29T20:00:00Z")
+        val model = viewModel()
+        advanceUntilIdle()
+
+        assertNull(model.uiState.value.anchorId)
+    }
+
+    @Test
+    fun `narrowing to a followed team is a filter the server applies, to both days`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+
+        model.onIntent(
+            AgendaIntent.Narrow(AgendaFilter(42, "Argentina", null, FollowableKind.Teams)),
+        )
+        advanceUntilIdle()
+
+        val forTheFilter = repository.asks.takeLast(2)
+        assertEquals(listOf(42, 42), forTheFilter.map { it.team })
+        assertEquals(listOf(null, null), forTheFilter.map { it.competition })
+        assertEquals("Argentina", model.uiState.value.filter?.name)
+    }
+
+    @Test
+    fun `a competition narrows on the other parameter, because the API has two`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+
+        model.onIntent(
+            AgendaIntent.Narrow(AgendaFilter(7, "FIBA Copa Mundial", null, FollowableKind.Competitions)),
+        )
+        advanceUntilIdle()
+
+        assertEquals(7, repository.asks.last().competition)
+        assertNull(repository.asks.last().team)
+    }
+
+    @Test
+    fun `clearing the filter asks for the whole window again`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        model.onIntent(AgendaIntent.Narrow(AgendaFilter(42, "Argentina", null, FollowableKind.Teams)))
+        advanceUntilIdle()
+
+        model.onIntent(AgendaIntent.Narrow(null))
+        advanceUntilIdle()
+
+        assertNull(repository.asks.last().team)
+        assertNull(model.uiState.value.filter)
     }
 
     @Test
     fun `typing a word costs one request, not one per letter`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
-        val before = repository.asks.size
+        val before = repository.loads
 
         val word = "Barcelona"
         word.indices.forEach { index ->
@@ -126,7 +263,7 @@ class AgendaViewModelTest {
         }
         advanceUntilIdle()
 
-        assertEquals(1, repository.asks.size - before)
+        assertEquals(1, repository.loads - before)
         assertEquals(word, repository.asks.last().search)
     }
 
@@ -134,12 +271,12 @@ class AgendaViewModelTest {
     fun `a single letter is not a search and costs nothing`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
-        val before = repository.asks.size
+        val before = repository.loads
 
         model.onIntent(AgendaIntent.Search("B"))
         advanceUntilIdle()
 
-        assertEquals(0, repository.asks.size - before)
+        assertEquals(0, repository.loads - before)
         assertEquals("B", model.uiState.value.query)
     }
 
@@ -149,12 +286,12 @@ class AgendaViewModelTest {
         advanceUntilIdle()
         model.onIntent(AgendaIntent.Search("Barcelona"))
         advanceUntilIdle()
-        val before = repository.asks.size
+        val before = repository.loads
 
         model.onIntent(AgendaIntent.Search(""))
         advanceUntilIdle()
 
-        assertEquals(1, repository.asks.size - before)
+        assertEquals(1, repository.loads - before)
         assertNull(repository.asks.last().search)
     }
 
@@ -174,52 +311,52 @@ class AgendaViewModelTest {
     fun `a refresh within five seconds of the last one does nothing`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
-        val loaded = repository.asks.size
+        val loaded = repository.loads
 
         clock.advance(Duration.ofSeconds(4))
         repeat(5) { model.onIntent(AgendaIntent.Refresh) }
         advanceUntilIdle()
 
-        assertEquals("four seconds on, the answer cannot have changed", loaded, repository.asks.size)
+        assertEquals("four seconds on, the answer cannot have changed", loaded, repository.loads)
     }
 
     @Test
     fun `a refresh after five seconds does ask`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
-        val loaded = repository.asks.size
+        val loaded = repository.loads
 
         clock.advance(Duration.ofSeconds(6))
         model.onIntent(AgendaIntent.Refresh)
         advanceUntilIdle()
 
-        assertEquals(loaded + 1, repository.asks.size)
+        assertEquals(loaded + 1, repository.loads)
     }
 
     @Test
     fun `coming back to a fresh screen does not reload it`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
-        val loaded = repository.asks.size
+        val loaded = repository.loads
 
         clock.advance(Duration.ofSeconds(30))
         model.onIntent(AgendaIntent.Resumed)
         advanceUntilIdle()
 
-        assertEquals(loaded, repository.asks.size)
+        assertEquals(loaded, repository.loads)
     }
 
     @Test
     fun `coming back to one over a minute old reloads it`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
-        val loaded = repository.asks.size
+        val loaded = repository.loads
 
         clock.advance(Duration.ofSeconds(61))
         model.onIntent(AgendaIntent.Resumed)
         advanceUntilIdle()
 
-        assertEquals(loaded + 1, repository.asks.size)
+        assertEquals(loaded + 1, repository.loads)
     }
 
     @Test
@@ -248,20 +385,20 @@ class AgendaViewModelTest {
         advanceUntilIdle()
 
         repository.failure = ApiError.RateLimited(retryAfterSeconds = 12)
-        model.onIntent(AgendaIntent.PickDate(august30.plusDays(1)))
+        model.onIntent(AgendaIntent.Narrow(AgendaFilter(42, "Argentina", null, FollowableKind.Teams)))
         advanceUntilIdle()
 
         val state = model.uiState.value
         assertEquals(emptyList<AgendaDay>(), state.days)
         assertEquals(ApiError.RateLimited(12), state.error)
-        assertFalse("stale would be a lie: this is a different day", state.showingStale)
+        assertFalse("stale would be a lie: this is a different listing", state.showingStale)
     }
 
     @Test
     fun `following a team re-marks the rows without asking the server again`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
-        val loaded = repository.asks.size
+        val loaded = repository.loads
         val everyRow = model.uiState.value.days.flatMap { it.events }
         assertTrue("nothing is marked yet", everyRow.none { it.favorite })
 
@@ -269,7 +406,7 @@ class AgendaViewModelTest {
         followed.value = Favorites(teamIds = setOf(aTeamOnScreen))
         advanceUntilIdle()
 
-        assertEquals("marking is a redraw, not a request", loaded, repository.asks.size)
+        assertEquals("marking is a redraw, not a request", loaded, repository.loads)
         assertTrue(model.uiState.value.days.flatMap { it.events }.any { it.favorite })
     }
 
