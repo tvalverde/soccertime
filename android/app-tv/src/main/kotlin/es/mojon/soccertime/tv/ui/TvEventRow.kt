@@ -74,6 +74,8 @@ fun TvEventRow(
     onFollow: () -> Unit,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
+    /** Reported upwards so the list can put the cursor back here after a panel closes. */
+    onFocused: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
@@ -84,7 +86,10 @@ fun TvEventRow(
             .fillMaxWidth()
             .height(ROW_HEIGHT)
             .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused()
+            }
             // Two of the remote's own keys, neither of which the D-pad can reach.
             //
             // MENU is what Fire OS uses for "options for this thing", so it does not compete
