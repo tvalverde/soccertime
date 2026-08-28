@@ -45,7 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no `<queries>` block, no chooser wrapper that would override a default the reader has set.
   When nothing answers, the app says so and offers to copy or share the link.
 
-  44 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
+  The two faces the site uses are carried as files, one per weight. Android's downloadable
+  fonts are served by Google Play services, and a Fire TV has none: there, a downloadable font
+  is a silent fallback to the system sans-serif. Variable originals are no use either, because
+  their axes need API 26 and this targets 25 — a variable file would render every weight at
+  its default and flatten the hierarchy the design is built on.
+
+  50 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
   unfiltered so gitleaks keeps reading pushes that touch only `android/` —
   `test_android_workflow.py` refuses a `paths` filter there, because adding one looks like a
   tidy-up and would quietly stop scanning the tree where keystore passwords live.

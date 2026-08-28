@@ -3,3 +3,7 @@
 # file here, so it is pinned. Nothing else in this repository is Windows-specific.
 *.bat text eol=crlf
 gradlew text eol=lf
+
+# Third-party licence texts are kept exactly as published, line endings included: a licence
+# is a document that was agreed to, not a source file to normalise.
+android/licenses/*.txt -text

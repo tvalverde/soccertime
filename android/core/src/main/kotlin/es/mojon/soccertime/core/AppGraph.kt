@@ -1,8 +1,11 @@
 package es.mojon.soccertime.core
 
 import android.content.Context
+import androidx.datastore.preferences.preferencesDataStore
 import es.mojon.soccertime.core.data.EventsRepository
+import es.mojon.soccertime.core.data.FavoritesStore
 import es.mojon.soccertime.core.network.Network
+import es.mojon.soccertime.core.time.EventTimes
 import java.io.File
 
 /**
@@ -14,16 +17,31 @@ import java.io.File
  */
 class AppGraph(
     cacheDirectory: File?,
+    val favorites: FavoritesStore,
     baseUrl: String = BuildConfig.API_BASE_URL,
 ) {
     val client = Network.okHttp(cacheDirectory)
     val api = Network.api(baseUrl, client)
     val events = EventsRepository(api)
 
+    /** Reads the device's own zone and clock; both are arguments so tests can fix them. */
+    val times = EventTimes()
+
     companion object {
         fun from(context: Context): AppGraph =
-            AppGraph(cacheDirectory = File(context.cacheDir, HTTP_CACHE_DIRECTORY))
+            AppGraph(
+                cacheDirectory = File(context.cacheDir, HTTP_CACHE_DIRECTORY),
+                favorites = FavoritesStore(context.applicationContext.favoritesStore),
+            )
 
         private const val HTTP_CACHE_DIRECTORY = "http"
     }
 }
+
+/**
+ * The delegate rather than a factory call, because `DataStore` refuses to have two instances
+ * alive on one file and throws on first use when it does. This makes one per process by
+ * construction — the application context is what it is read from, so an activity being
+ * recreated cannot produce a second.
+ */
+private val Context.favoritesStore by preferencesDataStore(name = FavoritesStore.FILE_NAME)
