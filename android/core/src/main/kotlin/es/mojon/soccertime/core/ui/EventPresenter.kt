@@ -13,7 +13,7 @@ import java.time.LocalDate
  * time in the same zone, the same live window, the same two channels before a "+3". Deciding
  * that here is what stops the two screens disagreeing about the same event.
  */
-class EventPresenter(private val times: EventTimes) {
+class EventPresenter(val times: EventTimes) {
 
     /**
      * Grouped into days, in the device's zone. Grouping has to happen after the conversion
