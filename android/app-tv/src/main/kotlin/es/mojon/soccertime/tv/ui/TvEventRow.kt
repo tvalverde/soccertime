@@ -29,6 +29,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
@@ -66,6 +71,7 @@ import es.mojon.soccertime.tv.ui.theme.TvTeamName
 fun TvEventRow(
     event: EventUi,
     onOpen: () -> Unit,
+    onFollow: () -> Unit,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
 ) {
@@ -79,6 +85,18 @@ fun TvEventRow(
             .height(ROW_HEIGHT)
             .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
             .onFocusChanged { focused = it.isFocused }
+            // The remote's menu button is what Fire OS uses for "options for this thing", so
+            // it does not compete with OK, which opens the links. It answers on every row,
+            // including the ones with nothing to play — most of the agenda, and exactly where
+            // a team worth following turns up.
+            .onKeyEvent { key ->
+                if (key.type == KeyEventType.KeyDown && key.key == Key.Menu) {
+                    onFollow()
+                    true
+                } else {
+                    false
+                }
+            }
             // No `focusable()` beside this. `clickable` is already a focus target, and
             // adding another puts the focus on the outer one while the inner one is what
             // handles OK — which is a control the remote can highlight and never activate.

@@ -186,4 +186,37 @@ class EventPresenterTest {
         assertNotNull(links.home)
         assertNotNull(links.away)
     }
+
+    @Test
+    fun `a match offers both sides and its competition, in that order`() {
+        val match = fixture("events_day_page1.json").first { it.eventType == "match" }
+
+        val offered = presenter().followables(match)
+
+        assertEquals(3, offered.size)
+        assertEquals(listOf(FollowableKind.Teams, FollowableKind.Teams, FollowableKind.Competitions), offered.map { it.kind })
+        assertEquals(match.local?.name, offered[0].item.name)
+        assertEquals(match.visitor?.name, offered[1].item.name)
+        assertEquals(match.competition.name, offered[2].item.name)
+    }
+
+    @Test
+    fun `a race offers only its competition, which is why competitions are followable`() {
+        val race = fixture("events_watchable_page1.json").first { it.eventType == "race" }
+
+        val offered = presenter().followables(race)
+
+        assertEquals(1, offered.size)
+        assertEquals(FollowableKind.Competitions, offered.single().kind)
+        assertEquals(race.competition.name, offered.single().item.name)
+    }
+
+    @Test
+    fun `what is offered carries the crest, so the panel needs no request`() {
+        val match = fixture("events_day_page1.json").first { it.eventType == "match" }
+
+        val offered = presenter().followables(match)
+
+        assertEquals(match.local?.crest?.url, offered[0].item.imageUrl)
+    }
 }

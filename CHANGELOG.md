@@ -106,7 +106,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the seven seconds the events endpoint takes to answer is indistinguishable from a broken
   app, so both apps say they are loading.
 
-  95 JVM unit tests plus the repository's own, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
+  The television can follow things itself. The menu button on any event offers its two sides
+  and its competition, each with its current state, and OK toggles one — the only interaction
+  on that screen that needs no keyboard, because every name is already on the television and
+  choosing between three is what a D-pad is good at. It answers on every row, including the
+  ones with nothing to play, which are most of the agenda and exactly where a team worth
+  following turns up.
+
+  98 JVM unit tests plus the repository's own, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
   unfiltered so gitleaks keeps reading pushes that touch only `android/` —
   `test_android_workflow.py` refuses a `paths` filter there, because adding one looks like a
   tidy-up and would quietly stop scanning the tree where keystore passwords live.

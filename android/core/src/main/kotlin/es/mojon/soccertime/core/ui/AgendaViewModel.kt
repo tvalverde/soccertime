@@ -112,6 +112,10 @@ class AgendaViewModel(
         }
     }
 
+    /** The two sides and the competition of one row, for the panel that follows them. */
+    fun followablesFor(id: Int): List<Followable> =
+        loaded.firstOrNull { it.id == id }?.let(presenter::followables).orEmpty()
+
     /** The links of one row, built from the response the row was drawn from. */
     fun linksFor(id: Int): EventLinks? = loaded.firstOrNull { it.id == id }?.let(presenter::links)
 

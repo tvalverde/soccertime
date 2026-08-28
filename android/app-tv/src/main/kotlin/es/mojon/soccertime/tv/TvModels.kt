@@ -19,14 +19,18 @@ import java.util.Locale
  *
  * That is the point of `:core` and it is worth saying once: nothing about which events are
  * shown, when they are reloaded, or what a row says is decided twice. Only the drawing is.
- * There is no `ManageFavoritesViewModel` here because there is no editing here — favourites
- * are chosen on the phone, where a keyboard exists.
+ *
+ * There is no `ManageFavoritesViewModel` here, and not because the television cannot follow
+ * anything: it can, from the menu button on any event. What it has no use for is that view
+ * model's search, which needs a keyboard.
  */
 class TvModels(private val graph: AppGraph, context: Context) {
 
     private val presenter = EventPresenter(graph.times)
 
     val following = graph.favorites.following
+
+    val favoritesStore = graph.favorites
 
     val playback = Playback(SystemIntentLauncher(context))
 

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,9 +37,12 @@ import es.mojon.soccertime.core.ui.AgendaViewModel
 import es.mojon.soccertime.core.ui.EventLinks
 import es.mojon.soccertime.core.ui.FavoritesIntent
 import es.mojon.soccertime.core.ui.FavoritesViewModel
+import es.mojon.soccertime.core.ui.Followable
+import es.mojon.soccertime.core.ui.FollowableKind
 import es.mojon.soccertime.tv.ui.TvAgendaScreen
 import es.mojon.soccertime.tv.ui.TvDestination
 import es.mojon.soccertime.tv.ui.TvFavoritesScreen
+import es.mojon.soccertime.tv.ui.TvFollowPanel
 import es.mojon.soccertime.tv.ui.TvLinksPanel
 import es.mojon.soccertime.tv.ui.TvNoHandler
 import es.mojon.soccertime.tv.ui.TvRail
@@ -80,6 +85,8 @@ private fun SoccertimeTv(models: TvModels) {
     var destination: TvDestination? by remember { mutableStateOf(null) }
     var showing: EventLinks? by remember { mutableStateOf(null) }
     var unopenable: PlayResult.NoHandler? by remember { mutableStateOf(null) }
+    var choosing: Pair<String, List<Followable>>? by remember { mutableStateOf(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(following) {
         val known = following ?: return@LaunchedEffect
@@ -111,6 +118,9 @@ private fun SoccertimeTv(models: TvModels) {
                         following = following ?: Following(),
                         clockLabel = models.now(),
                         onOpen = { showing = favorites.linksFor(it.id) },
+                        onFollow = { row ->
+                            choosing = row.label() to favorites.followablesFor(row.id)
+                        },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -122,6 +132,7 @@ private fun SoccertimeTv(models: TvModels) {
                     TvAgendaScreen(
                         state = state,
                         onOpen = { showing = agenda.linksFor(it.id) },
+                        onFollow = { row -> choosing = row.label() to agenda.followablesFor(row.id) },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -141,14 +152,36 @@ private fun SoccertimeTv(models: TvModels) {
             )
         }
 
+        choosing?.let { (title, candidates) ->
+            TvFollowPanel(
+                title = title,
+                candidates = candidates,
+                following = following?.selection ?: es.mojon.soccertime.core.data.Favorites.NONE,
+                onToggle = { candidate, follow ->
+                    scope.launch {
+                        when (candidate.kind) {
+                            FollowableKind.Teams -> models.favoritesStore.setTeam(candidate.item, follow)
+                            FollowableKind.Competitions ->
+                                models.favoritesStore.setCompetition(candidate.item, follow)
+                        }
+                    }
+                },
+            )
+        }
+
         unopenable?.let { TvNoHandler(scheme = it.scheme, link = it.link) }
     }
 
     // BACK closes whatever is open before it leaves the app, which is the one thing a remote's
     // single back button has to get right.
     BackHandler(enabled = unopenable != null) { unopenable = null }
-    BackHandler(enabled = unopenable == null && showing != null) { showing = null }
-    BackHandler(enabled = showing == null && unopenable == null && opensOn != TvDestination.Favorites) {
+    BackHandler(enabled = unopenable == null && choosing != null) { choosing = null }
+    BackHandler(enabled = unopenable == null && choosing == null && showing != null) { showing = null }
+    BackHandler(enabled = showing == null && unopenable == null && choosing == null && opensOn != TvDestination.Favorites) {
         destination = TvDestination.Favorites
     }
 }
+
+/** What the panel calls the event it was opened from. */
+private fun es.mojon.soccertime.core.ui.EventUi.label(): String =
+    title ?: listOfNotNull(home?.name, away?.name).joinToString(" — ")
