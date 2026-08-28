@@ -3,6 +3,12 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
+    // This module declares `@Composable` members — the icon accessors in `ui/`. Without the
+    // Compose compiler here they are compiled without the `Composer` parameter the plugin
+    // adds, while the applications, which do have it, call them with one. That mismatch is
+    // invisible: it builds, it lints, the unit tests never touch Compose, and the app dies
+    // on launch with NoSuchMethodError.
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {

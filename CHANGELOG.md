@@ -94,6 +94,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than assuming it: a signing config that finds no keystore is not an error in Gradle, it is
   simply absent, and `assembleRelease` then writes an unsigned APK and reports success.
 
+  Four defects that only a remote in a hand could show, found by driving the Fire TV over ADB.
+  Every focusable control carried both `focusable()` and `clickable()`, which are two focus
+  targets: the outer one took the focus and the inner one handled OK, so the whole television
+  app could be navigated and nothing could be activated. `:core` declared `@Composable`
+  members without the Compose compiler plugin, so its getters compiled without the `Composer`
+  parameter the applications called them with — it built, it linted, the tests never touched
+  Compose, and it died on launch. The icon paths were transcribed by hand and one was wrong,
+  drawing the agenda's calendar with a side missing; they are now generated from the upstream
+  Bootstrap SVGs into vector drawables that `aapt` compiles. And a screen showing nothing for
+  the seven seconds the events endpoint takes to answer is indistinguishable from a broken
+  app, so both apps say they are loading.
+
   95 JVM unit tests plus the repository's own, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
   unfiltered so gitleaks keeps reading pushes that touch only `android/` —
   `test_android_workflow.py` refuses a `paths` filter there, because adding one looks like a

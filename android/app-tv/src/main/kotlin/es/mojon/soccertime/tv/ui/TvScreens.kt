@@ -84,6 +84,19 @@ fun TvFavoritesScreen(
 
         state.error?.let { TvFailure(it, state.showingStale) }
 
+        // The first answer takes seconds, and a blank screen for seconds is indistinguishable
+        // from a broken app. Only while there is nothing yet: a refresh over rows already on
+        // screen must not blank them.
+        if (state.loading && state.days.isEmpty()) {
+            Text(
+                text = stringResource(R.string.loading),
+                style = TvLabel,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 20.dp),
+            )
+            return@Column
+        }
+
         if (state.nothingComingUp) {
             Text(
                 text = stringResource(R.string.nothing_coming_up),
@@ -130,6 +143,19 @@ fun TvAgendaScreen(
         }
 
         state.error?.let { TvFailure(it, state.showingStale) }
+
+        // The first answer takes seconds, and a blank screen for seconds is indistinguishable
+        // from a broken app. Only while there is nothing yet: a refresh over rows already on
+        // screen must not blank them.
+        if (state.loading && state.days.isEmpty()) {
+            Text(
+                text = stringResource(R.string.loading),
+                style = TvLabel,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 20.dp),
+            )
+            return@Column
+        }
 
         if (state.isEmpty) {
             Text(

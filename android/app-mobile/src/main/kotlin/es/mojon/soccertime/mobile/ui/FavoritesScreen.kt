@@ -80,7 +80,9 @@ fun FavoritesScreen(
             )
         }
 
-        if (state.nothingComingUp) {
+        if (state.loading && state.days.isEmpty()) {
+            EmptyState(stringResource(R.string.loading), Modifier.padding(horizontal = 14.dp))
+        } else if (state.nothingComingUp) {
             EmptyState(stringResource(R.string.nothing_coming_up), Modifier.padding(horizontal = 14.dp))
         } else {
             EventList(

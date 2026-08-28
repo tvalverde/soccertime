@@ -69,6 +69,12 @@ fun AgendaScreen(
         }
 
         when {
+            // The first answer takes seconds, and a blank list for seconds reads as a broken
+            // app. Only while there is nothing yet: a refresh must not blank rows already up.
+            state.loading && state.days.isEmpty() -> EmptyState(
+                message = stringResource(R.string.loading),
+                modifier = Modifier.padding(horizontal = 14.dp),
+            )
             state.isEmpty -> EmptyState(
                 message = if (state.query.isBlank()) {
                     stringResource(R.string.empty_agenda)

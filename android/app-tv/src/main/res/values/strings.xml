@@ -9,6 +9,7 @@
     <string name="channels">CANALES</string>
     <string name="quality_unspecified">SIN ESPECIFICAR</string>
 
+    <string name="loading">Cargando…</string>
     <string name="empty_agenda">No hay eventos para este día.</string>
     <string name="nothing_coming_up">Nada de lo que sigues se emite en los próximos tres días.</string>
 

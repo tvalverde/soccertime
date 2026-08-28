@@ -3,7 +3,6 @@ package es.mojon.soccertime.tv.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,7 +49,7 @@ fun TvRail(
     ) {
         Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = SoccertimeIcons.Calendar,
+                imageVector = SoccertimeIcons.CalendarCheck,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp),
@@ -76,7 +75,9 @@ private fun RailItem(icon: ImageVector, selected: Boolean, onClick: () -> Unit) 
         Modifier
             .size(54.dp)
             .onFocusChanged { focused = it.isFocused }
-            .focusable(interactionSource = interaction)
+            // No `focusable()` beside this. `clickable` is already a focus target, and
+            // adding another puts the focus on the outer one while the inner one is what
+            // handles OK — which is a control the remote can highlight and never activate.
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .clip(RoundedCornerShape(14.dp))
             .then(
@@ -103,7 +104,15 @@ private fun RailItem(icon: ImageVector, selected: Boolean, onClick: () -> Unit) 
     }
 }
 
-enum class TvDestination(val icon: ImageVector) {
-    Favorites(SoccertimeIcons.Star),
-    Agenda(SoccertimeIcons.Calendar),
-}
+/**
+ * The icon is not a property of the destination: it is a resource, and resolving one happens
+ * inside composition. Holding it here would have meant loading it before there was a context
+ * to load it from.
+ */
+enum class TvDestination { Favorites, Agenda }
+
+private val TvDestination.icon: ImageVector
+    @Composable get() = when (this) {
+        TvDestination.Favorites -> SoccertimeIcons.Star
+        TvDestination.Agenda -> SoccertimeIcons.Calendar
+    }

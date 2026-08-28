@@ -3,7 +3,6 @@ package es.mojon.soccertime.tv.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -217,7 +216,9 @@ private fun ChannelItem(channel: ChannelLinks, selected: Boolean, onSelect: () -
                 focused = it.isFocused
                 if (it.isFocused) onSelect()
             }
-            .focusable(interactionSource = interaction)
+            // No `focusable()` beside this. `clickable` is already a focus target, and
+            // adding another puts the focus on the outer one while the inner one is what
+            // handles OK — which is a control the remote can highlight and never activate.
             .clickable(interactionSource = interaction, indication = null, onClick = onSelect)
             .background(if (selected || focused) Color(Palette.CARD_BORDER) else Color.Transparent)
             .padding(start = 17.dp, end = 20.dp),
@@ -287,7 +288,6 @@ private fun LinkTile(number: Int, onOpen: () -> Unit, focusRequester: FocusReque
             .size(width = 60.dp, height = 46.dp)
             .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
             .onFocusChanged { focused = it.isFocused }
-            .focusable(interactionSource = interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onOpen)
             .clip(RoundedCornerShape(11.dp))
             .then(
