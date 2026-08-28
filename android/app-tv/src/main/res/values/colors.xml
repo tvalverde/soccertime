@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Kept in step with `es.mojon.soccertime.core.ui.Palette`, which is the definition. -->
+    <color name="background">#FF131313</color>
+    <color name="header">#FF0E0E0E</color>
+</resources>

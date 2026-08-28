@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format android-build android-test android-lint android-clean android-release android-install-mobile android-install-tv
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -19,6 +19,15 @@ help:
 	@echo "  lint-fix             Fix auto-fixable linting errors"
 	@echo "  prune-images         Drop this project's superseded images from this machine"
 	@echo "  format               Format code with ruff"
+	@echo ""
+	@echo "ANDROID (host toolchain: JDK + Android SDK, not the container):"
+	@echo "  android-build        Assemble both debug APKs"
+	@echo "  android-test         Run the JVM unit tests"
+	@echo "  android-lint         Run Android Lint on every module"
+	@echo "  android-clean        Drop the Gradle build output"
+	@echo "  android-release      Assemble the signed release APKs (needs the keystore)"
+	@echo "  android-install-mobile  Install the phone app on the attached device"
+	@echo "  android-install-tv   Install the TV app over the network (ADB_HOST=192.168.1.42)"
 	@echo ""
 	@echo "DEPLOY:"
 	@echo "  deploy-production    Full deploy (pull the published image and hand over)"
@@ -160,6 +169,55 @@ test-integration:
 # Run tests with coverage report
 test-cov:
 	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest -m "not integration" --cov --cov-report=term-missing
+
+# === Android Commands ===
+#
+# The apps under `android/` build with their own toolchain and share nothing with the Django
+# container: Gradle runs on the host, against a JDK and an Android SDK it expects to find
+# there. These targets exist for the same reason the deploy ones do — so the command that was
+# run is written down rather than remembered.
+#
+# Sideloading is not a convenience. The three things that decide whether these apps work at
+# all — the TLS handshake on Android 7.1, whether anything answers an `acestream://` intent,
+# and whether every control can be reached with a D-pad — are invisible to an emulator and to
+# the unit suite, and `android-install-tv` is how they get in front of the real hardware.
+ANDROID_DIR := android
+GRADLEW := ./gradlew
+ADB ?= adb
+ADB_PORT ?= 5555
+
+android-build:
+	@cd $(ANDROID_DIR) && $(GRADLEW) assembleDebug
+
+android-test:
+	@cd $(ANDROID_DIR) && $(GRADLEW) testDebugUnitTest
+
+android-lint:
+	@cd $(ANDROID_DIR) && $(GRADLEW) lint
+
+android-clean:
+	@cd $(ANDROID_DIR) && $(GRADLEW) clean
+
+# Signed, and therefore only from a machine holding the keystore. CI does this from a secret
+# on an `android-v*` tag; this is the rehearsal of that, not a second way to release.
+android-release:
+	@cd $(ANDROID_DIR) && $(GRADLEW) assembleRelease
+
+android-install-mobile:
+	@cd $(ANDROID_DIR) && $(GRADLEW) :app-mobile:installDebug
+
+# The Fire TV has no USB port to plug into, so it is reached over the network: enable ADB
+# debugging in Developer options, read the address from Settings, and pass it here.
+# Usage: make android-install-tv ADB_HOST=192.168.1.42
+android-install-tv:
+	@if [ -z "$(ADB_HOST)" ]; then \
+		echo "Usage: make android-install-tv ADB_HOST=<the Fire TV's address>"; \
+		echo "  Enable it first in Settings > My Fire TV > Developer options > ADB debugging."; \
+		exit 1; \
+	fi
+	@$(ADB) connect $(ADB_HOST):$(ADB_PORT)
+	@cd $(ANDROID_DIR) && $(GRADLEW) :app-tv:installDebug
+	@echo "Installed. Read what it does with: $(ADB) -s $(ADB_HOST):$(ADB_PORT) logcat -s Soccertime:V"
 
 # Capture a page for visual review, with no browser extension involved.
 # Firefox goes first, but on a desktop with Firefox already open it often hands the URL

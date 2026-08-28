@@ -25,3 +25,19 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+
+  # The Android apps. Every version they pin lives in `android/gradle/libs.versions.toml`,
+  # which is the manifest Dependabot reads for this ecosystem — the directory below is the
+  # project root, not the catalog's own. Grouped, because a Gradle plugin, Kotlin and the
+  # Compose compiler move together and three separate pull requests would each fail to
+  # build alone.
+  - package-ecosystem: gradle
+    directory: "/android"
+    schedule:
+      interval: weekly
+    groups:
+      android-toolchain:
+        patterns:
+          - "com.android.*"
+          - "org.jetbrains.kotlin*"
+          - "androidx.compose*"

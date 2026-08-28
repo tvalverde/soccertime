@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        The activity's window only, before Compose draws anything. Everything else is a
+        Compose theme; this exists so the first frame is the site's near-black rather than
+        the platform's white, which is what a splash flash actually is.
+    -->
+    <style name="Theme.Soccertime.Tv" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@color/header</item>
+        <item name="android:navigationBarColor">@color/header</item>
+    </style>
+</resources>

@@ -8,6 +8,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Two native Android applications under `android/`**, reading the same public API the site
+  serves: `es.mojon.soccertime` for a phone and `es.mojon.soccertime.tv` for the Fire TV
+  Stick 4K, over one shared `:core` module holding everything that is not a screen. Different
+  application ids, so both install on one device; the television registers under
+  `LEANBACK_LAUNCHER`, which is the only category the Fire TV home screen lists.
+
+  **`minSdk` is 25 because the Fire TV is Android 7.1, and that decides most of what follows.**
+  `java.time` does not exist there and every instant this app handles is an ISO-8601 string
+  with an offset, so core library desugaring carries `OffsetDateTime` down rather than a
+  second date library. More seriously, `www.mojon.es` presents a chain that anchors at
+  **ISRG Root X1** — today by way of Root YR cross-signed from it — and the trust store on
+  that hardware is Amazon's, not Google's. There is no fallback to fail over to, because the
+  site sends HSTS and redirects `http`, so a handshake that fails is a blank app rather than
+  a degraded one. Both root generations are bundled through a `network_security_config.xml`
+  declared in `:core`'s manifest, where neither application can ship having forgotten it, and
+  the four certificates were checked to be inside the built APK rather than merely in the
+  source tree.
+
+  Times are rendered in the **device's** zone, deliberately unlike the site, which shows
+  Madrid's to everybody. That is right for a page whose readers are all watching Spanish
+  television and wrong for something carried: a phone in the Canaries shows 16:00 for the
+  kick-off the site calls 17:00, and shows it under the day it falls on there — which for a
+  late kick-off is the day before. Both the clock and the zone are injected, because a test
+  that read either from the machine would pass in Madrid in August and nowhere else.
+
+  Favourites are held on the device, since the API has no per-caller state, and the rule that
+  decides what they cover is `EventQuerySet.for_selection` rather than `favorites()`: a team
+  on either side of a match, or the event's competition for any event type including matches,
+  with an empty selection covering nothing. One request fetches the window and the filter runs
+  locally — one request per followed team would spend a rate limit that is thirty a minute per
+  address and shared by every device in the house.
+
+  Playing a link requires no particular player and names none: the URL is handed to the system
+  exactly as the API returned it, and the system decides who answers. No installation check,
+  no `<queries>` block, no chooser wrapper that would override a default the reader has set.
+  When nothing answers, the app says so and offers to copy or share the link.
+
+  44 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
+  unfiltered so gitleaks keeps reading pushes that touch only `android/` —
+  `test_android_workflow.py` refuses a `paths` filter there, because adding one looks like a
+  tidy-up and would quietly stop scanning the tree where keystore passwords live.
 - **A read-only REST API under `/api/v1/`**, serving everything the site shows — the events
   listing with its matches, races and simple events flattened into one shape, the
   competitions, sports, teams and flags behind it, the channel directory and the owner's

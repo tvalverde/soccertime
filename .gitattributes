@@ -1,0 +1,5 @@
+# Gradle's Windows launcher is a batch file, and a batch file with Unix line endings fails on
+# the shell that runs it. Git would otherwise normalise it on checkout like every other text
+# file here, so it is pinned. Nothing else in this repository is Windows-specific.
+*.bat text eol=crlf
+gradlew text eol=lf

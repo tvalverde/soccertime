@@ -25,6 +25,10 @@ ECOSYSTEM_OF = {
     "pip": list(ROOT.glob("requirements*.txt")),
     "github-actions": list((ROOT / ".github" / "workflows").glob("*.yml")),
     "docker": [ROOT / "Dockerfile"],
+    # The Android project's version catalog. Every version the two apps pin — the Gradle
+    # plugin, Kotlin, Compose, OkHttp — is written there and nowhere else, so watching this
+    # one file watches the whole of it.
+    "gradle": [ROOT / "android" / "gradle" / "libs.versions.toml"],
 }
 
 

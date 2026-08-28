@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Soccertime</string>
+    <string name="loading">Cargando la agenda…</string>
+    <string name="error_offline">Sin conexión con el servidor.</string>
+    <string name="error_rate_limited">Demasiadas consultas seguidas. Inténtalo en unos segundos.</string>
+    <string name="error_http">El servidor respondió %1$d.</string>
+    <string name="error_unexpected">No se ha podido leer la respuesta.</string>
+</resources>

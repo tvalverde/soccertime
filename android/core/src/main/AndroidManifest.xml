@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Declared once here rather than twice in the applications. A library manifest's
+    `<application>` attributes merge into whatever applies it, so both apps get the trust
+    anchors and neither can be shipped having forgotten them.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+
+</manifest>
