@@ -51,6 +51,20 @@ class EventTimes(
     fun dayOf(iso: String): LocalDate? = at(iso)?.toLocalDate()
 
     /**
+     * Today, where the reader is.
+     *
+     * Here rather than at each caller because there were two answers to this question and they
+     * disagreed: the headings asked the device's zone while the window asked UTC, so between
+     * midnight and two in the morning in Spain the agenda fetched the day before the one every
+     * heading on it named. One definition, and the labels and the window cannot drift apart.
+     *
+     * The instant is taken from the clock and placed in the injected zone, rather than handing
+     * the clock a zone and trusting it to keep it. Only the instant is ever asked of the clock
+     * anywhere in this class, which is the one thing every clock answers the same way.
+     */
+    fun today(): LocalDate = clock.instant().atZone(zone).toLocalDate()
+
+    /**
      * `AYER · JUE 27 AGO`, `HOY · VIE 28 AGO`, or `SÁBADO 30 AGOSTO`. Upper case because it is
      * a section heading and the design sets it in letter-spaced capitals; `Locale` matters
      * here, since Turkish would otherwise turn a dotted i into one nobody typed.
@@ -62,7 +76,7 @@ class EventTimes(
      */
     fun dayLabel(iso: String): String {
         val day = dayOf(iso) ?: return ""
-        val today = LocalDate.now(clock.withZone(zone))
+        val today = today()
         val named = when (day) {
             today.minusDays(1) -> YESTERDAY
             today -> TODAY

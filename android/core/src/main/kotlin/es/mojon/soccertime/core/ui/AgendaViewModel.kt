@@ -63,7 +63,13 @@ class AgendaViewModel(
     private val events: EventsRepository,
     private val presenter: EventPresenter,
     private val clock: Clock = Clock.systemUTC(),
-    private val today: LocalDate = LocalDate.now(clock),
+    /**
+     * Taken from the presenter, which is the only thing here that knows where the reader is.
+     * Asking `LocalDate.now(clock)` was asking UTC: in Spain, between midnight and two in the
+     * morning, that is yesterday — so the window fetched was the day before the one every
+     * heading on it named, in exactly the hours this two-day window exists to serve.
+     */
+    private val today: LocalDate = presenter.times.today(),
     favorites: Flow<Favorites> = flowOf(Favorites.NONE),
 ) : ViewModel() {
 
@@ -151,10 +157,12 @@ class AgendaViewModel(
             fetch(query, appending = true)
             return
         }
-        fetch(query, appending = false)
-        // Only worth a second request once the first one has something to add to. If today
-        // failed, the screen is already showing the failure and yesterday would not fix it.
-        if (loadedFor == query) fetchYesterday(query)
+        // Strictly the result of *this* request, never a comparison against what was loaded
+        // before. On a refresh the previous query is the same one, so "did the state move"
+        // answers yes whether or not today came back — and prepending yesterday onto a list
+        // that already held it produced two rows per event, duplicate keys, and a crash in
+        // the list rather than the failure banner the reader should have seen.
+        if (fetch(query, appending = false)) fetchYesterday(query)
     }
 
     /**
@@ -179,7 +187,8 @@ class AgendaViewModel(
         }
     }
 
-    private suspend fun fetch(query: Query, appending: Boolean) {
+    /** True when the day arrived, which is what decides whether the second request is made. */
+    private suspend fun fetch(query: Query, appending: Boolean): Boolean {
         state.value = state.value.copy(loading = true, error = null)
 
         val answer = events.onDate(query.asRequest(day = today, newestFirst = false))
@@ -219,6 +228,7 @@ class AgendaViewModel(
                 )
             }
         }
+        return answer is ApiResult.Success
     }
 
     /** A single letter narrows nothing and costs a request across six joined tables. */

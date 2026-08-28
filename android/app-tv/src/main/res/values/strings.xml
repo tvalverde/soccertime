@@ -23,6 +23,13 @@
     <string name="first_run_body_tv">En la agenda, pulsa el botón ☰ del mando sobre cualquier evento para seguir a sus equipos o a su competición. Esta pantalla mostrará entonces solo lo tuyo.</string>
 
     <string name="try_the_next_one">Si uno no arranca, prueba el siguiente. ATRÁS vuelve a la lista.</string>
+    <string name="opened_try_the_next_one">Enlace abierto. Si no ha ido bien, prueba el siguiente sin salir de aquí.</string>
+    <string name="hint_open">ver canales</string>
+    <string name="hint_follow">seguir equipo o competición</string>
+    <string name="hint_rail">menú</string>
+    <string name="hint_filter_open">abrir su agenda</string>
+    <string name="hint_down_to_events">bajar a los eventos</string>
+    <string name="hint_back_to_favorites">volver a Favoritos</string>
     <string name="no_link_explained">Sin enlace: el evento se emite ahí, pero no hay nada que abrir.</string>
     <string name="no_handler_title">Ninguna app abre este enlace</string>
     <string name="no_handler_body_tv">No hay ninguna aplicación instalada en este dispositivo que atienda los enlaces %1$s.</string>

@@ -85,22 +85,31 @@ fun TvEventRow(
             .height(ROW_HEIGHT)
             .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
             .onFocusChanged { focused = it.isFocused }
-            // The remote's menu button is what Fire OS uses for "options for this thing", so
-            // it does not compete with OK, which opens the links. It answers on every row,
-            // including the ones with nothing to play — most of the agenda, and exactly where
-            // a team worth following turns up.
+            // Two of the remote's own keys, neither of which the D-pad can reach.
+            //
+            // MENU is what Fire OS uses for "options for this thing", so it does not compete
+            // with OK. It answers on every row, including the ones with nothing to play —
+            // most of the agenda, and exactly where a team worth following turns up.
+            //
+            // PLAY is the key a hand reaches for on a listing of things to watch, and it did
+            // nothing at all: a remote with a play button on it, pointed at a row, is asking
+            // to be shown where the match is on. It does what OK does.
             .onKeyEvent { key ->
-                if (key.type == KeyEventType.KeyDown && key.key == Key.Menu) {
-                    onFollow()
-                    true
-                } else {
+                if (key.type != KeyEventType.KeyDown) {
                     false
+                } else {
+                    when (key.key) {
+                        Key.Menu -> { onFollow(); true }
+                        in TvPlayKeys -> { onOpen(); true }
+                        else -> false
+                    }
                 }
             }
             // No `focusable()` beside this. `clickable` is already a focus target, and
             // adding another puts the focus on the outer one while the inner one is what
             // handles OK — which is a control the remote can highlight and never activate.
             .clickable(interactionSource = interaction, indication = null, onClick = onOpen)
+            .cursorHalo(focused, radius = RADIUS, grow = false)
             .clip(RoundedCornerShape(RADIUS))
             .background(
                 if (focused) Color(Palette.CARD_BORDER) else MaterialTheme.colorScheme.surface,
@@ -210,6 +219,9 @@ fun TvEventRow(
 
         // Nothing at all when there is nothing to open. An empty ring is a control the eye
         // looks for a meaning in and does not find one.
+        //
+        // Nor is this a focus target. The row is one, and RIGHT along it goes nowhere by
+        // design — what opens the links is OK, or the remote's own play key, anywhere on it.
         if (event.openable) {
             Box(
                 Modifier

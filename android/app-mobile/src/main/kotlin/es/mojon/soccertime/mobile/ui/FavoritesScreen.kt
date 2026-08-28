@@ -32,7 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import es.mojon.soccertime.core.data.FollowedItem
 import es.mojon.soccertime.core.data.Following
+import es.mojon.soccertime.core.ui.AgendaFilter
 import es.mojon.soccertime.core.ui.EventUi
+import es.mojon.soccertime.core.ui.FollowableKind
 import es.mojon.soccertime.core.ui.FavoritesIntent
 import es.mojon.soccertime.core.ui.FavoritesUiState
 import es.mojon.soccertime.core.ui.Palette
@@ -47,6 +49,7 @@ fun FavoritesScreen(
     onEdit: () -> Unit,
     onBrowseAgenda: () -> Unit,
     onOpen: (EventUi) -> Unit,
+    onNarrow: (AgendaFilter) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (state.chosenNothing) {
@@ -69,7 +72,7 @@ fun FavoritesScreen(
             EditButton(onEdit)
         }
 
-        FollowedStrip(following = following, onEdit = onEdit)
+        FollowedStrip(following = following, onEdit = onEdit, onNarrow = onNarrow)
 
         state.error?.let {
             FailureBanner(
@@ -130,14 +133,21 @@ private fun EditButton(onEdit: () -> Unit) {
  * appears before the first response arrives.
  */
 @Composable
-private fun FollowedStrip(following: Following, onEdit: () -> Unit) {
-    val entries = following.teams + following.competitions
+private fun FollowedStrip(
+    following: Following,
+    onEdit: () -> Unit,
+    onNarrow: (AgendaFilter) -> Unit,
+) {
+    val entries = following.teams.map { it to FollowableKind.Teams } +
+        following.competitions.map { it to FollowableKind.Competitions }
     LazyRow(
         Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        items(entries, key = { "${it.name}-${it.id}" }) { item ->
-            FollowedAvatar(item, accent = item in following.competitions)
+        items(entries, key = { (item, kind) -> "$kind-${item.id}" }) { (item, kind) ->
+            FollowedAvatar(item, kind) {
+                onNarrow(AgendaFilter(item.id, item.name, item.imageUrl, kind))
+            }
         }
         item(key = "add") {
             Column(
@@ -170,10 +180,17 @@ private fun FollowedStrip(following: Following, onEdit: () -> Unit) {
     }
 }
 
+/**
+ * One followed thing, and a way into its agenda.
+ *
+ * It was a legend before, which left a row of crests on the screen the app opens on that
+ * answered to nothing. A press has only ever had one reading: show me this team.
+ */
 @Composable
-private fun FollowedAvatar(item: FollowedItem, accent: Boolean) {
+private fun FollowedAvatar(item: FollowedItem, kind: FollowableKind, onNarrow: () -> Unit) {
+    val accent = kind == FollowableKind.Competitions
     Column(
-        Modifier.width(52.dp),
+        Modifier.width(52.dp).clickable(onClick = onNarrow),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -189,7 +206,7 @@ private fun FollowedAvatar(item: FollowedItem, accent: Boolean) {
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Crest(item.imageUrl, size = 26.dp, rounded = 3.dp)
+            Crest(item.imageUrl, size = 26.dp, rounded = if (accent) 3.dp else 13.dp)
         }
         Text(
             text = item.name,

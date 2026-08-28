@@ -161,6 +161,27 @@ data class AgendaDay(
     val events: List<EventUi>,
 )
 
+/**
+ * Where the anchor sits among a listing's items, day headings counted.
+ *
+ * Both applications scroll a list whose items are headings interleaved with events, and both
+ * were walking it themselves. An off-by-one here lands the reader on the wrong hour, which is
+ * not a thing worth being wrong about in two places. Null when there is no anchor or it is not
+ * on this listing.
+ */
+fun anchorPosition(anchorId: Int?, days: List<AgendaDay>): Int? {
+    if (anchorId == null) return null
+    var index = 0
+    days.forEach { day ->
+        index++
+        day.events.forEach { event ->
+            if (event.id == anchorId) return index
+            index++
+        }
+    }
+    return null
+}
+
 data class EventUi(
     val id: Int,
     val time: String,

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -21,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,10 +31,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import es.mojon.soccertime.core.ui.AgendaDay
 import es.mojon.soccertime.core.ui.AgendaIntent
+import es.mojon.soccertime.core.ui.AgendaFilter
+import es.mojon.soccertime.core.ui.anchorPosition
 import es.mojon.soccertime.core.ui.AgendaUiState
 import es.mojon.soccertime.core.ui.EventUi
 import es.mojon.soccertime.core.ui.Palette
@@ -56,6 +62,7 @@ fun AgendaScreen(
         Filters(
             state = state,
             onWatchableOnly = { onIntent(AgendaIntent.OnlyWatchable(it)) },
+            onClearFilter = { onIntent(AgendaIntent.Narrow(null)) },
             modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
         )
 
@@ -89,6 +96,7 @@ fun AgendaScreen(
                 canLoadMore = state.canLoadMore,
                 onLoadMore = { onIntent(AgendaIntent.LoadMore) },
                 onOpen = onOpen,
+                anchorId = state.anchorId,
             )
         }
     }
@@ -102,8 +110,26 @@ fun EventList(
     onLoadMore: () -> Unit,
     onOpen: (EventUi) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * The event to open on: the first that has not finished. The list spans yesterday and
+     * today, so its top is the small hours of a day already gone — scrolling there and asking
+     * the reader to find the present would be the wrong end of a hundred and sixty rows.
+     */
+    anchorId: Int? = null,
 ) {
+    val listState = rememberLazyListState()
+
+    // With no anchor — four in the morning, everything in the window over — the end of the
+    // list, not the top: the top is the small hours of a day already gone.
+    val opensOn = remember(days, anchorId) {
+        anchorPosition(anchorId, days) ?: (days.sumOf { 1 + it.events.size } - 1)
+    }
+    LaunchedEffect(days.firstOrNull()?.date, anchorId) {
+        if (days.isNotEmpty()) runCatching { listState.scrollToItem(opensOn.coerceAtLeast(0)) }
+    }
+
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = 14.dp,
@@ -211,19 +237,84 @@ fun SearchField(query: String, onQuery: (String) -> Unit, modifier: Modifier = M
 private fun Filters(
     state: AgendaUiState,
     onWatchableOnly: (Boolean) -> Unit,
+    onClearFilter: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        FilterChip(
-            label = stringResource(R.string.filter_today),
-            selected = false,
-            leading = SoccertimeIcons.Calendar,
-            onClick = { },
-        )
+        val filter = state.filter
+        if (filter != null) {
+            NarrowingChip(filter, onClearFilter)
+        } else {
+            // The window, stated rather than offered. It was drawn as a chip that looked
+            // pressable and answered to nothing; moving between days is a later job, and
+            // until it exists this should not pretend to be the control that does it.
+            WindowLabel()
+        }
         FilterChip(
             label = stringResource(R.string.filter_watchable),
             selected = state.watchableOnly,
             onClick = { onWatchableOnly(!state.watchableOnly) },
+        )
+    }
+}
+
+@Composable
+private fun WindowLabel() {
+    Row(
+        Modifier.height(34.dp).padding(end = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = SoccertimeIcons.Calendar,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            text = stringResource(R.string.filter_today),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/**
+ * The followed thing the agenda is narrowed to.
+ *
+ * It carries the crest and the name — the value, not the kind — because "Competición" would
+ * read as a category filter rather than as the competition the reader pressed. The cross is
+ * how it is undone, and system BACK does the same thing.
+ */
+@Composable
+private fun NarrowingChip(filter: AgendaFilter, onClear: () -> Unit) {
+    Row(
+        Modifier
+            .height(34.dp)
+            .clip(RoundedCornerShape(50))
+            .background(Color(Palette.SECONDARY_TINT))
+            .border(1.dp, MaterialTheme.colorScheme.secondary, RoundedCornerShape(50))
+            .clickable(onClick = onClear)
+            .padding(start = 7.dp, end = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Crest(filter.imageUrl, size = 18.dp, rounded = 3.dp)
+        Text(
+            text = filter.name,
+            color = MaterialTheme.colorScheme.secondary,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Icon(
+            imageVector = SoccertimeIcons.Close,
+            contentDescription = stringResource(R.string.clear_filter),
+            tint = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.size(14.dp),
         )
     }
 }

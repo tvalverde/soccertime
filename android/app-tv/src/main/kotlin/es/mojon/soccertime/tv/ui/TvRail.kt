@@ -32,9 +32,7 @@ import es.mojon.soccertime.core.ui.SoccertimeIcons
  * The navigation rail, which is where LEFT from the list goes.
  *
  * Icons only. A television has no room to spend on a permanent sidebar of labels, and the two
- * destinations here are a star and a calendar — both of which say what they are. The item
- * under focus takes the neon fill, so pressing LEFT is visibly answered before anything is
- * chosen.
+ * destinations here are a star and a calendar — both of which say what they are.
  */
 @Composable
 fun TvRail(
@@ -66,6 +64,14 @@ fun TvRail(
     }
 }
 
+/**
+ * Selected and focused are drawn with different resources on purpose.
+ *
+ * They used to share a `when`, with `selected` resolved first — so arriving at the icon of the
+ * screen you were already on changed nothing at all, and the cursor appeared to disappear.
+ * They are orthogonal: the neon fill says which screen this is, the halo says where the remote
+ * is, and on the one that is both a keyline in the background colour keeps them apart.
+ */
 @Composable
 private fun RailItem(icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
@@ -79,14 +85,28 @@ private fun RailItem(icon: ImageVector, selected: Boolean, onClick: () -> Unit) 
             // adding another puts the focus on the outer one while the inner one is what
             // handles OK — which is a control the remote can highlight and never activate.
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .clip(RoundedCornerShape(14.dp))
+            .cursorHalo(focused, radius = RADIUS, onFilledSurface = selected)
+            .clip(RoundedCornerShape(RADIUS))
             .then(
                 when {
                     selected -> Modifier.background(MaterialTheme.colorScheme.primary)
-                    focused -> Modifier
-                        .background(Color(Palette.CARD_BORDER))
-                        .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp))
+                    focused -> Modifier.background(Color(Palette.CARD_BORDER))
                     else -> Modifier
+                },
+            )
+            .then(
+                if (focused) {
+                    Modifier.border(
+                        width = 2.dp,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.background
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        shape = RoundedCornerShape(RADIUS),
+                    )
+                } else {
+                    Modifier
                 },
             ),
         contentAlignment = Alignment.Center,
@@ -94,10 +114,12 @@ private fun RailItem(icon: ImageVector, selected: Boolean, onClick: () -> Unit) 
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (selected) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                Color(Palette.ON_BACKGROUND_MUTED)
+            tint = when {
+                selected -> MaterialTheme.colorScheme.onPrimary
+                // Brightened under the cursor. Leaving it muted was the other half of why
+                // arriving here read as nothing having happened.
+                focused -> MaterialTheme.colorScheme.onBackground
+                else -> Color(Palette.ON_BACKGROUND_MUTED)
             },
             modifier = Modifier.size(24.dp),
         )
@@ -116,3 +138,5 @@ private val TvDestination.icon: ImageVector
         TvDestination.Favorites -> SoccertimeIcons.Star
         TvDestination.Agenda -> SoccertimeIcons.Calendar
     }
+
+private val RADIUS = 14.dp

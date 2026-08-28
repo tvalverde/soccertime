@@ -2,6 +2,7 @@ package es.mojon.soccertime.mobile
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,6 +51,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import es.mojon.soccertime.core.playback.LinkSharing
 import es.mojon.soccertime.core.playback.PlayResult
+import es.mojon.soccertime.core.ui.AgendaFilter
 import es.mojon.soccertime.core.ui.AgendaIntent
 import es.mojon.soccertime.core.ui.EventLinks
 import es.mojon.soccertime.core.ui.FavoritesIntent
@@ -88,12 +90,15 @@ private fun Soccertime(models: Models) {
 
     var showing: EventLinks? by remember { mutableStateOf(null) }
     var unopenable: PlayResult.NoHandler? by remember { mutableStateOf(null) }
+    // Chosen on the favourites screen, applied on the agenda: two destinations with two view
+    // models, so it is held above both rather than passed between them.
+    var narrowing: AgendaFilter? by remember { mutableStateOf(null) }
 
     val copied = stringResource(R.string.link_copied)
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { BottomBar(navController) },
+        bottomBar = { BottomBar(navController) { narrowing = null } },
         snackbarHost = { SnackbarHost(snackbars) },
     ) { padding ->
         NavHost(
@@ -116,6 +121,10 @@ private fun Soccertime(models: Models) {
                     onEdit = { navController.navigate(Routes.MANAGE) },
                     onBrowseAgenda = { navController.navigate(Routes.AGENDA) },
                     onOpen = { showing = favorites.linksFor(it.id) },
+                    onNarrow = {
+                        narrowing = it
+                        navController.navigateTop(Routes.AGENDA)
+                    },
                 )
             }
 
@@ -123,10 +132,19 @@ private fun Soccertime(models: Models) {
                 val agenda = viewModel<es.mojon.soccertime.core.ui.AgendaViewModel>(factory = models.agenda)
                 val state by agenda.uiState.collectAsStateWithLifecycle()
                 LaunchedEffect(Unit) { agenda.onIntent(AgendaIntent.Resumed) }
+                LaunchedEffect(narrowing) { agenda.onIntent(AgendaIntent.Narrow(narrowing)) }
+
+                // BACK undoes the filter before it leaves the tab, so the press that arrived
+                // here from a crest is the press that leaves — rather than dropping the reader
+                // into the whole two-day agenda, a screen they never asked for.
+                BackHandler(enabled = narrowing != null) { narrowing = null }
 
                 AgendaScreen(
                     state = state,
-                    onIntent = agenda::onIntent,
+                    onIntent = { intent ->
+                        if (intent is AgendaIntent.Narrow) narrowing = intent.filter
+                        agenda.onIntent(intent)
+                    },
                     onOpen = { showing = agenda.linksFor(it.id) },
                 )
             }
@@ -177,7 +195,7 @@ private fun Soccertime(models: Models) {
 }
 
 @Composable
-private fun BottomBar(navController: NavHostController) {
+private fun BottomBar(navController: NavHostController, onLeaveFilter: () -> Unit) {
     val entry by navController.currentBackStackEntryAsState()
     val route = entry?.destination?.route ?: Routes.FAVORITES
     if (route == Routes.MANAGE) return
@@ -201,7 +219,12 @@ private fun BottomBar(navController: NavHostController) {
             icon = SoccertimeIcons.Calendar,
             selected = route == Routes.AGENDA,
             modifier = Modifier.weight(1f),
-        ) { navController.navigateTop(Routes.AGENDA) }
+        ) {
+            // Tapping the tab you are already on means "show me the agenda", not "show me the
+            // one team I pressed a crest for ten seconds ago".
+            onLeaveFilter()
+            navController.navigateTop(Routes.AGENDA)
+        }
     }
 }
 
