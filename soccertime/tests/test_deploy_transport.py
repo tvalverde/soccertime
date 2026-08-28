@@ -126,6 +126,52 @@ class TestWhatTheServerStillNeedsSent:
         assert "upload-compose" not in prerequisites("remote-apply-config")
 
 
+class TestClearingTheCodeTheServerNoLongerRuns:
+    """The deploy stopped sending code, so what it sent last is still lying there.
+
+    Harmless as bytes — 2.8 MB of a checkout nothing reads — and misleading as evidence: it
+    looks like the code production runs, and it is whatever commit was deployed the last time
+    a deploy uploaded anything. Somebody reading it during an incident would be reading the
+    past.
+
+    What makes removing it delicate is that two files in that same directory are load-bearing,
+    and neither looks it from there. The host's `~/docker/docker-compose.yml` does not define
+    this service, it `include`s `compose.production.yaml` from here — and an `include` of a
+    missing file fails every `docker compose` command on that machine, not only this one — and
+    `.env.production` is where the container gets its secret key. So the target names what
+    stays rather than what goes, and refuses to run at all if either is already absent, which
+    is the state in which "delete everything else" would be a way to finish the job.
+    """
+
+    def test_the_two_files_the_host_reads_are_kept(self):
+        commands = recipe("prune-remote-app-path")
+
+        assert '! -name "$(COMPOSE_PROD_FILE)"' in commands
+        assert '! -name "$(ENV_PROD_FILE)"' in commands
+
+    def test_it_refuses_to_run_when_either_is_already_missing(self):
+        """Guards the test above: keeping a file that is not there deletes the rest anyway."""
+        commands = recipe("prune-remote-app-path")
+
+        assert "test -f $(COMPOSE_PROD_FILE)" in commands
+        assert "test -f $(ENV_PROD_FILE)" in commands
+        assert "exit 1" in commands
+
+    def test_it_cannot_reach_outside_the_application_directory(self):
+        """`cd` first and search one level down from `.`, so no path it builds is absolute."""
+        commands = recipe("prune-remote-app-path")
+
+        assert "cd $(REMOTE_APP_PATH)" in commands
+        assert "find . -mindepth 1 -maxdepth 1" in commands
+        assert "rm -rf /" not in commands
+
+    def test_it_says_what_it_is_about_to_remove(self):
+        """A deletion nobody can read beforehand is one nobody can refuse."""
+        commands = recipe("prune-remote-app-path")
+
+        assert commands.index("-print") < commands.index("-exec rm -rf")
+
+
 class TestTheTagIsTheOneThatWasPublished:
     def test_the_deploy_asks_for_the_commit_it_is_deploying(self):
         assert re.search(r"(?m)^DEPLOY_TAG \?= *sha-\$\(shell git rev-parse HEAD\)", MAKEFILE.read_text())

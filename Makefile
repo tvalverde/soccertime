@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -40,6 +40,7 @@ help:
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
 	@echo "  remote-import-links  Import channel links (SOURCE=, FILE=, ARGS=--dry)"
 	@echo "  prune-remote-images  Drop this project's superseded images, keeping :previous"
+	@echo "  prune-remote-app-path Drop the code left on the server by the old deploy"
 	@echo "  remote-apply-config  Upload .env.production and recreate the container"
 	@echo "  remote-admin-on      Expose the admin on production (remember to turn it off)"
 	@echo "  remote-admin-off     Remove the admin from production's URLs entirely"
@@ -751,6 +752,34 @@ prune-remote-images:
 	@echo "--- Removing superseded $(APP_NAME) images (keeping :previous) ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		docker image prune -f --filter label=org.opencontainers.image.title=$(APP_NAME) \
+	'
+
+# What is left in the application directory now that a deploy sends an image instead of code:
+# the checkout the last archive-based deploy unpacked. Nothing reads it — the only reference
+# to that directory anywhere on the host is the `include` of the compose file, and the
+# containers mount named volumes and `~/shared`, nothing from there — but it still looks like
+# the code production runs, and it is whatever commit was deployed the last time a deploy
+# uploaded anything. Read during an incident, it would be evidence about the past.
+#
+# Two files in that same directory are load-bearing and do not look it from there: the host's
+# compose `include`s `$(COMPOSE_PROD_FILE)`, and an `include` of a missing file fails every
+# `docker compose` command on that machine rather than just this service, and
+# `$(ENV_PROD_FILE)` is where the container reads its secret key. So this names what stays
+# rather than what goes, and refuses to run at all if either is already absent — the state in
+# which "delete everything else" would be a way to finish the job rather than start it.
+prune-remote-app-path:
+	@echo "--- Removing from $(REMOTE_APP_PATH) everything but the files the host reads ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		set -e; \
+		cd $(REMOTE_APP_PATH); \
+		{ test -f $(COMPOSE_PROD_FILE) && test -f $(ENV_PROD_FILE); } || { \
+			echo "Refusing: one of the two files the host reads is not here. Run make upload-compose upload-config first."; \
+			exit 1; \
+		}; \
+		find . -mindepth 1 -maxdepth 1 ! -name "$(COMPOSE_PROD_FILE)" ! -name "$(ENV_PROD_FILE)" -print; \
+		find . -mindepth 1 -maxdepth 1 ! -name "$(COMPOSE_PROD_FILE)" ! -name "$(ENV_PROD_FILE)" -exec rm -rf {} +; \
+		echo "--- What is left ---"; \
+		ls -A \
 	'
 
 # The local production replica, whose stack is three files. Kept here so the incantation is

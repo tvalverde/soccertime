@@ -106,6 +106,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrives on the server, at the pull. Only a push publishes, never a pull request, which may
   come from a fork; and the registry write is granted to that job alone, so the job that runs
   the tests cannot publish anything.
+- **`make prune-remote-app-path`**, which removes the code the server no longer runs. Deploys
+  stopped uploading an archive, so what the last one unpacked stayed where it was: 2.8 MB of a
+  checkout that nothing reads and that still looks like the code production is serving —
+  whatever commit was deployed the last time a deploy sent any. Read during an incident, it is
+  evidence about the past. Two files in that directory are load-bearing and do not look it
+  from there, so the target names what stays rather than what goes: the host's compose
+  `include`s `compose.production.yaml` from there, and an `include` of a missing file fails
+  every `docker compose` command on that machine rather than only this service, and
+  `.env.production` is where the container reads its secret key. It refuses to run if either
+  is already absent, prints what it will remove before removing it, and never builds a path
+  that is not relative to that directory. Run against production: 28 entries gone, 2.8 MB down
+  to 20 KB, the host's compose still resolving all six of its services and every page 200.
 - **Dependabot proposes the updates nothing else was proposing.** Twelve pinned production
   dependencies, Django, DRF and Pillow among them, and no alerts and no update pull requests:
   a published advisory reached this project only if the author happened to read about it.
