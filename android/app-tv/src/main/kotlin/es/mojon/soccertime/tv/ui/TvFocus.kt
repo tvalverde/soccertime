@@ -87,11 +87,17 @@ private const val HALO_ON_FILL = 0x4D_00FF41
  * the channel column — so setting them here would cancel the cursor's movement *between* the
  * rows as well as out of them, and leave a list nothing could walk. `onExit` runs only when
  * focus is about to cross this group's boundary.
+ *
+ * **The order of these two is the whole thing.** A focus target reads its properties by walking
+ * *up* the chain and stopping at the first target it meets, so anything written after
+ * `focusGroup()` hangs below the group's own target, where the group never looks and only its
+ * children inherit — and a child is a leaf, which never runs an exit at all. Written before, the
+ * group picks it up, and the children stop at the group without inheriting it. Reversed, this
+ * function does nothing whatsoever, silently.
  */
 fun Modifier.focusEnclosure(ways: List<FocusDirection>): Modifier =
-    focusGroup().focusProperties {
-        onExit = { if (requestedFocusDirection !in ways) cancelFocusChange() }
-    }
+    focusProperties { onExit = { if (requestedFocusDirection !in ways) cancelFocusChange() } }
+        .focusGroup()
 
 /**
  * What a Fire TV remote sends for its play button.

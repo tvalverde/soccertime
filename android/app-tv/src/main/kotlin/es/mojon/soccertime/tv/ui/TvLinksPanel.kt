@@ -103,6 +103,13 @@ fun TvLinksPanel(
             Modifier
                 .width(760.dp)
                 .height(446.dp)
+                // Nothing leaves this panel by pressing a direction. It is an overlay in the
+                // same composition rather than a window, so the rows behind the scrim are
+                // still focus targets — DOWN off the end of the channel column would walk the
+                // cursor into a list nobody can see. Marking the content behind unfocusable
+                // does not reach them: a row's search for that property stops at the focus
+                // group its own list puts around it. ATRÁS is the way out, as the map says.
+                .focusEnclosure(emptyList())
                 .clip(RoundedCornerShape(20.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .border(1.dp, MaterialTheme.colorScheme.border, RoundedCornerShape(20.dp)),
