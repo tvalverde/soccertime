@@ -1,8 +1,18 @@
 # syntax=docker/dockerfile:1
-FROM python:3-alpine
+# The version this tag already resolved to, written down. `python:3-alpine` picks whatever
+# the newest interpreter is at the moment of each build, on whichever machine builds it —
+# so the site could change interpreter without a line of this repository changing, and two
+# builds of the same commit were never the same image. It is also the number CI installs on
+# its runner (`test_ci_workflow.py` reads it from here), which cannot be decided by a tag
+# that moves.
+FROM python:3.14-alpine
 # What lets the deploy prune this project's superseded images without touching the ones
 # other services on the host built and cannot re-pull.
 LABEL org.opencontainers.image.title="soccertime"
+# What ties the published package to the code it was built from. The registry reads this to
+# link the package to its repository, and it is the only thing inside the image that says
+# where it came from — which matters now that production pulls it instead of building it.
+LABEL org.opencontainers.image.source="https://github.com/tvalverde/soccertime"
 ARG DOCKER_UID=1000
 ARG DOCKER_GID=1000
 ENV PYTHONDONTWRITEBYTECODE=1 \

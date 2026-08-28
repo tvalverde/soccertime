@@ -1,0 +1,17 @@
+/* The reset Swagger UI's own page carries inline, which this site's policy refuses.
+   Nothing else: the rest of the page is Swagger's stylesheet. */
+html {
+    box-sizing: border-box;
+    overflow-y: scroll;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: inherit;
+}
+
+body {
+    margin: 0;
+    background: #fafafa;
+}

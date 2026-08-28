@@ -44,15 +44,15 @@ services:
     # the new container has to be serving before the old one goes, or Traefik spends a second
     # answering 502 and then four answering 404 because no route matches at all. Anything that
     # needs the running container asks compose for its id rather than assuming the name.
-    build:
-      context: .
+    # No `build:` either: the image is built by CI and published to the registry, and the
+    # deploy pulls `ghcr.io/tvalverde/soccertime:sha-<commit>` and retags it to this name
+    # before anything here runs. A build declared here would let a stray `up --build` replace
+    # a reviewed, tested image with one made from whatever code this machine happens to hold.
     image: soccertime:latest
-    # This image is built on the host and published nowhere, so `docker compose pull` asked a
-    # registry for it and got `pull access denied for soccertime, repository does not exist`,
-    # failing the whole command and taking the four images that really are remote with it.
-    # `never` says what is true: there is nothing to fetch. Deliberately not `build`, which
-    # also silences the pull but makes every `up` rebuild — that would put a build, and a
-    # `docker/dockerfile:1` download, inside the container hand-over of a deploy.
+    # No registry answers to this tag — it is a local name for something already pulled — so
+    # `docker compose pull` asked for it and got `pull access denied for soccertime,
+    # repository does not exist`, failing the whole command and taking the four images that
+    # really are remote with it. `never` says what is true: there is nothing to fetch here.
     pull_policy: never
     restart: unless-stopped
     stop_grace_period: 30s
@@ -133,6 +133,26 @@ services:
       - "traefik.http.middlewares.soccertime-favorite-rate-limit.ratelimit.average=60"
       - "traefik.http.middlewares.soccertime-favorite-rate-limit.ratelimit.period=1m"
       - "traefik.http.middlewares.soccertime-favorite-rate-limit.ratelimit.burst=20"
+      # The API is public, unauthenticated and uncached, so every request reaches the
+      # database — and the application's own limit of 30 a minute per caller, precise as it
+      # is, still spends a request cycle to say no. This caps how fast it can be made to do
+      # even that, and refuses at the edge instead of inside Python.
+      #
+      # Deliberately above the application's own limit rather than equal to it: this is a
+      # backstop, so it must never refuse a caller the application would have served, or the
+      # two would disagree about who is over the line and the 429 would come from whichever
+      # window happened to roll first. `/soccertime/api` covers the schema and the
+      # documentation page as well, which is right — they are static and cheap, and nothing
+      # legitimate fetches them in a loop.
+      - "traefik.http.routers.soccertime-api.rule=${TRAEFIK_HOST_RULE} && PathPrefix(`/soccertime/api`)"
+      - "traefik.http.routers.soccertime-api.priority=1300"
+      - "traefik.http.routers.soccertime-api.entrypoints=websecure"
+      - "traefik.http.routers.soccertime-api.tls=true"
+      - "traefik.http.routers.soccertime-api.middlewares=soccertime-api-rate-limit,soccertime-app-strip-prefix"
+      - "traefik.http.routers.soccertime-api.service=soccertime-app-service"
+      - "traefik.http.middlewares.soccertime-api-rate-limit.ratelimit.average=60"
+      - "traefik.http.middlewares.soccertime-api-rate-limit.ratelimit.period=1m"
+      - "traefik.http.middlewares.soccertime-api-rate-limit.ratelimit.burst=30"
       - "traefik.http.services.soccertime-app-service.loadbalancer.server.port=8000"
       # Traefik routes to a container the moment it starts, without waiting for the process
       # inside to listen — so a deploy that overlaps two containers would send half its

@@ -1,0 +1,27 @@
+version: 2
+
+# Everything this repository pins, and nothing it does not: pinning is what makes a build
+# reproducible and it is also what makes it stale, so each kind of manifest gets something
+# that proposes the update. `test_dependency_updates.py` derives that list from the files
+# actually here, so a new kind of manifest cannot arrive unwatched.
+updates:
+  # Reads both requirements.txt and requirements-dev.txt from the root.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  # The actions the workflow pins by major version. Nothing else updates them, and an action
+  # left behind stops running at all when its runtime is retired.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  # The base image, now that it names a minor version instead of following a floating tag.
+  # That pin is what stops the interpreter changing under the site by itself; this is what
+  # stops it staying on an unpatched one forever.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly

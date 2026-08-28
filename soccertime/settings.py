@@ -54,6 +54,11 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.humanize",
+    "rest_framework",
+    "drf_spectacular",
+    # Swagger UI's own assets, collected from here rather than fetched from a CDN the
+    # Content-Security-Policy would refuse.
+    "drf_spectacular_sidecar",
     "soccertime.apps.SoccertimeConfig",
 ]
 
@@ -116,10 +121,40 @@ WSGI_APPLICATION = "soccertime.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
+# `init_command` is split on `;` and applied statement by statement to every new connection.
+# Both PRAGMAs are idempotent, and the journal mode is recorded in the file itself, so this
+# is what makes a fresh database — a `resetdb`, a restored snapshot — come up configured
+# rather than inheriting whatever it was written with.
+#
+# **WAL, because a writer must stop blocking every reader.** Under the default rollback
+# journal a write takes an exclusive lock over the whole file: readers wait, and at
+# `timeout` they are answered `database is locked`, which reaches a visitor as a 500. That
+# was survivable while the pages came from an hour-long cache and the only writer was the
+# hourly scrape — the two rarely met. The API is not cached, so every request goes to the
+# database and the meeting became likely. `test_sqlite_journal.py` holds a write
+# transaction open and reads through it; that test fails with the production error message
+# without this.
+#
+# **NORMAL, because WAL is what makes it safe.** With a write-ahead log this survives
+# anything the application can do to itself — a crash, an OOM kill, a container stopped
+# mid-write. Only the machine losing power can cost the last transactions, and this data is
+# rebuilt from its source every hour.
+#
+# **IMMEDIATE, because a deferred transaction that discovers it needs to write is the one
+# that deadlocks.** Taking the write lock at `BEGIN` turns that into an ordinary wait.
+#
+# Every path that copies or replaces this file has to know that the newest commits live in
+# `db.sqlite3-wal` until a checkpoint folds them in. They do — `soccertime/backups.py` reads
+# through a connection and `test_database_transport.py` keeps the Makefile honest.
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": os.environ.get("DJANGO_DATABASE_DEFAULT_NAME", BASE_DIR / "db/db.sqlite3"),
+        "OPTIONS": {
+            "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
+            "transaction_mode": "IMMEDIATE",
+            "timeout": 20,
+        },
     }
 }
 
@@ -206,7 +241,27 @@ if _caching_enabled:
             "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
             "LOCATION": os.environ.get("DJANGO_CACHE_LOCATION") or "/var/tmp/soccertime_cache",
             "TIMEOUT": 3600,
-        }
+        },
+        # The API throttle's counters, kept apart from the pages: every cache backend here
+        # culls itself once it holds `MAX_ENTRIES`, so counting requests in the default
+        # store would evict the rendered pages that store exists to keep.
+        #
+        # In memory rather than on disk. The container runs a single uvicorn worker, so one
+        # process sees every request and the count is exact; a restart forgets the counters,
+        # which costs one window of allowance and no correctness. The file-based
+        # alternative pickles and writes to disk on **every** API request, and would have
+        # needed its own tmpfs the day `read_only` is switched on.
+        #
+        # `MAX_ENTRIES` is the number this whole alias exists for and it is not the default:
+        # 300 is, for this backend as much as for the file-based one, so a few hundred
+        # distinct callers in one window would start evicting each other's counters and the
+        # limit would quietly stop applying to whoever was dropped.
+        "throttling": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "soccertime-throttling",
+            "TIMEOUT": 3600,
+            "OPTIONS": {"MAX_ENTRIES": 20000},
+        },
     }
 else:
     # Explicitly nothing, rather than Django's default per-process LocMemCache: with
@@ -217,6 +272,66 @@ else:
 CACHE_PAGE_TIMEOUT = 3600 if _caching_enabled else 0
 
 FORMAT_MODULE_PATH = ["soccertime.formats"]
+# --- The REST API ---
+#
+# Reading only, and to anybody: the site is public and carries no login, so an endpoint
+# that serves what the pages already show needs nothing to identify its caller. What it
+# does need is a limit, since a listing joins six tables in SQLite and nothing else stands
+# between a script and the container that also serves the database.
+#
+# JSON is the only representation. DRF's browsable API renders forms and a stylesheet of
+# its own, which would be the one page here loading inline styles the CSP refuses — and it
+# would present write forms for methods no viewset accepts. The human-readable entry point
+# is `/api/v1/docs/`.
+REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    # Nothing authenticates: there is no login here to carry. Leaving DRF's defaults in
+    # place would have every request open a session and answer a bad `Authorization`
+    # header with a browser password prompt, for an API that grants the same to everybody.
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "DEFAULT_FILTER_BACKENDS": ["soccertime.api.filtering.QueryFilterBackend"],
+    "DEFAULT_PAGINATION_CLASS": "soccertime.api.pagination.Pages",
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_CLASSES": ["soccertime.api.throttling.ApiRateThrottle"],
+    # Sized against what a request actually costs on the one CPU the production container
+    # is allowed: the events listing is ~140-230 ms of it, so thirty a minute is about a
+    # tenth of the machine per caller. It used to be 120, which on the same measurements
+    # asked for more CPU than exists — and a saturated container fails its health check,
+    # loses its route at the proxy and takes every page down with it.
+    "DEFAULT_THROTTLE_RATES": {"api": os.environ.get("DJANGO_API_THROTTLE_RATE") or "30/min"},
+    # Who "one caller" is. Without this DRF reads the whole `X-Forwarded-For` header as the
+    # identity, so anybody who can put a value in it mints a fresh allowance per request and
+    # the limit stops existing. One proxy — Traefik — stands in front, and it appends the
+    # peer's address to whatever arrived, so the **last** entry is the real client and a
+    # forged prefix changes nothing. Pinned here rather than trusted to the proxy's default
+    # of discarding untrusted headers: this project has already been taken down twice by
+    # assuming what the layer in front does.
+    "NUM_PROXIES": 1,
+    "UNAUTHENTICATED_USER": None,
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Soccertime API",
+    "DESCRIPTION": (
+        "Read-only access to everything the site shows: the events schedule, the "
+        "competitions and teams behind it, and the channels and links each event is "
+        "carried on. Times are expressed in Europe/Madrid, which is the clock the site "
+        "is read in."
+    ),
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    # Groups the operations by resource rather than by viewset name.
+    "SCHEMA_PATH_PREFIX": "/api/v1",
+    # Production is served under a script name the URL patterns know nothing about, so
+    # without this every path in the document would be one the deployment does not answer
+    # — and the mistake is invisible in development, where the prefix is empty.
+    "SCHEMA_PATH_PREFIX_INSERT": FORCE_SCRIPT_NAME or "",
+    "SORT_OPERATIONS": False,
+    "COMPONENT_SPLIT_REQUEST": False,
+}
+
 
 CSRF_TRUSTED_ORIGINS = (
     os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")

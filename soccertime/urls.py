@@ -20,7 +20,7 @@ import os
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import URLPattern, URLResolver, path
+from django.urls import URLPattern, URLResolver, include, path
 from django.views.generic.base import RedirectView, TemplateView
 
 from soccertime.views import (
@@ -55,6 +55,10 @@ admin_urlpatterns: list[URLPattern | URLResolver] = [path("admin/", admin.site.u
 
 site_urlpatterns: list[URLPattern | URLResolver] = [
     path("healthz/", healthz, name="healthz"),
+    # Everything the site shows, readable as JSON, described by an OpenAPI document it
+    # generates from the code. Mounted under a prefix of its own so the proxy can rate-limit
+    # or withdraw it without touching the pages.
+    path("api/", include("soccertime.api.urls")),
     path("robots.txt", TemplateView.as_view(template_name="robots.txt", content_type="text/plain"), name="robots-txt"),
     path("", RedirectView.as_view(url="favorites/")),
     path("favorites/", favorites, name="favorites"),

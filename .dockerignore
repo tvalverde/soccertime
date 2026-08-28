@@ -21,3 +21,31 @@ node_modules/
 .git/
 # Per-machine assistant state; the tracked one was a symlink into a home directory.
 .antigravitycli/
+# The database and everything kept beside it. `*.sqlite3` reads as if it covered these, and
+# does not: a `.dockerignore` pattern's `*` never crosses a `/`, so it matches `db.sqlite3`
+# at the root and nothing inside `db/` — where the file and its 20 MB timestamped copies
+# actually live. The volume supplies the real one at runtime.
+db/
+backups/
+*.backup.*
+# The local production replica's TLS material. `mojon.local.key` is a private key, tracked
+# nowhere and generated per machine, and it sat two directories away from `COPY . .`.
+.docker/
+# Per-machine tooling and editor state, none of it the application.
+.claude/
+.idea/
+.vscode/
+.mcp.json
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+TODO.md
+# What GitHub runs, not what the container does.
+.github/
+# External channel lists and captures: other people's data, and never part of a release.
+# `addlinksource` reads them from a mount, which is the only place they belong.
+*.m3u
+newera.txt
+elcano.txt
+screenshot*.png
