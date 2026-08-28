@@ -400,6 +400,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It also puts the "nothing on this box opens that" notice *over* the links rather than
   instead of them, so BACK from it lands where the next attempt is made.
 
+- **A screen that could only be left once.** Marking everything behind an open panel
+  unfocusable looked like the tidy way to keep the cursor out of the rows under the scrim. It
+  is inherited by every focus target below it, the list's own group included, and once that
+  group had been switched off and on again a focus search could no longer enter it: closing
+  the panel put the cursor back on its row, LEFT still reached the rail, and RIGHT then found
+  nothing at all — a screen that looked alive, since the rail kept answering, with an agenda
+  that could not be reached. Each panel already traps the cursor inside itself, which is what
+  that flag was for, so it is gone.
+
 - **Two ways the remote could get stuck, both found by using one.** LEFT from the third link
   of a channel jumped back to the channel instead of stepping to the second: the redirect that
   belongs to the column's edge was written where every tile below it inherited it, so each one
