@@ -59,7 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   screen with a banner — an agenda a minute out of date is worth more than no agenda on a
   screen people open to find out what is on right now.
 
-  72 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
+  The landing screen asks for nothing while nothing is followed, so a fresh install works
+  before the device has ever been online, and following one more team narrows the window
+  already on screen instead of fetching it again. What is followed is stored with its name and
+  crest beside the id — deliberate denormalisation, because resolving five ids through the API
+  would be five requests before the first frame, to draw a strip.
+
+  91 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
   unfiltered so gitleaks keeps reading pushes that touch only `android/` —
   `test_android_workflow.py` refuses a `paths` filter there, because adding one looks like a
   tidy-up and would quietly stop scanning the tree where keystore passwords live.
