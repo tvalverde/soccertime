@@ -113,12 +113,7 @@ private fun SoccertimeTv(models: TvModels) {
         Row(
             Modifier
                 .fillMaxSize()
-                .padding(horizontal = OverscanHorizontal, vertical = OverscanVertical)
-                // A panel is an overlay in this same composition, not a window: without this
-                // the rows behind the scrim are still focus targets, and DOWN off the end of
-                // the channel column walks the cursor into a list nobody can see. `canFocus`
-                // is inherited by every focus target below, which is exactly what is wanted.
-                .focusProperties { canFocus = !covered },
+                .padding(horizontal = OverscanHorizontal, vertical = OverscanVertical),
             horizontalArrangement = Arrangement.spacedBy(26.dp),
         ) {
             TvRail(selected = opensOn, onSelect = { destination = it })
