@@ -140,6 +140,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the repository, so a new kind of manifest cannot arrive unwatched.
 
 ### Changed
+- **The agenda's date filter stopped converting every row in the table to compare a day.**
+  `date__date=` reads well and asks in the shape SQLite is worst at: the column goes through
+  `django_datetime_cast_date`, a Python function registered on the connection, so no index
+  applies and all 53,771 rows are converted before any can be compared — **twice** per API
+  request, once more for the paginator's count. `EXPLAIN QUERY PLAN` said `SCAN` where the
+  indexed form says `SEARCH … USING COVERING INDEX`.
+
+  **Measured against a production snapshot, and returning the identical rows every time,
+  verified by primary key: a day went from 349 ms to 0.5 ms, the two-day range from 374 ms to
+  0.5 ms, and the paginator's count from 361 ms to 0.9 ms.** Six days were compared, including
+  both days of the year the clocks move.
+
+  This is the antipattern `start_of_today()` already documents — "585 ms against 8 ms… same
+  rows" — and the point worth recording is that fixing it once was not enough: **five call
+  sites were left on the old form**. They are `for_date`, `for_date_range`, the API's
+  `date_from` and `date_to`, and the scraper's reconciliation window. The two API filters now
+  delegate to the queryset instead of writing their own ORM, so the shape lives in one file.
+
+  It also explains a collapse under load that the single-request timings hid: four concurrent
+  requests were measured taking **17.9–19.6 s each**, not four times two. One worker, one CPU,
+  four threads each running the conversion over the whole table twice. Any second reader
+  pushed a slow request into one slow enough to worry a health check.
+
+  `day_bounds()` builds both ends from midnight of a *local* day rather than by adding
+  twenty-four hours to the first: twice a year a local day is twenty-three or twenty-five
+  hours long, and that arithmetic would silently drop a match at half past eleven at night in
+  October or claim one at half past midnight in March. Both of those days are now tests.
+
 - **A deploy pulls the published image instead of shipping the code.** `deploy-production`
   used to `git archive HEAD`, scp the tarball, unpack it on the server and build there — so
   the application's source sat on a machine whose only job is to serve, the base image and

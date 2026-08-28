@@ -17,6 +17,7 @@ from soccertime.models import (
     SimpleEvent,
     Sport,
     Team,
+    day_bounds,
 )
 from soccertime.models import (
     Event as StoredEvent,
@@ -261,12 +262,14 @@ class Command(BaseCommand):
             scope = StoredEvent.objects.filter(competition__sport__name=unit.sport)
 
         seen_dates = [timezone.localdate(event.date) for event, _ in seen]
+        # The same days, as instants the index can answer for. Kept as three separate bounds
+        # rather than folded into one, so the window this reconciles over is still the window
+        # it was: from now, and within the local days the scrape actually saw.
+        opens, _ = day_bounds(min(seen_dates))
+        _, closes = day_bounds(max(seen_dates))
         candidates = list(
-            scope.filter(
-                date__gte=now,
-                date__date__gte=min(seen_dates),
-                date__date__lte=max(seen_dates),
-            )
+            scope.filter(date__gte=now)
+            .filter(date__gte=opens, date__lt=closes)
             .exclude(pk__in=self._run_seen_pks)
             .select_related("match", "race", "simpleevent")
         )
