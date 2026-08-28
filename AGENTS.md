@@ -37,12 +37,19 @@ This document provides the necessary context for understanding and working on th
 
 -   **Production Deployment:**
     -   Execute `make deploy-production` to deploy the application to the production server.
+    -   The image is built by GitHub Actions and published to `ghcr.io/tvalverde/soccertime`,
+        and the deploy pulls the tag of the commit being deployed. **A commit that is not
+        pushed, or whose CI run is not green, cannot be deployed**: the pull fails by name,
+        before anything on the server has changed. The only files still uploaded are
+        `.env.production` and `compose.production.yaml`, which describe how to run the image
+        there. Roll back with `soccertime:previous` on the host or
+        `make deploy-production DEPLOY_TAG=sha-<commit>`.
 
 ## 4. Guardrails & Knowledge
 
 -   **Configuration:** The application is configured exclusively through environment variables. The `.env.example` file serves as a template, and `.env.production.local.example` is the template for local production simulation. **Never commit secrets or environment files to the repository.**
 -   **Data Source:** The application is highly dependent on the external websites targeted by the `scrapit` command. Changes to these websites can break the data flow.
--   **Database:** As the project uses SQLite, be mindful that complex schema changes and data migrations should be handled with care.
+-   **Database:** As the project uses SQLite, be mindful that complex schema changes and data migrations should be handled with care. It runs in **WAL mode**, so the database is two files: the newest commits live in `db.sqlite3-wal` until a checkpoint folds them in. Anything that copies, moves or replaces it must go through a connection (`python -m soccertime.backups snapshot-db`) and must delete the `-wal`/`-shm` of the database it replaces, with the service stopped. `test_database_transport.py` enforces both rules against the `Makefile`.
 -   **External Data Files:** Files used as input for `addlinksource` (like `elcano.txt` or `newera.txt`) are considered external data sources and are **not** part of the git repository. Do not commit them.
 -   **Local TLS Key Material:** For local production simulation with Traefik, generate `.docker/traefik/certs/mojon.local.key` locally. This private key file must never be committed; only non-sensitive templates/configuration should be tracked.
 -   **Initial Fixtures:** The application includes initial fixtures (`soccertime/fixtures/`) that are automatically loaded via a `post_migrate` signal when the database is empty. These include basic sports, competitions (La Liga, Champions League, Fórmula 1, MotoGP), teams (FC Barcelona, CD Castellón, Barça Basket, etc.), and their corresponding favorites. Fixtures use sequential PKs starting from 1.
@@ -57,6 +64,20 @@ This document provides the necessary context for understanding and working on th
     -   **Polymorphism:** Use the `Event.child_event` property to access specific event instances (`Match`, `Race`, `SimpleEvent`) instead of using complex `if/elif` chains in templates.
     -   **Multi-table inheritance:** `Match`, `Race` and `SimpleEvent` each have their own table joined to `soccertime_event`, so reading one always costs a join. Do not try to remove it without profiling first: `with_related()` already makes the child share the parent's caches, measured at **0 extra queries** across 25 events on the production database.
     -   **In-Memory Filtering:** Properties that filter related sets (like `Channel.enabled_links`) should use list comprehensions over `self.links.all()` to leverage Django's prefetch cache instead of hitting the DB with `.filter()`.
+-   **REST API (`soccertime/api/`):**
+    -   It is **read-only**, and stays that way: the site's only write is the favourites
+        cookie, which is signed for a browser and cannot be authorised by an API caller.
+    -   A query parameter is declared once, as a `QueryFilter` in `filtering.py`, and used
+        twice: to narrow the queryset and to document itself in the schema. Never filter
+        inside `get_queryset` without declaring it there — an undocumented parameter cannot
+        be used by anybody.
+    -   Serializers must never read an image file. The dimensions come from the row, for the
+        same reason the model fields do not declare `width_field` / `height_field`.
+    -   Fields that mirror a queryset (`is_favorite`, `watchable`) are pinned against it row
+        by row in `test_api_events.py`. Change one and the test will tell you about the other.
+    -   Do not use drf-spectacular's own Swagger view: it loads the library from a CDN and
+        starts it from an inline script, and the CSP here allows neither.
+
 -   **Template & UI Standardization:**
     -   **Unified Rendering:** `agenda.html` is the reference template for all event listings. Do not create new listing templates unless strictly necessary.
     -   **Component Consistency:**

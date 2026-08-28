@@ -8,6 +8,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A read-only REST API under `/api/v1/`**, serving everything the site shows — the events
+  listing with its matches, races and simple events flattened into one shape, the
+  competitions, sports, teams and flags behind it, the channel directory and the owner's
+  curated favourites — described by an OpenAPI 3 document generated from the code and
+  browsable through Swagger UI at `/api/v1/docs/`. Every endpoint answers `405` to anything
+  but a `GET`: the site's only write is a signed cookie belonging to a browser, and there is
+  nothing a caller could hold that would authorise one. Times carry the `Europe/Madrid`
+  offset, `is_favorite` and `watchable` select exactly what `EventQuerySet.favorites()` and
+  `watchable()` do — pinned row by row against those querysets — and images report the
+  dimensions stored on the row, never the ones in the file, which is what returned 500 from
+  `/competitions/` when 49 flags had lost theirs. Each filter is declared once and read twice,
+  to narrow the listing and to document itself, so one cannot exist without the other; a
+  value that cannot be parsed is refused with a `400` naming it rather than silently ignored.
+  Swagger UI is served from this origin and started from a static file, because the stock
+  page loads a CDN and an inline script and the Content-Security-Policy refuses both. 193
+  tests, including that `collectstatic` still post-processes the new assets — the deploy step
+  that once answered 500 to every page while the health check stayed green.
+
+  Being public and unauthenticated, the read limit is part of the feature rather than a
+  setting: **30 requests a minute per caller**, sized against what one costs on the single
+  CPU the production container is allowed, and counted per real client address. `NUM_PROXIES`
+  is pinned to 1 so that identity comes from the entry Traefik appends and not from the
+  `X-Forwarded-For` a caller writes — without it DRF reads the whole header, and anybody
+  varying it mints a fresh allowance per request. The counters live in a store of their own
+  with a raised `MAX_ENTRIES`, because every cache backend here culls itself at 300 entries,
+  which would have let a few hundred callers evict each other's counts and quietly suspend
+  the limit. A link whose scheme the site refuses to render is listed but its URL is
+  withheld: there the URL is the payload, and handing it to whoever renders this JSON would
+  reopen from the outside the hole `link_button.html` closed. Search is bounded to the length
+  of the fields it looks in, as `EventQuerySet.search` already was.
+- **`make replica-up`**, which starts the local production replica in a state that serves.
+  Two things stood between the documented `docker compose … up` and a working stack, and
+  both looked like a broken deploy rather than what they were. The database volume carries a
+  copy of production's, so its files belong to production's UID while the replica runs as
+  this machine's — a mismatch that used to cost only writes and, with the write-ahead log,
+  costs reads too, because reading the journal means creating the shared-memory index beside
+  it. And static files were collected after the container was already serving, so the process
+  had cached a manifest that did not name them: the incident `CLAUDE.md` documents, reproduced
+  exactly by doing it in that order. The target hands the volume over first and collects
+  before anything serves, which is the order `remote_deploy` uses — the point of a rehearsal
+  being that it runs the same way. Verified from the broken state: every page and the whole
+  API answered 200 with no manual step.
+- **A rate limit at the proxy for `/soccertime/api`**, on a router of its own beside the ones
+  the admin and the favourites endpoint already had. The application's limit is precise —
+  thirty a minute per caller, counted from the address Traefik reports — but it refuses
+  inside Python, so every refusal still costs a request cycle. This one refuses at the edge:
+  sixty a minute with a burst of thirty, deliberately above the application's own so it never
+  turns away a caller the application would have served. Rehearsed on the local replica
+  against the real proxy, where a burst of forty requests came back as thirty-one 200s and
+  then `Too Many Requests` in plain text — Traefik's answer, not the JSON one DRF sends.
+  Routing a path separately is easy to get wrong in ways nothing notices: forget the
+  strip-prefix middleware and Django is handed `/soccertime/api/...` and 404s the whole API;
+  get the priority wrong and the catch-all wins, so the limit is configured and never
+  applied. `test_proxy_routing.py` compares the label sets for both. It also found that
+  `soccertime-favorite` had never been given a rule in the replica, so the one route that
+  accepts a write had never been exercised through a proxy locally.
 - **`--url` input for `addlinksource` and `importm3u`**, mutually exclusive with `--file`, so a
   published playlist is imported without downloading it first. `make remote-import-links` takes
   `URL=` as an alternative to `FILE=`, and lets the production container do the fetching.
@@ -26,7 +82,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scraper health monitoring** in `scrapit` to report total active future events and warn if the upcoming agenda drops to 0.
 - **End-to-end ordering regression tests** in `test_views.py` ensuring landing page and agenda strictly preserve chronological sorting and tie-breaking hierarchy.
 
+- **Every push runs the suite, the linters and the type checker.** The 1,137 tests only ever
+  ran on a laptop, by hand: there was no `.github/` at all, so a push carrying a broken
+  migration, an unformatted file or a failing test looked exactly like a good one until
+  somebody deployed it. GitHub Actions now runs `ruff check`, `ruff format --check`, `mypy`
+  and `pytest` on every push to `main` and on every pull request, on the interpreter the
+  image is pinned to — read from the Dockerfile rather than declared again, because a suite
+  green on a Python production does not run reports nothing about production. The run needs
+  `DJANGO_DEBUG` to import the settings at all, since the secret key is deliberately not in
+  the repository, and it excludes the integration tests: those make real requests to the
+  sites the scraper reads, and a check that fails when somebody else's website is down is a
+  check nobody believes. `test_ci_workflow.py` pins each of those, comments stripped, so a
+  workflow that explains them and runs none of them cannot pass.
+- **The production image is built once, by CI, and published to the registry.** Every push
+  to `main` whose checks pass builds the image from a clean checkout and pushes it to
+  `ghcr.io/tvalverde/soccertime`, tagged with the full commit hash and with `latest`. Until
+  now the server built its own from an uploaded tarball, which is three problems in one: the
+  code had to live there, the base image and every wheel were resolved there and at that
+  moment, and two deploys of the same commit could produce two different images — the reason
+  the outgoing one is kept as the only rollback that is a known quantity. The tag carries all
+  forty characters of the hash because the deploy asks for exactly what `git rev-parse HEAD`
+  prints; the abbreviated default would publish an image no deploy can name, and that failure
+  arrives on the server, at the pull. Only a push publishes, never a pull request, which may
+  come from a fork; and the registry write is granted to that job alone, so the job that runs
+  the tests cannot publish anything.
+- **`make prune-remote-app-path`**, which removes the code the server no longer runs. Deploys
+  stopped uploading an archive, so what the last one unpacked stayed where it was: 2.8 MB of a
+  checkout that nothing reads and that still looks like the code production is serving —
+  whatever commit was deployed the last time a deploy sent any. Read during an incident, it is
+  evidence about the past. Two files in that directory are load-bearing and do not look it
+  from there, so the target names what stays rather than what goes: the host's compose
+  `include`s `compose.production.yaml` from there, and an `include` of a missing file fails
+  every `docker compose` command on that machine rather than only this service, and
+  `.env.production` is where the container reads its secret key. It refuses to run if either
+  is already absent, prints what it will remove before removing it, and never builds a path
+  that is not relative to that directory. Run against production: 28 entries gone, 2.8 MB down
+  to 20 KB, the host's compose still resolving all six of its services and every page 200.
+- **A scan for committed secrets on every push and every pull request.** GitHub's own scanner
+  covers partner and provider patterns on a free public repository, and stops exactly short of
+  the category a `DJANGO_SECRET_KEY` falls into: generic patterns, formerly non-provider
+  patterns, which need a paid Secret Protection licence — the REST API accepts the request to
+  enable them, answers 200 and leaves the setting disabled, which is how a licence looked like
+  a forgotten switch. `gitleaks` reads the commits instead, over a full checkout, because the
+  range a push carries is not in the single commit Actions clones by default and a scanner
+  with nothing to read reports success. It is a smoke alarm rather than push protection — the
+  commits it reads are already public — but it is also a gate: the publish job waits for it,
+  so no image is built from a commit it flagged, and a key in a tracked file would be inside
+  the image as well as the repository. It scans each push rather than the whole repository,
+  which is enough only because of the other change this week: the ruleset forbids force-pushes,
+  so the past cannot change. It was scanned once, over all 248 commits, with no findings.
+- **Dependabot proposes the updates nothing else was proposing.** Twelve pinned production
+  dependencies, Django, DRF and Pillow among them, and no alerts and no update pull requests:
+  a published advisory reached this project only if the author happened to read about it.
+  Weekly updates are on for the three kinds of manifest here — the requirements files, the
+  actions the workflow pins, and the base image, which needs it precisely because it stopped
+  following a floating tag. `test_dependency_updates.py` derives that list from the files in
+  the repository, so a new kind of manifest cannot arrive unwatched.
+
+### Changed
+- **A deploy pulls the published image instead of shipping the code.** `deploy-production`
+  used to `git archive HEAD`, scp the tarball, unpack it on the server and build there — so
+  the application's source sat on a machine whose only job is to serve, the base image and
+  every wheel were resolved at deploy time, and the image that ended up serving had been
+  built by nobody's tests. It now pulls `ghcr.io/tvalverde/soccertime:sha-<commit>` and
+  retags it to `soccertime:latest` before anything else runs. That retag is the point: the
+  compose file, `relay.sh`, the backups, the restores and the prune all go on naming the tag
+  they always named, so the registry is transport rather than a second contract. The pull is
+  the first step of the deploy, because it is the one most likely to fail — the commit may
+  not be published yet — and failing it after the snapshots and the configuration upload
+  would leave work half done. Two files still travel with a deploy, both of them descriptions
+  of how to run the image here rather than code: `.env.production`, whose local copy stays
+  the one of record because it holds the secret key and therefore cannot be in a public
+  image, and `compose.production.yaml`, which the server's own `docker-compose.yml`
+  `include`s out of the uploaded directory instead of defining itself. The archive used to
+  carry that one along with everything else, and a deploy that stopped sending it would have
+  gone on running the definition uploaded last — with nothing anywhere to say it was old.
+  Rolling back gained a second route that does not depend on the server still holding
+  `:previous`: `make deploy-production DEPLOY_TAG=sha-<commit>` reaches anything CI published.
+  `make replica-up-published` rehearses that same artefact locally, which a rebuild of the
+  working copy cannot do — two builds of one commit are not the same image.
+- **The build context carries the application and nothing else.** Nothing here depended on
+  `.dockerignore` being right while the server built from `git archive HEAD`, which contains
+  tracked files and only those. A build from a working copy is another thing: 20 MB of
+  database copies under `db/`, 53 MB of snapshots under `backups/` and the replica's private
+  TLS key under `.docker/` were all being copied in, and `*.sqlite3` covered none of them —
+  a `.dockerignore` pattern's `*` does not cross a `/`, so it matched `db.sqlite3` at the
+  root and nothing inside the directory where the file actually lives. Now that the image is
+  built by CI and published where anyone can pull it, that is disclosure rather than wasted
+  space. `test_published_image.py` reimplements Docker's matching, difference and all, and
+  asserts each of those paths is left out. The image also declares the repository it was
+  built from, which is what links the published package to this code.
+- **The image is pinned to the interpreter it already runs.** `python:3-alpine` resolves at
+  build time, on whichever machine builds it, so the interpreter under the site could move a
+  minor version without a line of this repository changing — and two builds of the same
+  commit were never the same image, which is the reason the previous one is kept as a
+  rollback. The tag now names `3.14`, the version it already resolved to, so nothing about
+  what runs changes. It is also the number CI installs on its runner, read from the
+  Dockerfile rather than written twice: a suite that passes on an interpreter production
+  does not run reports nothing about production.
+- **SQLite writes through a write-ahead log now.** Under the default rollback journal a
+  writer takes an exclusive lock over the whole file, so readers wait and then get
+  `database is locked` — a 500 to whoever was reading. That was survivable while every page
+  came from an hour-long cache and the only writer was the hourly scrape: the two rarely
+  met. The API is not cached, so every request reaches the database and the meeting became
+  likely. With `journal_mode=WAL`, `synchronous=NORMAL` and `transaction_mode=IMMEDIATE`,
+  **a request served while a writer holds an exclusive transaction open answers in 158 ms
+  instead of waiting twenty seconds and failing** — measured against production data, with
+  the agenda answering in 91 ms beside it. A test holds that transaction open and reads
+  through it, and it fails with the production error message without the change.
+- **Every path that copies or replaces the database goes through a connection.** This is
+  the half of the write-ahead log that is invisible until it costs something: the newest
+  commits live in `db.sqlite3-wal` until a checkpoint folds them in, so `cp` of the main
+  file yields a database missing its last transactions — silently, with nothing to notice
+  until the day it is restored. `deploy-production` was already safe, because
+  `soccertime/backups.py` uses SQLite's online backup API; `download-db`, `upload-db` and
+  `restore-remote-db` were not, and now use the same snapshot. They also stop the service
+  before writing and delete the `-wal` and `-shm` left by the previous database, which
+  SQLite would otherwise read as belonging to the new one — a stale backup is an
+  inconvenience, that is a corrupt database. `test_backups.py` demonstrates the row a plain
+  copy loses rather than asserting it, and `test_database_transport.py` pins the recipes.
+
+  One of those recipes had to give up a `:ro` it looked entitled to. Reading a logged
+  database means reading its log, and for that SQLite must create the shared-memory index
+  beside it — which a clean close deletes. On a read-only mount it cannot, so
+  `backup-remote-db` began answering `unable to open database file` the moment the log was
+  enabled: the snapshot the deploy takes before it migrates, and the one the cron keeps.
+  Found by running the target minutes after the deploy that caused it, and fixed by mounting
+  the volume writable, which a backup has no use for and SQLite insists on. The first local
+  test written for this had missed it, because it held a connection open while it checked —
+  so the shared-memory file was there, and the failing state was the one only production had.
+- **`EventQuerySet.watchable()` asks an `EXISTS` instead of joining and de-duplicating.**
+  `filter(channels__links__enabled=True)` multiplies the event row by every enabled link
+  reaching it, so it needed `distinct()` to put back — and what the paginator counts is that
+  `SELECT DISTINCT` over the whole product. **Measured against production data: the API
+  listing of watchable events went from 1,433 ms to 355 ms, and the count on its own — what a
+  page number past the end pays before it can answer 404 — from 436 ms to 86 ms.**
+  `/agenda/?watchable=1` pays the same count and got the same back. Same rows, and the
+  subquery cannot produce a duplicate, so there is nothing left to make distinct.
+
 ### Fixed
+- **A day-header test that only passed for three weeks of every month**: it placed its event
+  four days from whenever it ran and compared `%d`, which pads to two digits, against a
+  header that does not pad — so it failed on the first nine days of a month and nowhere else.
+  CI found it on its second run. It now names a day in the past, which is the only kind that
+  cannot come round again: the header renders through `naturalday`, so an event within a day
+  of now is called "hoy" or "mañana" and carries no date at all — the trap the first attempt
+  at this fix walked straight into, by fixing the day to one four days out.
+- **`resetdb` no longer passes `os.path` something that may not be a path**: the database
+  name comes out of the settings as the union of everything a connection entry can hold, and
+  the mapping the engine's own options are in is one of those. Found by the type checker on
+  the very first CI run, on a machine with no cache to hide it — the local one had been
+  answering "no issues" from a result computed before the code it describes.
 - **Channel names arriving as mojibake from a remote list**: `requests` decodes a charset-less
   `text/*` response as ISO-8859-1, so every accented name in a UTF-8 playlist matched nothing.
   Bodies are now decoded as UTF-8 explicitly, and a byte order mark is stripped from local files.

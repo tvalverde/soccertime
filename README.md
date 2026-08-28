@@ -9,6 +9,7 @@ Django application for aggregating and displaying sports events (football, cycli
 - **Unified Visual Experience:** Consistent dark-themed UI across all event listings (favorites, daily agenda, sports, channels, and competitions).
 - **Accessibility:** Accessible UI components with semantic HTML and ARIA labels.
 - **Developer Friendly:** Clean architecture using polymorphism patterns (`child_event`) and standardized component structures.
+- **REST API:** Everything the site shows, readable as JSON under `/api/v1/`, described by an OpenAPI document the code generates and browsable at `/api/v1/docs/`.
 
 ## Requirements
 
@@ -31,6 +32,7 @@ soccertime/
 ├── soccertime/               # Django application
 │   ├── models.py             # Data models (Event, Match, Race, etc.)
 │   ├── views.py              # View functions
+│   ├── api/                  # Read-only REST API (DRF) and its OpenAPI schema
 │   ├── admin.py              # Django admin configuration
 │   ├── static/               # Static assets (CSS, JS)
 │   ├── tests/                # Test suite (pytest)
@@ -197,6 +199,56 @@ docker compose exec web ruff format soccertime/
 docker compose exec web ruff format soccertime/ --check
 ```
 
+## REST API
+
+Everything the site shows is also readable as JSON, under `/api/v1/`. The API is
+**read-only**: the only write the site accepts is the favourites cookie, which belongs to a
+browser rather than to a caller, so every endpoint answers `405` to anything but a `GET`.
+Nothing authenticates, exactly as the pages do not.
+
+| Endpoint | What it lists |
+| --- | --- |
+| `/api/v1/events/` | Every event — matches, races and simple events in one chronological listing |
+| `/api/v1/competitions/` | Competitions, with their sport, flag and how many events they still have |
+| `/api/v1/sports/` | Sports, in the order the site groups them |
+| `/api/v1/teams/` | Teams and their crests |
+| `/api/v1/flags/` | Flags competitions are shown with |
+| `/api/v1/channels/` | Channels, each with the links it carries |
+| `/api/v1/channel-links/` | The link directory `/channels/` renders |
+| `/api/v1/channel-link-sources/` | Where those links were imported from |
+| `/api/v1/favorites/` | The owner's curated favourites |
+| `/api/v1/schema/` | The OpenAPI 3 document, generated from the code (`?format=json` for JSON) |
+| `/api/v1/docs/` | Swagger UI, served from this origin |
+
+### Reading it
+
+```bash
+# What is on today, with something to watch it on
+curl 'http://localhost:8000/api/v1/events/?today_onwards=true&watchable=true'
+
+# One competition, newest first, fifty to a page
+curl 'http://localhost:8000/api/v1/events/?competition=12&ordering=-date&page_size=50'
+
+# What a search box would return
+curl 'http://localhost:8000/api/v1/events/?search=real%20madrid'
+
+# The owner's favourites, which is what the landing page shows
+curl 'http://localhost:8000/api/v1/events/?favorites=true&upcoming=true'
+```
+
+Listings are paginated (`page`, `page_size`, 25 by default and 100 at most) and travel in a
+`{count, next, previous, results}` envelope. Every filter a listing accepts is described in
+the schema, because the same declaration is what applies it — see
+`soccertime/api/filtering.py`. A parameter that cannot be read is refused with a `400` naming
+it, rather than ignored.
+
+Times are expressed in `Europe/Madrid`, with the offset attached, which is the clock the site
+is read in. `is_favorite` and `watchable` mean exactly what the corresponding queryset
+selects, so a client can draw the same stars and play buttons the pages do.
+
+Reading is limited to 120 requests a minute per address by default
+(`DJANGO_API_THROTTLE_RATE`); the counters need a cache, so the limit is inert in development.
+
 ## Local production simulation (Traefik + HTTPS)
 
 This repository includes a local production-like stack in `compose.production.local.yaml`.
@@ -223,7 +275,7 @@ openssl req -x509 -nodes -newkey rsa:2048 \
 3. Start the local production stack:
 
 ```bash
-docker compose -f compose.yaml -f compose.production.yaml -f compose.production.local.yaml up -d --build
+make replica-up
 ```
 
 4. Optionally map local hostnames in `/etc/hosts`:
@@ -237,11 +289,23 @@ docker compose -f compose.yaml -f compose.production.yaml -f compose.production.
 ## Production deployment
 
 
-> **Note:** The previous deployment method using the `Makefile` is considered **deprecated**. The new workflow will be based on building and deploying a production-ready Docker image. The specific steps (CI/CD pipeline, registry pushes) are to be defined.
->
-> The Makefile commands documented below remain functional but should not be relied upon for new deployments.
+The image is built by GitHub Actions and published to `ghcr.io/tvalverde/soccertime`, tagged
+with the full commit hash. `make deploy-production` pulls the tag matching the commit being
+deployed and retags it to `soccertime:latest` on the host, so the code no longer lives on the
+server and what serves is the image whose checks passed.
 
-Deployment was previously done through the `Makefile` which automates the entire process.
+The published package is public, so the server pulls it anonymously and holds no registry
+credentials. Two files still travel with a deploy, both of them descriptions of how to run
+the image on that machine rather than code: `.env.production`, which is deliberately not in
+the repository — it holds the secret key — and therefore cannot be in a public image either,
+and `compose.production.yaml`, which the server's own `~/docker/docker-compose.yml`
+`include`s from the uploaded directory rather than defining itself.
+
+`~/www/soccertime` on the server still holds the checkout the last archive-based deploy
+unpacked there. Those two uploaded files live in that same directory and **must stay**: the
+host's `docker-compose.yml` includes one and reads the other, and an `include` of a missing
+file breaks every `docker compose` command on that machine, not only this service. What can
+be cleared, once a release or two has gone out this way, is the unpacked code around them.
 
 ## Domain notes
 
@@ -267,7 +331,7 @@ Deployment was previously done through the `Makefile` which automates the entire
 
 - SSH access to the production server
 - `.env.production` file configured locally
-- Changes committed to git (deploy uses `git archive HEAD`)
+- The commit pushed to `main` and its CI run green, so the image exists to be pulled
 
 ### Available commands
 
@@ -280,10 +344,10 @@ make help
 
 | Command | Description |
 |---------|-------------|
-| `make deploy-production` | Full deployment (upload code + snapshot the database + run on remote) |
-| `make upload-only` | Upload code and configs without running deploy |
-| `make upload-config` | Upload only configuration files |
-| `make remote-restart` | Restart remote services without uploading code |
+| `make deploy-production` | Full deployment (pull the published image + snapshot the database + hand over) |
+| `make upload-config` | Upload only `.env.production` |
+| `make upload-compose` | Upload the service definition of the commit being deployed |
+| `make remote-restart` | Recreate remote services without deploying |
 | `make remote-scrape` | Run the scraper on the server and clear the cache |
 | `make remote-check` | Run Django's deployment checks against production |
 | `make remote-smoke-test` | Verify a live deploy from outside: health plus every public page |
@@ -353,48 +417,40 @@ make help
 # 1. Make changes to the code
 vim soccertime/views.py
 
-# 2. Commit the changes (IMPORTANT: deploy uses git archive HEAD)
+# 2. Commit and push: the image is built from what is on `main`
 git add -p
 git commit -m "feat: new feature"
+git push
 
-# 3. Deploy to production
+# 3. Wait for the checks and the publish job
+gh run watch
+
+# 4. Deploy to production
 make deploy-production
-```
-
-Expected output:
-
-```
---- Archiving application files ---
-git archive --format=tgz -o /tmp/soccertime.tgz HEAD
---- Uploading application archive and configuration files ---
-soccertime.tgz                                100%  150KB 1.2MB/s   00:00
-compose.production.yaml                       100% 1882    50KB/s   00:00
-.env.production                               100%  481    15KB/s   00:00
---- Initiating remote deployment via SSH ---
---- Pulling latest Docker images ---
---- Stopping and removing old services ---
---- Extracting new application code ---
---- Copying compose file to compose.yaml ---
---- Bringing up new services ---
---- Applying database migrations ---
---- Collecting static files ---
-Deployment process completed successfully.
 ```
 
 ### Detailed deployment process
 
-The `make deploy-production` command executes the following steps:
+`make deploy-production` runs these steps, in this order:
 
-1. **archive_app**: Creates a `.tgz` archive of the code using `git archive HEAD`
-2. **upload_files**: Uploads the archive, `compose.production.yaml` and `.env.production` to the server
-3. **remote_deploy**:
-   - Pulls the latest Nginx image
-   - Stops current services
-   - Extracts new code
-   - Brings up services with `docker compose up -d --build`
-   - Runs database migrations
-   - Collects static files
-4. **clean_local_archive**: Removes the local temporary archive
+1. **pull_image**: fetches `ghcr.io/tvalverde/soccertime:sha-$(git rev-parse HEAD)` on the
+   server. It comes first because it is the step most likely to fail — the commit may not be
+   published yet — and nothing on the server has changed when it does.
+2. **upload-compose** and **upload-config**: send the two files the image cannot carry —
+   `compose.production.yaml`, read out of git at the commit being deployed, and
+   `.env.production` from the working copy, which is where that file lives.
+3. **backup-remote-db** and **backup-remote-media**: snapshots taken before anything migrates.
+4. **remote_deploy**: retags the outgoing image as `soccertime:previous`, puts the pulled one
+   under `soccertime:latest` and drops the registry name, then — in throwaway containers, with
+   the previous container still serving — runs `check --deploy --fail-level WARNING`,
+   `collectstatic` and `migrate`, and finally hands the service over with `scripts/relay.sh`.
+5. **remote-smoke-test**: fetches the public pages from outside, so a deploy that leaves the
+   site broken fails instead of reporting success.
+6. **prune-remote-images**: drops superseded images of this project, keeping `:previous`.
+
+Rolling back is either of two things: `soccertime:previous` is still on the host, and any
+commit CI ever published can be deployed by name with
+`make deploy-production DEPLOY_TAG=sha-<commit>`.
 
 ### Production architecture
 
@@ -419,17 +475,14 @@ tmpfs:
 
 #### Changes are not reflected in production
 
-The `git archive HEAD` command only includes committed changes. Verify your changes are in the commit:
+The image is built from what was pushed, so a change that is only committed locally — or one
+whose CI run has not finished — is not in the image the deploy asks for. The pull fails by
+name rather than deploying something older:
 
 ```bash
-# View uncommitted changes
-git status
-
-# Commit changes
-git add <files>
-git commit -m "description"
-
-# Deploy again
+git status          # anything uncommitted is not in the image
+git push
+gh run watch        # the publish job runs after the checks pass
 make deploy-production
 ```
 

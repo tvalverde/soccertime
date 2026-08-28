@@ -114,8 +114,33 @@ class TestTheDayHeader:
         assert "15" in header
         assert "14" not in header
 
+    @override_settings(TIME_ZONE="Europe/Madrid")
     def test_the_header_names_the_day_the_site_would_call_it(self, match_at):
-        """The neutral half of the pair, true before and after the migration."""
-        event = match_at(timezone.now() + datetime.timedelta(days=4))
+        """The neutral half of the pair, true before and after the migration.
 
-        assert timezone.localtime(event.date).strftime("%d") in day_header(event)
+        A day in the past, which is the only kind that cannot come round again. This test
+        placed its event relative to `now()` twice, and both times the clock caught it: first
+        comparing `%d`, which pads to two digits, against a header that does not — so it
+        failed on the first nine days of a month — and then on a fixed day that was still
+        four days out, which the header would have called "mañana" on the eve and "hoy" on
+        the day, naming no date at all.
+        """
+        timezone.activate(MADRID)
+        event = match_at(datetime.datetime(2026, 6, 15, 20, 0, tzinfo=MADRID))
+
+        assert "15 de junio de 2026" in day_header(event)
+
+    @override_settings(TIME_ZONE="Europe/Madrid")
+    def test_a_day_beside_today_is_named_relatively_instead(self, match_at):
+        """Why the test above reaches into the past, stated rather than remembered.
+
+        The header renders through `naturalday`, which answers "hoy", "mañana" or "ayer"
+        within a day of now and prints no date at all. Any test that places an event by the
+        clock therefore has three days a month on which it asserts about a string that is not
+        there — and the run that discovers it is a run of `main`, which now decides whether an
+        image is published.
+        """
+        timezone.activate(MADRID)
+        tomorrow = timezone.localtime(timezone.now()) + datetime.timedelta(days=1)
+
+        assert "mañana" in day_header(match_at(tomorrow))

@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production archive_app upload_files remote_deploy clean_local_archive upload-only upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -21,16 +21,18 @@ help:
 	@echo "  format               Format code with ruff"
 	@echo ""
 	@echo "DEPLOY:"
-	@echo "  deploy-production    Full deploy (upload code + run on remote orchestrator)"
-	@echo "  upload-only          Upload code and .env.production without running deploy"
+	@echo "  deploy-production    Full deploy (pull the published image and hand over)"
 	@echo "  upload-config        Upload only .env.production"
-	@echo "  remote-restart       Rebuild/recreate remote services via orchestrator"
+	@echo "  upload-compose       Upload the service definition of the deployed commit"
+	@echo "  remote-restart       Recreate remote services via orchestrator"
 	@echo "  remote-scrape        Run the scraper on the remote server and clear cache"
 	@echo "  remote-install-import-cron  Install the periodic link import (SOURCE=, URL=)"
 	@echo "  remote-install-logrotate    Rotate the logs those cron entries write"
 	@echo "  remote-check         Run Django's deployment checks on production"
 	@echo "  remote-pull          Refresh remote images, skipping the ones built on the host"
 	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200)"
+	@echo "  replica-up           Start the local production replica, ready to serve"
+	@echo "  replica-up-published Same, on the image CI published for this commit"
 	@echo "  replica-migrate      Migrate the local production replica as its database owner"
 	@echo "  replica-relay        Rehearse the deploy handover against the replica"
 	@echo "  remote-smoke-test    Verify a live deploy from outside (health + public pages)"
@@ -38,6 +40,7 @@ help:
 	@echo "  remote-redownload-images  Restore flag images missing from the media volume"
 	@echo "  remote-import-links  Import channel links (SOURCE=, FILE=, ARGS=--dry)"
 	@echo "  prune-remote-images  Drop this project's superseded images, keeping :previous"
+	@echo "  prune-remote-app-path Drop the code left on the server by the old deploy"
 	@echo "  remote-apply-config  Upload .env.production and recreate the container"
 	@echo "  remote-admin-on      Expose the admin on production (remember to turn it off)"
 	@echo "  remote-admin-off     Remove the admin from production's URLs entirely"
@@ -93,8 +96,13 @@ REMOTE_DB_FILE_IN_VOLUME ?= db.sqlite3
 REMOTE_CACHE_FILE_IN_VOLUME ?= soccertime_data_cache.sqlite
 
 # Public entry point and pages checked after a deploy. Override in .env if they change.
+# The API listing and its documentation page are in here because they are the only things
+# that would notice a production image built without the new dependencies: `/healthz/`
+# renders no template and answers green either way, which is exactly how a deploy reported
+# success while every page returned 500. The smoke test appends `?smoke=<pid>`, which the
+# API ignores by design — an unknown parameter must never turn a listing into a 400.
 PRODUCTION_URL ?= https://www.mojon.es/soccertime
-SMOKE_PATHS ?= /healthz/ /favorites/ /agenda/ /competitions/ /channels/
+SMOKE_PATHS ?= /healthz/ /favorites/ /agenda/ /competitions/ /channels/ /api/v1/events/ /api/v1/docs/
 
 # Defaults for `remote-logs`. `SINCE` accepts anything `docker compose logs --since` does,
 # so `10m`, `1h` or an ISO timestamp. `GREP` is a plain pattern, empty for everything.
@@ -207,35 +215,52 @@ format:
 
 # === Deployment Commands ===
 
-# Application archive to upload
-ARCHIVE_NAME = $(APP_NAME).tgz
-LOCAL_ARCHIVE_PATH = /tmp/$(ARCHIVE_NAME)
-
-# Configuration files to upload
+# Configuration files to upload. Both describe how to run the image on this server, which is
+# the one thing the image itself cannot carry: the environment file holds the secret key and
+# is deliberately not in the repository, and the compose file is what the server's own
+# `~/docker/docker-compose.yml` includes from the uploaded directory rather than defining
+# itself. That include is why the compose file has to keep travelling now that the archive
+# does not — a definition left behind would go on being used, with nothing to say it is old.
 ENV_PROD_FILE = .env.production
+COMPOSE_PROD_FILE = compose.production.yaml
+
+# The published image, and the tag of the commit being deployed. CI tags with the full hash
+# — `type=sha,format=long` — which is what `git rev-parse` prints, so the two agree by
+# construction rather than by convention; `test_deploy_transport.py` holds them together.
+#
+# Overriding DEPLOY_TAG is the rollback that does not depend on the server still holding
+# `:previous`, and it can reach any commit CI ever published:
+#
+#   make deploy-production DEPLOY_TAG=sha-<commit>
+GHCR_IMAGE ?= ghcr.io/tvalverde/soccertime
+DEPLOY_TAG ?= sha-$(shell git rev-parse HEAD)
+# The same commit without the tag's prefix. The compose file the server runs is read out of
+# git at this revision, so overriding DEPLOY_TAG moves the definition with the image rather
+# than pairing an old image with today's working copy.
+DEPLOY_COMMIT = $(DEPLOY_TAG:sha-%=%)
 
 # Main target for production deployment.
+# The pull comes first: it is the step most likely to fail — the commit may not be published
+# yet, or CI may still be running — and failing it after the database has been snapshotted
+# and the configuration uploaded would leave work half done for nothing.
 # The snapshots run before remote_deploy, which is what applies the migrations,
 # and the smoke test runs last so a deploy that leaves the site broken fails loudly.
-deploy-production: archive_app upload_files backup-remote-db backup-remote-media remote_deploy clean_local_archive remote-smoke-test prune-remote-images
+deploy-production: pull_image upload-compose upload-config backup-remote-db backup-remote-media remote_deploy remote-smoke-test prune-remote-images
 	@echo "Deployment process completed successfully."
 
-# Target to archive application files locally
-archive_app:
-	@echo "--- Archiving application files ---"
-	git archive --format=tgz -o $(LOCAL_ARCHIVE_PATH) HEAD
-
-# Target to upload files to remote server
-upload_files:
-	@echo "--- Uploading application archive and .env.production ---"
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_APP_PATH)'
-	scp -P$(REMOTE_PORT) $(LOCAL_ARCHIVE_PATH) $(REMOTE_HOST):$(REMOTE_APP_PATH)/
-	@if [ -f "$(ENV_PROD_FILE)" ]; then \
-		echo "Uploading $(ENV_PROD_FILE)..."; \
-		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/; \
-	else \
-		echo "Warning: $(ENV_PROD_FILE) not found locally. Skipping upload."; \
-	fi
+# Fetch the image CI built for this commit. Nothing on the server has changed when this runs,
+# so a commit that was never published, or whose checks failed, costs a message and no state.
+pull_image:
+	@echo "--- Pulling $(GHCR_IMAGE):$(DEPLOY_TAG) ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker pull $(GHCR_IMAGE):$(DEPLOY_TAG)' || { \
+		echo ""; \
+		echo "The pull did not happen. Read the error above before assuming which:"; \
+		echo "  a 'not found' means no image was published for this commit — it has to be"; \
+		echo "  pushed and its checks green ('gh run watch'), or name one that exists with"; \
+		echo "  'make deploy-production DEPLOY_TAG=sha-<commit>'. Anything else — a refused"; \
+		echo "  connection, a name that does not resolve — is the server, not the image."; \
+		exit 1; \
+	}
 
 # Target to execute deployment commands on remote server via SSH
 #
@@ -265,19 +290,22 @@ upload_files:
 # answered 500 while `/healthz/` — which renders no template — stayed green, so the
 # container looked healthy with the site down. Finishing the collection first removes the
 # window rather than papering over it with a second restart.
+#
+# The image itself is not built here any more: `pull_image` has already fetched the one CI
+# built for this commit, and this retags it to the name everything on the host uses. The
+# registry name is then dropped — an image still carrying one is not dangling, and
+# `prune-remote-images` reclaims superseded images by pruning the dangling ones, so leaving
+# the tag behind would turn that prune into a no-op and fill the disk over releases.
 remote_deploy:
 	@echo "--- Initiating remote deployment via SSH ---"
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e && \
-		cd $(REMOTE_APP_PATH) && \
-		echo "--- Extracting new application code ---" && \
-		tar zxfv $(ARCHIVE_NAME) && \
-		rm $(ARCHIVE_NAME) && \
 		cd $(REMOTE_DOCKER_PATH) && \
 		{ docker image inspect $(APP_NAME):latest >/dev/null 2>&1 \
 			&& docker tag $(APP_NAME):latest $(APP_NAME):previous || true; } && \
-		echo "--- Building the new image ---" && \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) build $(REMOTE_SOCCERTIME_SERVICE) && \
+		echo "--- Putting the pulled image under the name the host runs ---" && \
+		docker tag $(GHCR_IMAGE):$(DEPLOY_TAG) $(APP_NAME):latest && \
+		docker rmi $(GHCR_IMAGE):$(DEPLOY_TAG) && \
 		echo "--- Fixing static volume permissions ---" && \
 		docker run --rm -v $(REMOTE_STATIC_VOLUME):/data alpine chown -R $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data && \
 		echo "--- Checking the configuration before anything runs on it ---" && \
@@ -302,42 +330,43 @@ remote_deploy:
 		sh -s $(REMOTE_SOCCERTIME_SERVICE) $(APP_NAME):latest \
 	' < scripts/relay.sh
 
-# Target to clean up local temporary archive after upload
-clean_local_archive:
-	@echo "--- Cleaning up local archive ---"
-	rm $(LOCAL_ARCHIVE_PATH)
+# Target to upload the service definition the server includes, taken from git at the commit
+# being deployed rather than from the working copy. The archive used to guarantee that by
+# construction, being made from a commit; a plain `scp` would put a half-finished compose
+# edit into production without passing through git or CI, and on a rollback it would pair an
+# old image with today's definition — a combination nothing has ever run.
+#
+# Separate from `upload-config` because that one is also what `remote-apply-config` and the
+# admin toggles run, and those have no business replacing the definition of a live service.
+upload-compose:
+	@echo "--- Uploading $(COMPOSE_PROD_FILE) as of $(DEPLOY_COMMIT) ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_APP_PATH)'
+	@git show $(DEPLOY_COMMIT):$(COMPOSE_PROD_FILE) | \
+		ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'cat > $(REMOTE_APP_PATH)/$(COMPOSE_PROD_FILE)'
 
-# Upload and unpack the code without building, migrating or restarting anything.
-# The archive has to be extracted here too: leaving it packed means a later
-# remote-restart quietly rebuilds the image from the previous version.
-upload-only: archive_app upload_files clean_local_archive
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
-		set -e; \
-		cd $(REMOTE_APP_PATH); \
-		tar zxf $(ARCHIVE_NAME); \
-		rm $(ARCHIVE_NAME) \
-	'
-	@echo "Files uploaded and extracted. No build, migration or restart executed."
-
-# Target to upload only configuration file (.env.production)
+# Target to upload only the configuration file (`.env.production`), which is not in the
+# repository — it holds the secret key — so the local copy is the one of record, and it
+# cannot be baked into a published image for the same reason.
 upload-config:
-	@echo "--- Uploading configuration file only ---"
+	@echo "--- Uploading the environment the container reads ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'mkdir -p $(REMOTE_APP_PATH)'
 	@if [ -f "$(ENV_PROD_FILE)" ]; then \
 		echo "Uploading $(ENV_PROD_FILE)..."; \
 		scp -P$(REMOTE_PORT) $(ENV_PROD_FILE) $(REMOTE_HOST):$(REMOTE_APP_PATH)/; \
-		echo "Configuration file uploaded successfully."; \
+		echo "Configuration uploaded successfully."; \
 	else \
 		echo "Warning: $(ENV_PROD_FILE) not found locally. Nothing uploaded."; \
 	fi
 
-# Target to rebuild/recreate remote services without uploading
+# Target to recreate remote services without deploying. No `--build`: there is nothing on the
+# server to build from, and the image under `soccertime:latest` is the one a deploy pulled.
 remote-restart:
-	@echo "--- Rebuilding and restarting remote services (safe up) ---"
+	@echo "--- Restarting remote services (safe up) ---"
 	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
 		cd $(REMOTE_DOCKER_PATH); \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --build --remove-orphans $(REMOTE_SOCCERTIME_SERVICE); \
-		echo "Services rebuilt/restarted successfully." \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) up -d --remove-orphans $(REMOTE_SOCCERTIME_SERVICE); \
+		echo "Services restarted successfully." \
 	'
 
 # Target to run the scraper on the remote production server and clear the cache
@@ -384,13 +413,18 @@ BACKUP_SUFFIX := .backup.$(shell date +%Y%m%d_%H%M%S)
 # Snapshot the production database inside its own volume. Kept on the server so a bad
 # Snapshot the database to the host, compressed and consistent. Copying the file byte by
 # byte can capture a half-written transaction; the SQLite backup API cannot.
+# The database volume is mounted writable, which a backup has no use for and SQLite
+# insists on: reading a write-ahead-logged database means reading its log, and for that
+# it must create the shared-memory index beside it — which a clean close deletes. On a
+# read-only mount it cannot, and the snapshot dies with `unable to open database file`.
+# That broke this target in production the day the log was enabled.
 backup-remote-db:
 	@echo "--- Backing up remote database ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
 		mkdir -p $(REMOTE_BACKUP_PATH); \
 		docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) \
-			-v $(REMOTE_DB_VOLUME):/db:ro -v $(REMOTE_BACKUP_PATH):/backups $(REMOTE_IMAGE) \
+			-v $(REMOTE_DB_VOLUME):/db -v $(REMOTE_BACKUP_PATH):/backups $(REMOTE_IMAGE) \
 			python -m soccertime.backups snapshot-db /db/$(REMOTE_DB_FILE_IN_VOLUME) \
 				/backups/db.$(BACKUP_TIMESTAMP).sqlite3.gz \
 	'
@@ -443,16 +477,17 @@ restore-remote-db:
 	@echo "--- Restoring remote database from $(BACKUP) ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
-		docker run --rm -v $(REMOTE_DB_VOLUME):/db -v $(REMOTE_BACKUP_PATH):/backups:ro alpine sh -c " \
-			test -f /backups/$(BACKUP) || { echo Snapshot $(BACKUP) not found; exit 1; }; \
-			cp /db/$(REMOTE_DB_FILE_IN_VOLUME) /db/$(REMOTE_DB_FILE_IN_VOLUME).pre-restore; \
-			gunzip -c /backups/$(BACKUP) > /db/$(REMOTE_DB_FILE_IN_VOLUME); \
-			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /db/$(REMOTE_DB_FILE_IN_VOLUME) \
-		"; \
+		test -f $(REMOTE_BACKUP_PATH)/$(BACKUP) || { echo Snapshot $(BACKUP) not found; exit 1; }; \
 		cd $(REMOTE_DOCKER_PATH); \
-		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) restart $(REMOTE_SOCCERTIME_SERVICE) \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) stop $(REMOTE_SOCCERTIME_SERVICE); \
+		docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) -v $(REMOTE_DB_VOLUME):/db -v $(REMOTE_BACKUP_PATH):/backups:ro $(REMOTE_IMAGE) sh -c " \
+			python -m soccertime.backups snapshot-db /db/$(REMOTE_DB_FILE_IN_VOLUME) /db/db.$(BACKUP_TIMESTAMP).pre-restore.sqlite3.gz; \
+			gunzip -c /backups/$(BACKUP) > /db/$(REMOTE_DB_FILE_IN_VOLUME); \
+			rm -f /db/$(REMOTE_DB_FILE_IN_VOLUME)-wal /db/$(REMOTE_DB_FILE_IN_VOLUME)-shm \
+		"; \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) start $(REMOTE_SOCCERTIME_SERVICE) \
 	'
-	@echo "Database restored and service restarted."
+	@echo "Database restored and service started."
 
 
 # Restore flag images whose file went missing from the media volume, re-fetching them
@@ -719,6 +754,34 @@ prune-remote-images:
 		docker image prune -f --filter label=org.opencontainers.image.title=$(APP_NAME) \
 	'
 
+# What is left in the application directory now that a deploy sends an image instead of code:
+# the checkout the last archive-based deploy unpacked. Nothing reads it — the only reference
+# to that directory anywhere on the host is the `include` of the compose file, and the
+# containers mount named volumes and `~/shared`, nothing from there — but it still looks like
+# the code production runs, and it is whatever commit was deployed the last time a deploy
+# uploaded anything. Read during an incident, it would be evidence about the past.
+#
+# Two files in that same directory are load-bearing and do not look it from there: the host's
+# compose `include`s `$(COMPOSE_PROD_FILE)`, and an `include` of a missing file fails every
+# `docker compose` command on that machine rather than just this service, and
+# `$(ENV_PROD_FILE)` is where the container reads its secret key. So this names what stays
+# rather than what goes, and refuses to run at all if either is already absent — the state in
+# which "delete everything else" would be a way to finish the job rather than start it.
+prune-remote-app-path:
+	@echo "--- Removing from $(REMOTE_APP_PATH) everything but the files the host reads ---"
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
+		set -e; \
+		cd $(REMOTE_APP_PATH); \
+		{ test -f $(COMPOSE_PROD_FILE) && test -f $(ENV_PROD_FILE); } || { \
+			echo "Refusing: one of the two files the host reads is not here. Run make upload-compose upload-config first."; \
+			exit 1; \
+		}; \
+		find . -mindepth 1 -maxdepth 1 ! -name "$(COMPOSE_PROD_FILE)" ! -name "$(ENV_PROD_FILE)" -print; \
+		find . -mindepth 1 -maxdepth 1 ! -name "$(COMPOSE_PROD_FILE)" ! -name "$(ENV_PROD_FILE)" -exec rm -rf {} +; \
+		echo "--- What is left ---"; \
+		ls -A \
+	'
+
 # The local production replica, whose stack is three files. Kept here so the incantation is
 # reviewable, which is the same reason the remote operations live here.
 REPLICA_COMPOSE = -f compose.yaml -f compose.production.yaml -f compose.production.local.yaml
@@ -735,11 +798,58 @@ MANAGE ?= migrate
 #
 #   make replica-migrate
 #   make replica-manage MANAGE="showmigrations soccertime"
+# The replica's database volume carries a copy of production's, so its files belong to
+# production's UID while the replica runs as this machine's — 1000 against 1001 here. That
+# mismatch used to cost only writes; with the write-ahead log it costs reads too, because
+# reading the journal means creating the shared-memory index beside it. The stack comes up
+# healthy and answers 500 to every page that touches the database, which reads like a broken
+# deploy rather than a permissions problem.
+#
+# The user cannot simply be production's: `./media` and `./static` are bind mounts of this
+# working copy and belong to whoever checked it out, so the replica has to run as them. So
+# the volume is handed over instead, the same way `remote_deploy` hands the static volume to
+# whoever production runs as. Doing it here rather than leaving it to be remembered is the
+# point: the README's bare `docker compose up` is what produced the 500s.
+REPLICA_DB_VOLUME ?= $(notdir $(CURDIR))_soccertime-db
+
+# The steps run in the order `remote_deploy` runs them, which is the other half of what
+# makes this a rehearsal: static files are collected **before** anything serves them. A
+# process reads the manifest once, at startup, and caches it for its whole life — so
+# collecting after `up` leaves the container answering 500 to every page while its health
+# check stays green. That is the incident `CLAUDE.md` documents, and doing it in the wrong
+# order here reproduced it exactly.
+replica-up: replica-build replica-serve
+
+# Rehearse the artefact production will run rather than a local rebuild of it. Two builds of
+# one commit are not the same image — the base image and every wheel resolve afresh — so once
+# the question is "does the published image serve?", building here answers a different one.
+# Same tag as the build, so everything downstream is untouched.
+replica-up-published: replica-pull replica-serve
+
+replica-build:
+	@echo "--- Building the replica image ---"
+	@docker compose $(REPLICA_COMPOSE) build $(REPLICA_SERVICE)
+
+replica-pull:
+	@echo "--- Pulling $(GHCR_IMAGE):$(DEPLOY_TAG) ---"
+	@docker pull $(GHCR_IMAGE):$(DEPLOY_TAG)
+	@docker tag $(GHCR_IMAGE):$(DEPLOY_TAG) $(APP_NAME):replica
+	@docker rmi $(GHCR_IMAGE):$(DEPLOY_TAG)
+
+replica-serve:
+	@echo "--- Handing the database volume to the user the replica runs as ---"
+	@docker run --rm -v $(REPLICA_DB_VOLUME):/db alpine chown -R $(DOCKER_UID):$(DOCKER_GID) /db
+	@echo "--- Collecting static files, before anything serves them ---"
+	@docker compose $(REPLICA_COMPOSE) run --rm --no-deps -u $(DOCKER_UID):$(DOCKER_GID) \
+		$(REPLICA_SERVICE) python manage.py collectstatic --noinput
+	@echo "--- Starting the replica ---"
+	@docker compose $(REPLICA_COMPOSE) up -d traefik $(REPLICA_SERVICE) soccertime-nginx
+
 replica-manage:
 	@owner=$$(docker compose $(REPLICA_COMPOSE) exec -T $(REPLICA_SERVICE) \
 		stat -c "%u:%g" /code/db/db.sqlite3 2>/dev/null | tr -d "\r"); \
 	if [ -z "$$owner" ]; then \
-		echo "The replica is not running. Start it with the command in README.md."; \
+		echo "The replica is not running. Start it with 'make replica-up'."; \
 		exit 1; \
 	fi; \
 	echo "--- Running '$(MANAGE)' on the replica as $$owner ---"; \
@@ -827,31 +937,40 @@ remote-check:
 download-db:
 	@echo "--- Downloading database from remote volume ---"
 	@if [ -f "$(LOCAL_DB_PATH)" ]; then \
-		echo "Backing up local database to $(LOCAL_DB_PATH)$(BACKUP_SUFFIX)"; \
-		cp $(LOCAL_DB_PATH) $(LOCAL_DB_PATH)$(BACKUP_SUFFIX); \
+		echo "Snapshotting local database to $(LOCAL_DB_PATH)$(BACKUP_SUFFIX).gz"; \
+		python3 -m soccertime.backups snapshot-db $(LOCAL_DB_PATH) $(LOCAL_DB_PATH)$(BACKUP_SUFFIX).gz; \
 	fi
 	@mkdir -p $(dir $(LOCAL_DB_PATH))
-	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'HOST_UID=$$(id -u); HOST_GID=$$(id -g); docker run --rm -v $(REMOTE_DB_VOLUME):/from -v /tmp:/to alpine sh -c "cp /from/$(REMOTE_DB_FILE_IN_VOLUME) /to/$(APP_NAME)-db.sqlite3 && chown $$HOST_UID:$$HOST_GID /to/$(APP_NAME)-db.sqlite3"'
-	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-db.sqlite3 $(LOCAL_DB_PATH)
-	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-db.sqlite3'
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) -v $(REMOTE_DB_VOLUME):/db -v /tmp:/to $(REMOTE_IMAGE) python -m soccertime.backups snapshot-db /db/$(REMOTE_DB_FILE_IN_VOLUME) /to/$(APP_NAME)-db.sqlite3.gz'
+	scp -P$(REMOTE_PORT) $(REMOTE_HOST):/tmp/$(APP_NAME)-db.sqlite3.gz /tmp/$(APP_NAME)-db.sqlite3.gz
+	ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'rm -f /tmp/$(APP_NAME)-db.sqlite3.gz'
+	@docker compose stop web >/dev/null 2>&1 || true
+	gunzip -c /tmp/$(APP_NAME)-db.sqlite3.gz > $(LOCAL_DB_PATH)
+	@rm -f $(LOCAL_DB_PATH)-wal $(LOCAL_DB_PATH)-shm /tmp/$(APP_NAME)-db.sqlite3.gz
+	@docker compose start web >/dev/null 2>&1 || true
 	@echo "Database downloaded successfully."
 
 # Upload database to remote DB volume (with remote backup)
 upload-db:
 	@echo "--- Uploading database to remote volume ---"
-	scp -P$(REMOTE_PORT) $(LOCAL_DB_PATH) $(REMOTE_HOST):~/$(APP_NAME)-db.sqlite3
+	python3 -m soccertime.backups snapshot-db $(LOCAL_DB_PATH) /tmp/$(APP_NAME)-db.sqlite3.gz
+	scp -P$(REMOTE_PORT) /tmp/$(APP_NAME)-db.sqlite3.gz $(REMOTE_HOST):~/$(APP_NAME)-db.sqlite3.gz
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		set -e; \
-		docker run --rm -v $(REMOTE_DB_VOLUME):/data -v $$HOME:/src alpine sh -c " \
+		cd $(REMOTE_DOCKER_PATH); \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) stop $(REMOTE_SOCCERTIME_SERVICE); \
+		docker run --rm -u $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) -v $(REMOTE_DB_VOLUME):/data -v $$HOME:/src $(REMOTE_IMAGE) sh -c " \
 			if [ -f /data/$(REMOTE_DB_FILE_IN_VOLUME) ]; then \
-				echo Backing up remote database; \
-				cp /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/$(REMOTE_DB_FILE_IN_VOLUME).backup.$$(date +%Y%m%d_%H%M%S); \
+				echo Snapshotting the database being replaced; \
+				python -m soccertime.backups snapshot-db /data/$(REMOTE_DB_FILE_IN_VOLUME) /data/db.$(BACKUP_TIMESTAMP).pre-upload.sqlite3.gz; \
 			fi; \
-			cp /src/$(APP_NAME)-db.sqlite3 /data/$(REMOTE_DB_FILE_IN_VOLUME); \
-			chown $(REMOTE_DOCKER_UID):$(REMOTE_DOCKER_GID) /data/$(REMOTE_DB_FILE_IN_VOLUME) \
+			gunzip -c /src/$(APP_NAME)-db.sqlite3.gz > /data/$(REMOTE_DB_FILE_IN_VOLUME); \
+			rm -f /data/$(REMOTE_DB_FILE_IN_VOLUME)-wal /data/$(REMOTE_DB_FILE_IN_VOLUME)-shm \
 		"; \
-		rm -f ~/$(APP_NAME)-db.sqlite3 \
+		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) start $(REMOTE_SOCCERTIME_SERVICE); \
+		rm -f ~/$(APP_NAME)-db.sqlite3.gz \
 	'
+	@rm -f /tmp/$(APP_NAME)-db.sqlite3.gz
 	@echo "Database uploaded successfully."
 
 # Download cache from remote DB volume (with local backup)

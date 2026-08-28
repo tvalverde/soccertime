@@ -1,0 +1,132 @@
+name: CI
+
+# Pull requests as well as pushes: a branch can be merged without ever having been pushed to
+# `main` on its own, and that merge is exactly the change nobody ran the suite against.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Nothing here writes to the repository. Stated rather than inherited, because the default
+# for a workflow that says nothing is whatever the repository settings happen to be.
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      # `settings.py` raises `ImproperlyConfigured` without a `DJANGO_SECRET_KEY` unless debug
+      # is on, and that key is deliberately not in the repository. Losing this line does not
+      # break one step, it breaks every step that imports Django — including mypy, whose
+      # django-stubs plugin loads the settings module.
+      DJANGO_DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          # The interpreter the image is pinned to, read from the Dockerfile by
+          # `test_ci_workflow.py` so the two cannot drift apart. A suite green on an
+          # interpreter production does not run says nothing about production.
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install the application and its toolchain
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Lint
+        run: ruff check soccertime/
+      - name: Formatting
+        run: ruff format --check soccertime/
+      - name: Types
+        run: mypy soccertime/
+      # `db/` is not in the repository — it is ignored — and `DATABASES` puts the SQLite file
+      # inside it, so pytest-django creates its test database in a directory a fresh checkout
+      # does not have. The integration tests are excluded because they make real requests to
+      # the sites the scraper reads: included, this job would report the project broken on the
+      # day somebody else's website went down, and a check nobody believes checks nothing.
+      - name: Tests
+        run: |
+          mkdir -p db
+          pytest -m "not integration"
+
+  # The half of secret scanning a free public repository is allowed to have. GitHub's own
+  # scanner covers partner and provider patterns here; the category that would match a
+  # `DJANGO_SECRET_KEY` — generic patterns, once called non-provider patterns — needs a paid
+  # Secret Protection licence, and the REST API answers 200 to a request to enable it and
+  # leaves it disabled, which is how that looked like a forgotten switch rather than a licence.
+  #
+  # This is a smoke alarm and not push protection: it reads commits that have already been
+  # pushed, so a key it finds is already public. What it buys is finding out in minutes rather
+  # than never, and it stops the leak going further — `publish` waits for it, so no image is
+  # built from a commit it flagged.
+  #
+  # It scans what each push or pull request carries, not the whole repository, and that is
+  # enough here for a reason that only became true this week: the ruleset on `main` forbids
+  # force-pushes, so the past cannot change. It was scanned once, from a laptop, over all 248
+  # commits with no findings — `docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks
+  # git /repo --redact` repeats that — and from there only new commits can introduce a secret,
+  # which is exactly what this sees.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Actions clones a single commit by default, and the scan covers the range the
+          # push carries — commits a depth-one clone does not contain. Without this the job
+          # would have nothing to read and would say so as a success.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          # No licence key: those are required for organization accounts, and this repository
+          # belongs to a personal one.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The image production runs. It is built here, once, from a clean checkout, and pulled by
+  # the deploy — rather than built on the server from an uploaded tarball, which meant the
+  # code lived there, the base image was resolved there, and two deploys of one commit could
+  # produce two different images.
+  publish:
+    needs: [checks, secrets]
+    # Never from a pull request: it may come from a fork, and a fork must not be able to put
+    # an image where the deploy will find it. Its token could not push one anyway, which is
+    # the sort of failure that is better refused than discovered.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The one thing this workflow writes. Granted to this job alone rather than to the
+      # workflow, so the job that runs the tests cannot publish anything.
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/tvalverde/soccertime
+          # `format=long` is not decoration: the deploy asks for `sha-$(git rev-parse HEAD)`,
+          # all forty characters of it, and the default abbreviated tag would publish an
+          # image no deploy can name — a failure that arrives on the server, at the pull.
+          # `latest` is not what a deploy asks for; it names the newest published image for
+          # whoever pulls one by hand, which is otherwise a hash nobody can type.
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # No build arguments: the production build is the one that says nothing, and an
+          # image carrying pytest and mypy is not the one this suite rehearsed.
+          #
+          # Provenance off keeps the push a single image manifest rather than an index. The
+          # server resolves what it pulled with `docker image inspect` and hands that id to
+          # the relay, which compares it against the running container's — an attestation
+          # index answers that question with a digest no container ever reports.
+          provenance: false

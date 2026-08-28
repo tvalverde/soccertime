@@ -72,6 +72,15 @@ def services(path):
     return found
 
 
+def without_comments(path):
+    """A compose file with its comment lines dropped.
+
+    Both files explain at length why they do or do not declare a `build:`, so an assertion
+    about that word would otherwise be satisfied by the explanation of its absence.
+    """
+    return "\n".join(line for line in path.read_text().splitlines() if not line.lstrip().startswith("#"))
+
+
 def merged(paths):
     """What compose sees for the whole stack: later files override earlier ones by name."""
     result = {}
@@ -174,12 +183,21 @@ class TestTheTraefikHealthCheck:
         assert replica != services(PRODUCTION)["soccertime-web"]["healthcheck_host"]
 
 
-class TestTheImageIsNeverPulled:
-    """`soccertime:latest` is built on the host and published nowhere.
+class TestTheImageIsNeverPulledByCompose:
+    """`soccertime:latest` is a name only this host uses, and no registry answers to it.
 
-    Without saying so, `docker compose pull` asked a registry for it, was denied, and exited
-    non-zero — taking down a command whose real job is refreshing the four images that *are*
-    remote. `never` states the fact.
+    That was true when the host built the image and it is still true now that CI publishes
+    one: the deploy pulls `ghcr.io/tvalverde/soccertime:sha-<commit>` and retags it, so
+    everything downstream — the relay, the rollback, the backups, the prune — goes on naming
+    the tag it always did. Asking a registry for that tag got `pull access denied`, which
+    failed the whole `docker compose pull` and took the four images that really are remote
+    with it. `never` states the fact.
+
+    It also carries more weight than it used to. `make remote-pull` refreshes the images that
+    genuinely are remote with `--ignore-buildable`, which skips services declaring a `build:`
+    — and this one no longer does. `never` is now the only reason that command does not ask
+    the registry for a tag no registry has; verified by running a `pull` against a service
+    declared this way, which is skipped rather than attempted.
 
     Pinned rather than left to a comment because the obvious alternative, `build`, also
     silences the pull and looks equivalent: it makes every `up` rebuild the image, which would
@@ -187,12 +205,20 @@ class TestTheImageIsNeverPulled:
     exists to keep a deploy from interrupting the site.
     """
 
-    def test_production_never_tries_to_fetch_an_image_it_builds(self):
+    def test_production_never_tries_to_fetch_the_tag_the_deploy_puts_there(self):
         assert services(PRODUCTION)["soccertime-web"].get("pull_policy") == "never"
 
-    def test_the_service_still_declares_how_to_build_it(self):
-        """Guards the test above: `never` with nothing to build would be a dead service."""
-        assert "build:" in PRODUCTION.read_text()
+    def test_production_does_not_build_its_own_image(self):
+        """The build belongs to CI now. A `build:` left here would let a stray `up --build`
+        on the server put a locally built image under the tag the deploy had just pulled —
+        built from whatever code that machine happens to hold, which nothing reviewed and no
+        test ran against."""
+        assert "build:" not in without_comments(PRODUCTION)
+
+    def test_the_replica_still_builds_its_own(self):
+        """Guards the test above: the rehearsal is how a change is seen before it is pushed,
+        and it has to be able to run the working copy rather than the last published image."""
+        assert "build:" in without_comments(REPLICA)
 
 
 def seconds(value):
