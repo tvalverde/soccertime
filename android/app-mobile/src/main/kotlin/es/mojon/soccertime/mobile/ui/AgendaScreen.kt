@@ -119,11 +119,10 @@ fun EventList(
 ) {
     val listState = rememberLazyListState()
 
-    // With no anchor — four in the morning, everything in the window over — the end of the
-    // list, not the top: the top is the small hours of a day already gone.
-    val opensOn = remember(days, anchorId) {
-        anchorPosition(anchorId, days) ?: (days.sumOf { 1 + it.events.size } - 1)
-    }
+    // The top when there is no anchor, which now means only an empty listing or one whose
+    // anchor has been filtered off it. Falling through to the *last* item is what sent the
+    // favourites screen, which passed no anchor at all, to the bottom of its own list.
+    val opensOn = remember(days, anchorId) { anchorPosition(anchorId, days) ?: 0 }
     LaunchedEffect(days.firstOrNull()?.date, anchorId) {
         // Not wrapped in `runCatching`: that is a suspending call, and catching everything
         // around one swallows its cancellation — which is precisely the mistake that let an

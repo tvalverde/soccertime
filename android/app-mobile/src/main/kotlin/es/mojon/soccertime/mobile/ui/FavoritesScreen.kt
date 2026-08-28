@@ -94,6 +94,7 @@ fun FavoritesScreen(
                 canLoadMore = false,
                 onLoadMore = { },
                 onOpen = onOpen,
+                anchorId = state.anchorId,
             )
         }
     }

@@ -134,8 +134,26 @@ class AgendaViewModel(
                 state.value = state.value.copy(query = intent.text)
             }
             is AgendaIntent.Narrow -> {
+                // Only when it really moves. Both apps re-send the filter every time the
+                // agenda re-enters composition; the `StateFlow` turns a repeat into no reload,
+                // but the clearing below would blank a screen already showing the answer.
+                if (intent.filter == filters.value.narrowing) return
                 filters.value = filters.value.copy(narrowing = intent.filter)
-                state.value = state.value.copy(filter = intent.filter)
+                forgetListing()
+                state.value = state.value.copy(
+                    filter = intent.filter,
+                    days = emptyList(),
+                    anchorId = null,
+                    count = 0,
+                    canLoadMore = false,
+                    // Said out loud rather than left blank: the answer is seconds away and an
+                    // empty screen with no explanation reads as an app that has broken.
+                    loading = true,
+                    // The banner belongs to the listing being left. Kept, it would sit over
+                    // the "Cargando" of a listing that has not failed at all.
+                    error = null,
+                    showingStale = false,
+                )
             }
             is AgendaIntent.OnlyWatchable -> {
                 filters.value = filters.value.copy(watchableOnly = intent.only)
@@ -195,6 +213,21 @@ class AgendaViewModel(
     }
 
     private fun mineIsCurrent(mine: Int) = mine == generation
+
+    /**
+     * Everything that belonged to the listing now gone.
+     *
+     * One definition, because two screens' worth of bugs came from clearing what is drawn
+     * while leaving behind what it was drawn from — the favourites redraw then rebuilt the
+     * old rows from `loaded` and put them back. `loadedAt` goes too: the five-second guard on
+     * a manual refresh has nothing left to measure from once the listing it timed is gone.
+     */
+    private fun forgetListing() {
+        loaded = emptyList()
+        nextPage = null
+        loadedFor = null
+        loadedAt = null
+    }
 
     /**
      * [joining] is set only when appending, and names the load whose list this page belongs
@@ -294,11 +327,7 @@ class AgendaViewModel(
                 // server. Leaving the old query's events there while clearing the days let
                 // that redraw resurrect them: the whole plain agenda reappearing under a
                 // followed team's chip, with the failure banner still on it.
-                if (!sameQuery) {
-                    loaded = emptyList()
-                    nextPage = null
-                    loadedFor = null
-                }
+                if (!sameQuery) forgetListing()
                 state.value.copy(
                     days = if (sameQuery) state.value.days else emptyList(),
                     anchorId = if (sameQuery) state.value.anchorId else null,

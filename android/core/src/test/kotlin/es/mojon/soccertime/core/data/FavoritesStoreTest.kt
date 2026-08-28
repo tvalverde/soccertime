@@ -1,13 +1,21 @@
 package es.mojon.soccertime.core.data
 
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.job
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -64,6 +72,49 @@ class FavoritesStoreTest {
     private val athletic = FollowedItem(322, "Athletic Club", "https://www.mojon.es/…/athletic.webp")
     private val madrid = FollowedItem(1, "Real Madrid", "https://www.mojon.es/…/madrid.webp")
     private val laLiga = FollowedItem(10, "La Liga EA Sports", null)
+
+    /**
+     * Reading fails once and then works, which is what a busy disk looks like.
+     *
+     * Wrapping rather than building a second `DataStore`: two instances on one file is what
+     * the real thing refuses outright, and the interface is only these two members.
+     */
+    private class FailsOnce(private val real: DataStore<Preferences>) : DataStore<Preferences> {
+        private var thrown = false
+
+        override val data: Flow<Preferences> = flow {
+            if (!thrown) {
+                thrown = true
+                throw IOException("the disk was busy")
+            }
+            emitAll(real.data)
+        }
+
+        override suspend fun updateData(
+            transform: suspend (Preferences) -> Preferences,
+        ): Preferences = real.updateData(transform)
+    }
+
+    /**
+     * `Flow.catch` *completes* the flow after emitting, so one failed read ended this
+     * collector for the life of the process: the screen kept the favourites it had and stopped
+     * reacting to every change afterwards.
+     */
+    @Test
+    fun `a read that fails once is read again, rather than never`() = runTest {
+        // Seeded first, and this matters: with an empty store the value recovered would equal
+        // the empty one emitted on failure, and `distinctUntilChanged` would collapse the two
+        // into a single emission — the test would pass while proving nothing.
+        val scope = CoroutineScope(UnconfinedTestDispatcher() + Job())
+        open += scope
+        val real = PreferenceDataStoreFactory.create(scope = scope) { file }
+        FavoritesStore(real).setTeam(athletic, followed = true)
+
+        val seen = FavoritesStore(FailsOnce(real)).following.take(2).toList()
+
+        assertTrue("a failed read is an empty selection, not a crash", seen.first().isEmpty)
+        assertEquals("and then the real one arrives", listOf(athletic), seen[1].teams)
+    }
 
     @Test
     fun `a device that has chosen nothing follows nothing`() = runTest {

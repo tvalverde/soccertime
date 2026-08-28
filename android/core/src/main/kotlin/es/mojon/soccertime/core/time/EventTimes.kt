@@ -110,19 +110,8 @@ class EventTimes(
         return !now.isBefore(start) && now.isBefore(end)
     }
 
-    /**
-     * Over, and therefore no longer what the reader opened the app for.
-     *
-     * This is the agenda's anchor: the listing opens on the first event this says no to, so a
-     * race that started an hour and a half ago is still what you are shown. It is deliberately
-     * the same two hours as [isLive] and as the site's own `AGENDA_LOOKBACK`, and not the
-     * three of the favourites window — one definition of "still on", or the listing would
-     * open on rows it had already stopped marking.
-     */
-    fun hasFinished(startIso: String, endIso: String?): Boolean {
-        val start = instantAt(startIso) ?: return false
-        return !clock.instant().isBefore(endOf(start, endIso))
-    }
+    /** The instant everything here is measured against. */
+    fun now(): Instant = clock.instant()
 
     private fun endOf(start: Instant, endIso: String?): Instant =
         endIso?.let(::instantAt) ?: start.plus(DEFAULT_LENGTH)

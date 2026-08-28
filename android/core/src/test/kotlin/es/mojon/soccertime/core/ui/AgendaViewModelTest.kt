@@ -215,14 +215,10 @@ class AgendaViewModelTest {
         assertEquals(ApiError.RateLimited(30), model.uiState.value.error)
     }
 
-    /**
-     * Where the listing opens. Not the first event still to start: one that began ninety
-     * minutes ago is still on, and scrolling past it would hide what the reader turned the
-     * television on for.
-     */
+    /** Where the listing opens: the last row that has started, across both days of the window. */
     @Test
-    fun `the listing opens on the first event that has not finished`() = runTest(dispatcher) {
-        // Noon UTC. The first is over, the second is halfway through, the third is to come.
+    fun `the listing opens on the last event that has started`() = runTest(dispatcher) {
+        // Noon UTC. The 11:00 has begun and the 15:00 has not; the 09:00 used to win.
         repository.perDay["2026-08-30"] =
             pageOf("2026-08-30T09:00:00Z", "2026-08-30T11:00:00Z", "2026-08-30T15:00:00Z")
         repository.perDay["2026-08-29"] = pageOf()
@@ -233,14 +229,18 @@ class AgendaViewModelTest {
         assertEquals(repository.perDay.getValue("2026-08-30").results[1].id, opensOn)
     }
 
+    /** Four in the morning. Everything is over, and the most recent of it is still the answer. */
     @Test
-    fun `an anchor is not offered when every event in the window is over`() = runTest(dispatcher) {
+    fun `a window entirely in the past opens on its most recent event`() = runTest(dispatcher) {
         repository.perDay["2026-08-30"] = pageOf("2026-08-30T06:00:00Z")
         repository.perDay["2026-08-29"] = pageOf("2026-08-29T20:00:00Z")
         val model = viewModel()
         advanceUntilIdle()
 
-        assertNull(model.uiState.value.anchorId)
+        assertEquals(
+            repository.perDay.getValue("2026-08-30").results.single().id,
+            model.uiState.value.anchorId,
+        )
     }
 
     /**
@@ -505,6 +505,54 @@ class AgendaViewModelTest {
 
         assertEquals(listOf("2026-08-31", "2026-08-30"), repository.asks.takeLast(2).map { it.date })
         assertEquals(LocalDate.of(2026, 8, 31), model.uiState.value.day)
+    }
+
+    /**
+     * The television keeps this view model while the agenda is off screen, so coming back to it
+     * through the rail painted the chip and the rows of the followed team just left, under a
+     * screen that no longer said why. The listing has to go when the filter does, not when its
+     * replacement arrives seconds later.
+     */
+    @Test
+    fun `narrowing drops the listing it is leaving, at once`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        assertTrue(model.uiState.value.days.isNotEmpty())
+
+        val barcelona = AgendaFilter(42, "FC Barcelona", null, FollowableKind.Teams)
+        model.onIntent(AgendaIntent.Narrow(barcelona))
+        // Deliberately not advanced: "at once" means before anything has had a chance to run.
+
+        val state = model.uiState.value
+        assertEquals(emptyList<AgendaDay>(), state.days)
+        assertNull(state.anchorId)
+        assertEquals(0, state.count)
+        assertFalse(state.canLoadMore)
+        assertTrue("and it says so, rather than showing nothing in silence", state.loading)
+        assertEquals(barcelona, state.filter)
+    }
+
+    /**
+     * Both apps re-dispatch the filter every time the agenda re-enters composition, with the
+     * same value. The `StateFlow` deduplicates that into no reload, but the clearing above
+     * would not deduplicate itself — so switching to the Agenda tab would blank a screen that
+     * was already showing exactly what was asked for.
+     */
+    @Test
+    fun `the same filter arriving again leaves a loaded screen alone`() = runTest(dispatcher) {
+        val barcelona = AgendaFilter(42, "FC Barcelona", null, FollowableKind.Teams)
+        val model = viewModel()
+        advanceUntilIdle()
+        model.onIntent(AgendaIntent.Narrow(barcelona))
+        advanceUntilIdle()
+        val onScreen = model.uiState.value.days
+        assertTrue(onScreen.isNotEmpty())
+
+        // A different instance carrying the same filter, which is what re-entry produces.
+        model.onIntent(AgendaIntent.Narrow(barcelona.copy()))
+
+        assertEquals(onScreen, model.uiState.value.days)
+        assertFalse("nor may it claim to be loading", model.uiState.value.loading)
     }
 
     @Test

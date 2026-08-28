@@ -36,6 +36,85 @@ class EventPresenterTest {
             ),
         )
 
+    /** The recorded rows, re-dated so a test can put an event exactly where it needs one. */
+    private fun at(vararg instants: String): List<EventDto> {
+        val template = fixture("events_day_page1.json").first()
+        return instants.mapIndexed { index, iso ->
+            template.copy(id = 700 + index, date = iso, dateEnd = null)
+        }
+    }
+
+    /**
+     * Where the listing opens: the last event that has already started.
+     *
+     * Two rules were wrong before this one. The first took the earliest event still running,
+     * which at half past six is a race from five o'clock, an hour and a half above the reader.
+     * The second took the nearest in either direction, which at ten to nine with a match at
+     * seven and another at half past nine picks the one that has *not begun* — the agenda
+     * opening on something that is not on, with what is on pushed above the fold.
+     */
+    @Test
+    fun `the listing opens on the last event that has started`() {
+        // Noon. The 12:10 is nearer in time and is exactly what must not be chosen.
+        val events = at("2026-08-30T11:00:00Z", "2026-08-30T12:10:00Z")
+
+        assertEquals(events[0].id, presenter().anchor(events))
+    }
+
+    @Test
+    fun `an event whose hour has just struck counts as started`() {
+        val events = at("2026-08-30T11:00:00Z", "2026-08-30T12:00:00Z")
+
+        assertEquals(events[1].id, presenter().anchor(events))
+    }
+
+    @Test
+    fun `what is still running does not win over what started later`() {
+        val events = at(
+            "2026-08-30T10:30:00Z",
+            "2026-08-30T11:50:00Z",
+            "2026-08-30T13:00:00Z",
+        )
+
+        assertEquals(events[1].id, presenter().anchor(events))
+    }
+
+    /** The favourites screen, most of the time: everything is ahead, so it opens at its top. */
+    @Test
+    fun `a listing entirely ahead opens on its first event`() {
+        val events = at("2026-08-30T14:00:00Z", "2026-08-30T18:00:00Z")
+
+        assertEquals(events[0].id, presenter().anchor(events))
+    }
+
+    /** Four in the morning: everything is over, and the most recent of them is the answer. */
+    @Test
+    fun `a window entirely in the past opens on its last event`() {
+        val events = at("2026-08-30T06:00:00Z", "2026-08-30T08:00:00Z")
+
+        assertEquals(events[1].id, presenter().anchor(events))
+    }
+
+    @Test
+    fun `two starting together give the same answer whichever order they arrived in`() {
+        val events = at("2026-08-30T11:00:00Z", "2026-08-30T11:00:00Z")
+
+        val forwards = presenter().anchor(events)
+        assertEquals(forwards, presenter().anchor(events.reversed()))
+    }
+
+    @Test
+    fun `nothing to open on when there is nothing`() {
+        assertNull(presenter().anchor(emptyList()))
+    }
+
+    @Test
+    fun `a date the parser cannot read is not where the listing opens`() {
+        val events = at("nope", "2026-08-30T11:30:00Z")
+
+        assertEquals(events[1].id, presenter().anchor(events))
+    }
+
     @Test
     fun `a match names both sides and no title`() {
         val match = fixture("events_day_page1.json").first { it.eventType == "match" }
