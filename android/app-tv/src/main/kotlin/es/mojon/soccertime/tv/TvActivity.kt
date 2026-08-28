@@ -18,8 +18,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.focusGroup
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -75,35 +73,42 @@ class TvActivity : ComponentActivity() {
  */
 @Composable
 private fun SoccertimeTv(models: TvModels) {
-    var destination by remember { mutableStateOf(TvDestination.Favorites) }
+    // Null until the store has answered, and the answer decides where the app opens: a
+    // television whose reader has followed nothing would otherwise land on a screen that
+    // invites a choice it cannot make here, with the agenda one unexplained press away.
+    val following by models.following.collectAsStateWithLifecycle(null)
+    var destination: TvDestination? by remember { mutableStateOf(null) }
     var showing: EventLinks? by remember { mutableStateOf(null) }
     var unopenable: PlayResult.NoHandler? by remember { mutableStateOf(null) }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val overlayOpen = showing != null || unopenable != null
+    LaunchedEffect(following) {
+        val known = following ?: return@LaunchedEffect
+        if (destination == null) {
+            destination = if (known.isEmpty) TvDestination.Agenda else TvDestination.Favorites
+        }
+    }
 
+    val opensOn = destination ?: return
+
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
             Modifier
                 .fillMaxSize()
                 .padding(horizontal = OverscanHorizontal, vertical = OverscanVertical)
-                // Closed to the remote while something is over it. Without this the D-pad
-                // walks the list behind the panel, moving a highlight nobody can see.
-                .focusGroup()
-                .focusProperties { canFocus = !overlayOpen },
+,
             horizontalArrangement = Arrangement.spacedBy(26.dp),
         ) {
-            TvRail(selected = destination, onSelect = { destination = it })
+            TvRail(selected = opensOn, onSelect = { destination = it })
 
-            when (destination) {
+            when (opensOn) {
                 TvDestination.Favorites -> {
                     val favorites = viewModel<FavoritesViewModel>(factory = models.favorites)
                     val state by favorites.uiState.collectAsStateWithLifecycle()
-                    val following by models.following.collectAsStateWithLifecycle(Following())
                     LaunchedEffect(Unit) { favorites.onIntent(FavoritesIntent.Resumed) }
 
                     TvFavoritesScreen(
                         state = state,
-                        following = following,
+                        following = following ?: Following(),
                         clockLabel = models.now(),
                         onOpen = { showing = favorites.linksFor(it.id) },
                         modifier = Modifier.weight(1f),
@@ -143,7 +148,7 @@ private fun SoccertimeTv(models: TvModels) {
     // single back button has to get right.
     BackHandler(enabled = unopenable != null) { unopenable = null }
     BackHandler(enabled = unopenable == null && showing != null) { showing = null }
-    BackHandler(enabled = showing == null && unopenable == null && destination != TvDestination.Favorites) {
+    BackHandler(enabled = showing == null && unopenable == null && opensOn != TvDestination.Favorites) {
         destination = TvDestination.Favorites
     }
 }
