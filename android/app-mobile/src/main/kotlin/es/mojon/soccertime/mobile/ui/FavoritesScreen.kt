@@ -133,6 +133,9 @@ private fun EditButton(onEdit: () -> Unit) {
  * kept beside the ids for exactly this, so the screen the app opens on needs no request and
  * appears before the first response arrives.
  */
+/** Wide enough that two favourites with a shared prefix do not read as the same one. */
+private val FOLLOWED_TILE = 66.dp
+
 @Composable
 private fun FollowedStrip(
     following: Following,
@@ -152,7 +155,7 @@ private fun FollowedStrip(
         }
         item(key = "add") {
             Column(
-                Modifier.width(52.dp).clickable(onClick = onEdit),
+                Modifier.width(FOLLOWED_TILE).clickable(onClick = onEdit),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -191,7 +194,7 @@ private fun FollowedStrip(
 private fun FollowedAvatar(item: FollowedItem, kind: FollowableKind, onNarrow: () -> Unit) {
     val accent = kind == FollowableKind.Competitions
     Column(
-        Modifier.width(52.dp).clickable(onClick = onNarrow),
+        Modifier.width(FOLLOWED_TILE).clickable(onClick = onNarrow),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -213,7 +216,11 @@ private fun FollowedAvatar(item: FollowedItem, kind: FollowableKind, onNarrow: (
             text = item.name,
             color = if (accent) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 9.5.sp,
-            maxLines = 1,
+            lineHeight = 11.5.sp,
+            // Two lines, because on one at this width "FC Barcelona" and "FC Barcelona
+            // Femenino" both truncate to "FC Barc…" — two different things a reader follows,
+            // drawn as the same label, in a strip whose whole job is telling them apart.
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
