@@ -51,7 +51,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their axes need API 26 and this targets 25 — a variable file would render every weight at
   its default and flatten the hierarchy the design is built on.
 
-  50 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
+  The agenda's view model is shaped by the rate limit rather than by the screen: typing is
+  debounced and a query under two characters is treated as no query, a page holds the hundred
+  the API allows, a manual refresh inside five seconds does nothing, returning to the screen
+  reloads only what is over a minute old, and following a team re-draws the marks without
+  asking again. When a load fails and the query has not moved, the last good answer stays on
+  screen with a banner — an agenda a minute out of date is worth more than no agenda on a
+  screen people open to find out what is on right now.
+
+  72 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
   unfiltered so gitleaks keeps reading pushes that touch only `android/` —
   `test_android_workflow.py` refuses a `paths` filter there, because adding one looks like a
   tidy-up and would quietly stop scanning the tree where keystore passwords live.
