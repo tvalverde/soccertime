@@ -112,6 +112,9 @@ class AgendaViewModel(
         }
     }
 
+    /** The links of one row, built from the response the row was drawn from. */
+    fun linksFor(id: Int): EventLinks? = loaded.firstOrNull { it.id == id }?.let(presenter::links)
+
     private fun refresh(minimumAge: Duration) {
         val since = loadedAt?.let { Duration.between(it, clock.instant()) }
         if (since != null && since < minimumAge) return

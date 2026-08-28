@@ -65,7 +65,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   crest beside the id — deliberate denormalisation, because resolving five ids through the API
   would be five requests before the first frame, to draw a strip.
 
-  91 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
+  The phone's screens follow the validated designs. One play button per event opens a sheet
+  grouping the links by channel and then by quality, numbered inside each group — the website
+  puts twenty play icons in a row and a phone has no room for that, and the numbering is what
+  makes "the third one worked" something a person can repeat next week. When nothing on the
+  device answers the scheme, the dialogue names no application and offers no download: it
+  offers to copy the link or share it.
+
+  The icons are the site's own Bootstrap paths rather than Compose's `material-icons-core`,
+  which is frozen at 1.7.8 and would mean pinning one Compose artifact years behind the BOM
+  managing every other. Countable strings are plurals, because Spanish says "1 resultado".
+
+  95 JVM unit tests, run in CI by a new `android.yml` workflow. `ci.yml` is deliberately left
   unfiltered so gitleaks keeps reading pushes that touch only `android/` —
   `test_android_workflow.py` refuses a `paths` filter there, because adding one looks like a
   tidy-up and would quietly stop scanning the tree where keystore passwords live.

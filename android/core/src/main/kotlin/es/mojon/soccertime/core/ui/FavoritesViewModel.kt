@@ -81,6 +81,9 @@ class FavoritesViewModel(
         }
     }
 
+    /** The links of one row, built from the response the row was drawn from. */
+    fun linksFor(id: Int): EventLinks? = loaded.firstOrNull { it.id == id }?.let(presenter::links)
+
     private fun refresh(minimumAge: Duration) {
         if (following.isEmpty) return
         val since = loadedAt?.let { Duration.between(it, clock.instant()) }

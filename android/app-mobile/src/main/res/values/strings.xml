@@ -1,9 +1,81 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Soccertime</string>
-    <string name="loading">Cargando la agenda…</string>
+
+    <!-- Navigation -->
+    <string name="tab_favorites">Favoritos</string>
+    <string name="tab_agenda">Agenda</string>
+
+    <!-- Agenda -->
+    <string name="search_hint">Buscar equipo o competición</string>
+    <string name="filter_today">Hoy</string>
+    <string name="filter_watchable">Con enlace</string>
+    <string name="live">DIRECTO</string>
+    <string name="play">Reproducir</string>
+    <string name="refresh">Actualizar</string>
+    <string name="clear_search">Borrar la búsqueda</string>
+    <string name="load_more">Ver más</string>
+    <string name="empty_agenda">No hay eventos para este día.</string>
+    <string name="empty_search">Nada coincide con lo que buscas.</string>
+
+    <!-- Favourites -->
+    <string name="favorites_title">Favoritos</string>
+    <string name="edit">Editar</string>
+    <string name="first_run_title">Elige tus favoritos</string>
+    <string name="first_run_body">Marca los equipos y las competiciones que sigues y esta pantalla te dará solo eso, con los canales y los enlaces de cada evento.</string>
+    <string name="first_run_choose">Elegir equipos y competiciones</string>
+    <string name="first_run_browse">Ver la agenda completa</string>
+    <string name="nothing_coming_up">Nada de lo que sigues se emite en los próximos tres días.</string>
+
+    <!-- Editing favourites -->
+    <string name="manage_title">Editar favoritos</string>
+    <string name="tab_teams">Equipos</string>
+    <string name="tab_competitions">Competiciones</string>
+    <string name="follow">Seguir</string>
+    <string name="unfollow">Dejar de seguir</string>
+    <string name="back">Atrás</string>
+    <string name="nothing_found">No hay nada con ese nombre.</string>
+
+    <!-- Opening a link -->
+    <string name="quality_unspecified">SIN ESPECIFICAR</string>
+    <string name="also_on">TAMBIÉN EN</string>
+    <string name="close">Cerrar</string>
+    <string name="no_handler_title">Ninguna app abre este enlace</string>
+    <string name="no_handler_body">No hay ninguna aplicación instalada en este dispositivo que atienda los enlaces %1$s. Puedes copiarlo y abrirlo donde quieras.</string>
+    <string name="copy_link">Copiar enlace</string>
+    <string name="link_copied">Enlace copiado</string>
+    <string name="share_link">Compartir</string>
+
+    <!-- Failures -->
     <string name="error_offline">Sin conexión con el servidor.</string>
     <string name="error_rate_limited">Demasiadas consultas seguidas. Inténtalo en unos segundos.</string>
     <string name="error_http">El servidor respondió %1$d.</string>
     <string name="error_unexpected">No se ha podido leer la respuesta.</string>
+    <string name="showing_stale">Mostrando lo último que se pudo cargar.</string>
+
+    <plurals name="with_link_count">
+        <item quantity="one">%1$d con enlace</item>
+        <item quantity="other">%1$d con enlace</item>
+    </plurals>
+    <plurals name="results_count">
+        <item quantity="one">%1$d resultado</item>
+        <item quantity="other">%1$d resultados</item>
+    </plurals>
+    <plurals name="link_count">
+        <item quantity="one">%1$d enlace</item>
+        <item quantity="other">%1$d enlaces</item>
+    </plurals>
+    <plurals name="followed_teams">
+        <item quantity="one">%1$d equipo</item>
+        <item quantity="other">%1$d equipos</item>
+    </plurals>
+    <plurals name="followed_competitions">
+        <item quantity="one">%1$d competición</item>
+        <item quantity="other">%1$d competiciones</item>
+    </plurals>
+    <plurals name="error_rate_limited_wait">
+        <item quantity="one">Demasiadas consultas seguidas. Inténtalo en %1$d segundo.</item>
+        <item quantity="other">Demasiadas consultas seguidas. Inténtalo en %1$d segundos.</item>
+    </plurals>
+    <string name="following_summary">Sigues %1$s y %2$s</string>
 </resources>

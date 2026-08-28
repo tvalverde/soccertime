@@ -48,8 +48,15 @@ dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     api(platform(libs.compose.bom))
-    // The font families, and nothing else of Compose: the view models below stay free of the
-    // toolkit, because the phone draws with Material 3 and the television with tv-material.
+    // Only what `ui/Fonts.kt` and `ui/SoccertimeIcons.kt` need — the two font families and
+    // the icon set, declared once so the phone and the television cannot drift apart. The
+    // view models beside them import nothing of Compose and must not start: the phone draws
+    // with Material 3 and the television with tv-material, and only the drawing differs.
+    //
+    // `ui` and not `ui-graphics`: as of Compose 1.12 the `graphics.vector` package, and with
+    // it `ImageVector`, lives in the former. Both applications carry `ui` regardless, so this
+    // adds nothing to either APK.
+    api(libs.compose.ui)
     api(libs.compose.ui.text)
 
     api(libs.androidx.lifecycle.viewmodel)
@@ -59,7 +66,7 @@ dependencies {
     api(libs.retrofit)
     api(libs.okhttp)
     implementation(libs.retrofit.serialization)
-    implementation(libs.androidx.core.ktx)
+    api(libs.androidx.core.ktx)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
