@@ -6,6 +6,11 @@
     <string name="tab_agenda">Agenda</string>
     <string name="live">DIRECTO</string>
     <string name="play">Reproducir</string>
+    <string name="follow_title">SEGUIR</string>
+    <string name="kind_team">Equipo</string>
+    <string name="kind_competition">Competición</string>
+    <string name="follow">Seguir</string>
+    <string name="unfollow">Dejar de seguir</string>
     <string name="channels">CANALES</string>
     <string name="quality_unspecified">SIN ESPECIFICAR</string>
 
@@ -14,10 +19,8 @@
     <string name="nothing_coming_up">Nada de lo que sigues se emite en los próximos tres días.</string>
 
     <string name="first_run_title">Elige tus favoritos</string>
-    <!-- Typing a team name with a remote is the worst thing a television asks anyone to do,
-         and there is a phone app that does it well. So this says where, rather than making
-         the reader do it badly here. -->
-    <string name="first_run_body_tv">Marca tus equipos y competiciones en la app del móvil. Esta pantalla mostrará entonces solo lo tuyo, con sus canales y enlaces.</string>
+    <!-- Says how to follow something here, with the one gesture that needs no keyboard. -->
+    <string name="first_run_body_tv">En la agenda, pulsa el botón ☰ del mando sobre cualquier evento para seguir a sus equipos o a su competición. Esta pantalla mostrará entonces solo lo tuyo.</string>
 
     <string name="try_the_next_one">Si uno no arranca, prueba el siguiente. ATRÁS vuelve a la lista.</string>
     <string name="no_link_explained">Sin enlace: el evento se emite ahí, pero no hay nada que abrir.</string>

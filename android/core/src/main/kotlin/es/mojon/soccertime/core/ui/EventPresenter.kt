@@ -1,6 +1,7 @@
 package es.mojon.soccertime.core.ui
 
 import es.mojon.soccertime.core.data.Favorites
+import es.mojon.soccertime.core.data.FollowedItem
 import es.mojon.soccertime.core.model.ChannelDto
 import es.mojon.soccertime.core.model.EventDto
 import es.mojon.soccertime.core.model.LinkDto
@@ -107,6 +108,27 @@ class EventPresenter(val times: EventTimes) {
         )
     }
 
+    /**
+     * What one event offers to follow: its two sides and its competition.
+     *
+     * A match names three things and a reader wanting "that team" has to say which — so the
+     * choice is shown rather than guessed. A race or a simple event offers only its
+     * competition, which is the whole reason competitions are followable at all.
+     */
+    fun followables(event: EventDto): List<Followable> = buildList {
+        event.local?.let { add(Followable(FollowedItem(it.id, it.name, it.crest?.url), FollowableKind.Teams)) }
+        event.visitor?.let { add(Followable(FollowedItem(it.id, it.name, it.crest?.url), FollowableKind.Teams)) }
+        val competition = event.competition
+        if (competition.id != 0 && competition.name.isNotBlank()) {
+            add(
+                Followable(
+                    FollowedItem(competition.id, competition.name, competition.flag?.image?.url),
+                    FollowableKind.Competitions,
+                ),
+            )
+        }
+    }
+
     private fun chip(channel: ChannelDto) =
         ChannelChip(name = channel.name, openable = channel.openableLinks.isNotEmpty())
 
@@ -174,3 +196,6 @@ data class ChannelLinks(
 )
 
 data class QualityGroup(val quality: String, val links: List<LinkDto>)
+
+/** Something an event offers to follow, and which of the two lists it belongs to. */
+data class Followable(val item: FollowedItem, val kind: FollowableKind)

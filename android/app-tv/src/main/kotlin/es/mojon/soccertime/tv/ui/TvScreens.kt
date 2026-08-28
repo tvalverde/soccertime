@@ -55,6 +55,7 @@ fun TvFavoritesScreen(
     following: Following,
     clockLabel: String,
     onOpen: (EventUi) -> Unit,
+    onFollow: (EventUi) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val firstRow = remember { FocusRequester() }
@@ -108,7 +109,7 @@ fun TvFavoritesScreen(
             return@Column
         }
 
-        TvEventList(state.days, firstRow, onOpen)
+        TvEventList(state.days, firstRow, onOpen, onFollow)
     }
 }
 
@@ -116,6 +117,7 @@ fun TvFavoritesScreen(
 fun TvAgendaScreen(
     state: AgendaUiState,
     onOpen: (EventUi) -> Unit,
+    onFollow: (EventUi) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val firstRow = remember { FocusRequester() }
@@ -168,7 +170,7 @@ fun TvAgendaScreen(
             return@Column
         }
 
-        TvEventList(state.days, firstRow, onOpen)
+        TvEventList(state.days, firstRow, onOpen, onFollow)
     }
 }
 
@@ -184,6 +186,7 @@ private fun TvEventList(
     days: List<AgendaDay>,
     firstRow: FocusRequester,
     onOpen: (EventUi) -> Unit,
+    onFollow: (EventUi) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -200,6 +203,7 @@ private fun TvEventList(
                 TvEventRow(
                     event = event,
                     onOpen = { onOpen(event) },
+                    onFollow = { onFollow(event) },
                     focusRequester = if (dayIndex == 0 && index == 0) firstRow else null,
                 )
             }
@@ -268,9 +272,9 @@ private fun FollowedAvatar(item: FollowedItem, accent: Boolean) {
 }
 
 /**
- * Favourites are chosen on the phone, not here. Typing a team name with a remote is the worst
- * interaction a television offers, and this app has a phone counterpart that does it well —
- * so the television says where to do it rather than making the reader do it badly.
+ * Nothing followed yet. It says how to follow something here rather than sending the reader
+ * to the phone: the menu button on any event in the agenda offers its two sides and its
+ * competition, which is the whole interaction and needs no keyboard.
  */
 @Composable
 private fun TvFirstRun() {
