@@ -49,12 +49,37 @@ jobs:
           mkdir -p db
           pytest -m "not integration"
 
+  # The half of secret scanning a free public repository is allowed to have. GitHub's own
+  # scanner covers partner and provider patterns here; the category that would match a
+  # `DJANGO_SECRET_KEY` — generic patterns, once called non-provider patterns — needs a paid
+  # Secret Protection licence, and the REST API answers 200 to a request to enable it and
+  # leaves it disabled, which is how that looked like a forgotten switch rather than a licence.
+  #
+  # This is a smoke alarm and not push protection: it reads commits that have already been
+  # pushed, so a key it finds is already public. What it buys is finding out in minutes rather
+  # than never, and it stops the leak going further — `publish` waits for it, so no image is
+  # built from a commit it flagged. Verified against this repository's whole history before
+  # being wired in: 248 commits, no findings, so a red run here means something new.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Actions checks out a single commit by default, and a scanner pointed at a shallow
+          # clone finds nothing and reports success. This line is the job.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          # No licence key: those are required for organization accounts, and this repository
+          # belongs to a personal one.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # The image production runs. It is built here, once, from a clean checkout, and pulled by
   # the deploy — rather than built on the server from an uploaded tarball, which meant the
   # code lived there, the base image was resolved there, and two deploys of one commit could
   # produce two different images.
   publish:
-    needs: [checks]
+    needs: [checks, secrets]
     # Never from a pull request: it may come from a fork, and a fork must not be able to put
     # an image where the deploy will find it. Its token could not push one anyway, which is
     # the sort of failure that is better refused than discovered.

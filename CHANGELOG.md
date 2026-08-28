@@ -118,6 +118,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is already absent, prints what it will remove before removing it, and never builds a path
   that is not relative to that directory. Run against production: 28 entries gone, 2.8 MB down
   to 20 KB, the host's compose still resolving all six of its services and every page 200.
+- **A scan for committed secrets on every push and every pull request.** GitHub's own scanner
+  covers partner and provider patterns on a free public repository, and stops exactly short of
+  the category a `DJANGO_SECRET_KEY` falls into: generic patterns, formerly non-provider
+  patterns, which need a paid Secret Protection licence — the REST API accepts the request to
+  enable them, answers 200 and leaves the setting disabled, which is how a licence looked like
+  a forgotten switch. `gitleaks` reads the history instead, over a full checkout, because a
+  scanner pointed at the single commit Actions clones by default finds nothing and reports
+  success. It is a smoke alarm rather than push protection — it reads commits that are already
+  public — but it is also a gate: the publish job waits for it, so no image is built from a
+  commit it flagged, and a key in a tracked file would be inside the image as well as the
+  repository. Run against the whole history before being wired in — 248 commits, no findings —
+  so a red run here means something new rather than something old.
 - **Dependabot proposes the updates nothing else was proposing.** Twelve pinned production
   dependencies, Django, DRF and Pillow among them, and no alerts and no update pull requests:
   a published advisory reached this project only if the author happened to read about it.

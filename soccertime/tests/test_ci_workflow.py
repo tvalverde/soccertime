@@ -73,7 +73,7 @@ class TestTheWorkflowIsReadable:
     def test_the_workflow_exists(self):
         assert WORKFLOW.is_file()
 
-    @pytest.mark.parametrize("name", ["checks", "publish"])
+    @pytest.mark.parametrize("name", ["checks", "secrets", "publish"])
     def test_the_job_has_a_body(self, name):
         assert job(name).strip()
 
@@ -156,6 +156,34 @@ class TestTheImageIsOnlyPublishedWhenItShouldBe:
 
         assert ("packages", "write") in granted
         assert ("contents", "write") not in granted
+
+
+class TestTheScanForCommittedSecrets:
+    """The half of secret scanning this repository is allowed to have.
+
+    GitHub's own scanner covers partner and provider patterns on a free public repository;
+    the category that would match a `DJANGO_SECRET_KEY` — generic patterns, previously called
+    non-provider patterns — needs a paid Secret Protection licence. The REST API accepts the
+    request to enable it, answers 200 and leaves it disabled, which is how this looked like a
+    forgotten switch for a while rather than a licence.
+
+    So this is a smoke alarm, not push protection: it reads the commits after they are pushed,
+    and a key it finds is already public. What it buys is the difference between finding out
+    in minutes and finding out never, and it also stops the leak travelling further — the
+    publish job waits for it, so no image is built from a commit it flagged.
+    """
+
+    def test_it_can_see_the_history_it_is_meant_to_scan(self):
+        """Actions checks out one commit by default, and a scanner pointed at a shallow clone
+        finds nothing and says so cheerfully. This is the whole job, in one line of YAML."""
+        assert "fetch-depth: 0" in job("secrets")
+
+    def test_it_runs_the_scanner(self):
+        assert "gitleaks/gitleaks-action" in job("secrets")
+
+    def test_nothing_is_published_from_a_commit_it_flagged(self):
+        """A leaked key in a tracked file would be inside the image as well as in the repo."""
+        assert re.search(r"needs:\s*\[[^\]]*\bsecrets\b", job("publish"))
 
 
 class TestTheTagTheDeployWillAskFor:
