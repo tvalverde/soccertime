@@ -23,6 +23,7 @@
     <string name="first_run_body_tv">En la agenda, pulsa el botón ☰ del mando sobre cualquier evento para seguir a sus equipos o a su competición. Esta pantalla mostrará entonces solo lo tuyo.</string>
 
     <string name="try_the_next_one">Si uno no arranca, prueba el siguiente. ATRÁS vuelve a la lista.</string>
+    <string name="nothing_to_open_here">Ningún canal de este evento publica un enlace. ATRÁS vuelve a la lista.</string>
     <string name="opened_try_the_next_one">Enlace abierto. Si no ha ido bien, prueba el siguiente sin salir de aquí.</string>
     <string name="hint_open">ver canales</string>
     <string name="hint_follow">seguir equipo o competición</string>

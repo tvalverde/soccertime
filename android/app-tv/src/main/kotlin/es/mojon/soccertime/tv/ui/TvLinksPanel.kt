@@ -109,7 +109,7 @@ fun TvLinksPanel(
                 // cursor into a list nobody can see. Marking the content behind unfocusable
                 // does not reach them: a row's search for that property stops at the focus
                 // group its own list puts around it. ATRÁS is the way out, as the map says.
-                .focusEnclosure(emptyList())
+                .focusEnclosure(EveryDirection)
                 .clip(RoundedCornerShape(20.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .border(1.dp, MaterialTheme.colorScheme.border, RoundedCornerShape(20.dp)),
@@ -183,18 +183,20 @@ fun TvLinksPanel(
                     }
 
                     Box(Modifier.weight(1f))
-                    // The advice is only worth giving because the panel stays open to take it.
+                    // The advice is only worth giving because the panel stays open to take it
+                    // — and only when there is a next one. On an event whose channels publish
+                    // nothing, "try the next" was an instruction with nothing to obey it with.
                     Text(
-                        text = if (opened == null) {
-                            stringResource(R.string.try_the_next_one)
-                        } else {
-                            stringResource(R.string.opened_try_the_next_one)
+                        text = when {
+                            !links.hasSomethingToOpen -> stringResource(R.string.nothing_to_open_here)
+                            opened == null -> stringResource(R.string.try_the_next_one)
+                            else -> stringResource(R.string.opened_try_the_next_one)
                         },
                         style = TvMeta,
-                        color = if (opened == null) {
-                            Color(Palette.ON_BACKGROUND_FAINT)
-                        } else {
+                        color = if (opened != null) {
                             MaterialTheme.colorScheme.secondary
+                        } else {
+                            Color(Palette.ON_BACKGROUND_FAINT)
                         },
                     )
                 }

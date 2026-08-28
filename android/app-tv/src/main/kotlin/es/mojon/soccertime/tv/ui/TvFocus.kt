@@ -94,10 +94,21 @@ private const val HALO_ON_FILL = 0x4D_00FF41
  * children inherit — and a child is a leaf, which never runs an exit at all. Written before, the
  * group picks it up, and the children stop at the group without inheriting it. Reversed, this
  * function does nothing whatsoever, silently.
+ *
+ * **And it names what to absorb, never what to allow.** Every way out of a group is an exit,
+ * including the ones no key pressed: opening the links panel moves focus from a row into it,
+ * and that leaves this group too. A rule written as "cancel unless the direction is LEFT"
+ * cancelled that, and the panel opened with nothing focused at all — the D-pad pointed into a
+ * dialog it could not touch. Only the four directions a cursor wanders in are absorbed here;
+ * anything the app asks for on purpose goes through.
  */
-fun Modifier.focusEnclosure(ways: List<FocusDirection>): Modifier =
-    focusProperties { onExit = { if (requestedFocusDirection !in ways) cancelFocusChange() } }
+fun Modifier.focusEnclosure(absorbing: List<FocusDirection>): Modifier =
+    focusProperties { onExit = { if (requestedFocusDirection in absorbing) cancelFocusChange() } }
         .focusGroup()
+
+/** The four a cursor wanders in. Everything else is the app asking on purpose. */
+val EveryDirection: List<FocusDirection> =
+    listOf(FocusDirection.Up, FocusDirection.Down, FocusDirection.Left, FocusDirection.Right)
 
 /**
  * What a Fire TV remote sends for its play button.
