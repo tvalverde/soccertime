@@ -114,9 +114,8 @@ fun TvFavoritesScreen(
             return@Column
         }
 
-        // UP leaves this list, because what is above it is the strip of followed things and
-        // reaching it is a move the remote map promises. On the agenda there is nothing above
-        // and UP stays put.
+        // UP is not absorbed here, because what is above this list is the strip of followed
+        // things and reaching it is a move the remote map promises.
         TvEventList(
             days = state.days,
             // Not an anchored listing: these are the next things coming up, in order, and
@@ -124,7 +123,8 @@ fun TvFavoritesScreen(
             anchor = Anchored.No,
             onOpen = onOpen,
             onFollow = onFollow,
-            waysOut = listOf(FocusDirection.Left, FocusDirection.Up),
+            absorbing = listOf(FocusDirection.Down, FocusDirection.Right),
+            modifier = Modifier.weight(1f),
         )
 
         TvHints(
@@ -194,7 +194,8 @@ fun TvAgendaScreen(
             anchor = Anchored.At(state.anchorId),
             onOpen = onOpen,
             onFollow = onFollow,
-            waysOut = listOf(FocusDirection.Left),
+            absorbing = listOf(FocusDirection.Up, FocusDirection.Down, FocusDirection.Right),
+            modifier = Modifier.weight(1f),
         )
 
         TvHints(
@@ -287,7 +288,8 @@ private fun TvEventList(
     anchor: Anchored,
     onOpen: (EventUi) -> Unit,
     onFollow: (EventUi) -> Unit,
-    waysOut: List<FocusDirection>,
+    absorbing: List<FocusDirection>,
+    modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
     val opensHere = remember { FocusRequester() }
@@ -311,7 +313,9 @@ private fun TvEventList(
 
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().focusEnclosure(waysOut),
+        // `weight`, never `fillMaxSize`: the hints below are the only thing that says what the
+        // menu button does, and a list that took the whole column pushed them off the screen.
+        modifier = modifier.focusEnclosure(absorbing),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
@@ -402,7 +406,8 @@ private fun FollowedStrip(following: Following, onNarrow: (AgendaFilter) -> Unit
         // otherwise be cut off by the row it lives in.
         modifier = Modifier
             .padding(vertical = 7.dp)
-            .focusEnclosure(listOf(FocusDirection.Left, FocusDirection.Down)),
+            // RIGHT past the last followed thing, and UP above the strip, lead nowhere.
+            .focusEnclosure(listOf(FocusDirection.Up, FocusDirection.Right)),
         contentPadding = PaddingValues(horizontal = 7.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {

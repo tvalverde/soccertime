@@ -77,7 +77,7 @@ fun TvFollowPanel(
                 .width(560.dp)
                 // The same reason as the links panel: an overlay in this composition, with a
                 // list of rows behind it that are still focus targets. ATRÁS is the way out.
-                .focusEnclosure(emptyList())
+                .focusEnclosure(EveryDirection)
                 .clip(RoundedCornerShape(18.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .border(1.dp, MaterialTheme.colorScheme.border, RoundedCornerShape(18.dp))
