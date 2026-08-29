@@ -433,6 +433,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still have no test source set. Three in `SoccertimeApiTest`, two of which fail without the
   bound.
 
+- **The television threw away the one number a rate-limited reader needs.** `describeTv` mapped
+  every `RateLimited` to "inténtalo en unos segundos" while `ApiError` was already carrying the
+  seconds read off the header, and the phone was already showing them. It says how long now, with
+  the same plural the phone uses, and keeps the generic sentence for a refusal that arrives
+  without the header.
+
+  Worth doing because both refusals in front of this API do send `Retry-After`, which until now
+  was only ever tested against a `MockWebServer`. Measured through the local replica — which
+  carries production's middlewares by inheritance rather than in its own file, so read the
+  composed config and not the override: the throttle inside lets thirty through in the minute and
+  refuses the next with `Retry-After: 42` and a JSON body, and Traefik at the edge — reached on
+  `/api/v1/docs/`, which is a plain `TemplateView` and so passes no throttle on the way — answers
+  `Retry-After: 1` with an `X-Retry-In` of 965 ms and `Too Many Requests` as plain text, once its
+  burst of thirty is spent. Both numbers are true and they mean opposite things: a bucket
+  refilling once a second against the remainder of a fixed minute.
+  Someone holding a remote decides whether to wait or keep pressing, and forty seconds is not
+  "unos segundos".
+
 - **A scraper test failed on 2026-08-29 because of the calendar, not the code.** Its fixture
   carried the literal date `21/08/2026` while `is_valid_date` reads the wall clock and accepts a
   window of seven days back to a year ahead. Written on 2026-08-10 the date was comfortably

@@ -565,10 +565,21 @@ private fun TvFailure(error: ApiError, showingStale: Boolean) {
     }
 }
 
+/**
+ * A failure in the reader's terms.
+ *
+ * `RateLimited` says how long, because both refusals in front of this API send `Retry-After`
+ * and they disagree about everything else: Traefik answers `1` from a bucket refilling once a
+ * second, the throttle inside answers the rest of its minute — measured at 42. Someone holding
+ * a remote decides whether to wait or keep pressing, and "unos segundos" does not tell them.
+ * The generic sentence stays for the refusal that arrives without the header.
+ */
 @Composable
 fun describeTv(error: ApiError): String = when (error) {
     is ApiError.Offline -> stringResource(R.string.error_offline)
-    is ApiError.RateLimited -> stringResource(R.string.error_rate_limited)
+    is ApiError.RateLimited -> error.retryAfterSeconds
+        ?.let { pluralStringResource(R.plurals.error_rate_limited_wait, it.toInt(), it) }
+        ?: stringResource(R.string.error_rate_limited)
     is ApiError.BadRequest -> error.message
     is ApiError.Http -> stringResource(R.string.error_http, error.code)
     is ApiError.Unexpected -> stringResource(R.string.error_unexpected)

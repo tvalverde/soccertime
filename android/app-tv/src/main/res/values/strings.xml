@@ -50,4 +50,8 @@
         <item quantity="one">%1$d enlace</item>
         <item quantity="other">%1$d enlaces</item>
     </plurals>
+    <plurals name="error_rate_limited_wait">
+        <item quantity="one">Demasiadas consultas seguidas. Inténtalo en %1$d segundo.</item>
+        <item quantity="other">Demasiadas consultas seguidas. Inténtalo en %1$d segundos.</item>
+    </plurals>
 </resources>
