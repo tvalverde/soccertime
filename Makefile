@@ -1,4 +1,4 @@
-.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format android-build android-test android-lint android-clean android-release android-install-mobile android-install-tv
+.PHONY: check-gradle-home help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format android-build android-test android-lint android-clean android-release android-install-mobile android-install-tv
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -186,21 +186,42 @@ GRADLEW := ./gradlew
 ADB ?= adb
 ADB_PORT ?= 5555
 
-android-build:
+# Gradle's cache is the user's, at `~/.gradle`, and these targets deliberately leave it
+# there: it is three gigabytes of dependencies that every project on the machine already
+# shares, and a build resolving its own copy is a build resolving a different tree from the
+# one the developer sees. That divergence is slow to diagnose and easy to prevent.
+#
+# The guard exists because it was not prevented. A tool sandbox once refused a write to
+# `~/.gradle`, the answer was to point `GRADLE_USER_HOME` at a temporary directory, and that
+# answer outlived its reason — every later build re-downloaded a gigabyte and a half and ran
+# a second daemon beside the one already warm. The right answer to a sandbox refusing
+# `~/.gradle` is to let the build out of the sandbox, not to move the cache.
+check-gradle-home:
+	@if [ -n "$$GRADLE_USER_HOME" ] && [ "$${GRADLE_USER_HOME#$$HOME}" = "$$GRADLE_USER_HOME" ]; then \
+		echo "GRADLE_USER_HOME points outside your home:"; \
+		echo "    $$GRADLE_USER_HOME"; \
+		echo ""; \
+		echo "These targets build against ~/.gradle on purpose. A cache somewhere else"; \
+		echo "re-downloads what you already have and resolves its own dependency tree."; \
+		echo "Unset it, or pass a path under \$$HOME if you meant it."; \
+		exit 1; \
+	fi
+
+android-build: check-gradle-home
 	@cd $(ANDROID_DIR) && $(GRADLEW) assembleDebug
 
-android-test:
+android-test: check-gradle-home
 	@cd $(ANDROID_DIR) && $(GRADLEW) testDebugUnitTest
 
-android-lint:
+android-lint: check-gradle-home
 	@cd $(ANDROID_DIR) && $(GRADLEW) lint
 
-android-clean:
+android-clean: check-gradle-home
 	@cd $(ANDROID_DIR) && $(GRADLEW) clean
 
 # Signed, and therefore only from a machine holding the keystore. CI does this from a secret
 # on an `android-v*` tag; this is the rehearsal of that, not a second way to release.
-android-release:
+android-release: check-gradle-home
 	@cd $(ANDROID_DIR) && $(GRADLEW) assembleRelease
 
 android-install-mobile:

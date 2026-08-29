@@ -13,6 +13,23 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 ## [Unreleased]
 
 ### Fixed
+- **The Android make targets now refuse a Gradle cache that is not the developer's.** `~/.gradle`
+  is three gigabytes every project on this machine already shares, and sharing it is the point:
+  a build that resolves its own copy resolves its own dependency tree, and "it compiles for me"
+  quietly ceasing to mean "it compiles for you" is among the slowest failures to find.
+
+  Guarded rather than written down, because writing it down was tried. A tool sandbox refused a
+  write to `~/.gradle`; the answer was to point `GRADLE_USER_HOME` at a temporary directory; and
+  that answer outlived the restriction that caused it. Every later build in the session
+  re-downloaded a gigabyte and a half into a cache nobody would keep, and ran a second Gradle
+  daemon beside the one already warm — while nothing complained, because nothing was watching.
+  Removing the override afterwards reused both the cache and the daemon, on the first try.
+
+  `check-gradle-home` is a prerequisite of every `android-*` target that runs Gradle, so the only
+  way past it is to improvise an environment and call `./gradlew` by hand — which is the same
+  reason this project keeps production operations in the Makefile rather than in loose commands.
+  `test_android_make_targets.py` fails if a target drops the prerequisite.
+
 - **Four claims in `AGENTS.md` were not true, and one of them was the expensive kind.** The guide
   called Nginx the production reverse proxy. Traefik is: it terminates TLS, carries
   `X-Forwarded-Proto` and routes `/soccertime` straight to uvicorn, while Nginx serves `/static`

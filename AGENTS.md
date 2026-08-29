@@ -127,6 +127,16 @@ so `COPY . .` never carries it.
 -   **Commands.** `make android-build`, `android-test`, `android-lint`, `android-release`,
     `android-install-mobile`, and `android-install-tv ADB_HOST=<address>`. Gradle runs on the
     host against a JDK and an Android SDK, not inside the `web` container.
+-   **Use those targets rather than calling `./gradlew` with a hand-built environment.** They
+    set `ANDROID_HOME` and nothing else on purpose, so the build uses the developer's own
+    `~/.gradle` — three gigabytes every project on the machine already shares, and one
+    dependency resolution instead of two that can drift apart. `check-gradle-home` is a
+    prerequisite of each of them and fails if `GRADLE_USER_HOME` points outside `$HOME`.
+-   **If a tool sandbox refuses to write `~/.gradle`, let the build out of the sandbox; do not
+    move the cache.** Relocating `GRADLE_USER_HOME` works, which is the trap: it outlives the
+    restriction that prompted it, and every later build re-downloads a gigabyte and a half and
+    starts a second daemon beside the one already warm. That happened on 2026-08-29 and went
+    unnoticed for a whole session, which is why the Makefile now checks rather than asks.
 -   **Some things only the hardware can answer.** Whether the handshake succeeds on Android
     7.1, whether anything on the device answers an `acestream://` intent, and whether every
     control can be reached with a D-pad are invisible to the unit suite and to an emulator.
