@@ -45,6 +45,28 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
   no columns to compare and would inherit that defect for nothing.
 
 ### Changed
+- **Django is held at 6.0, and Dependabot is told why instead of asking every week.**
+  `django-admin-sortable2` swaps the admin's own `actions.js` for a copy named after the running
+  Django, and 2.3.1 — the latest release, from January 2026 — ships
+  `actions-{4.2,5.0,5.1,5.2,6.0}.js` and nothing for 6.1. Under `ManifestStaticFilesStorage` a
+  missing static file raises rather than 404s, so `Sport` and `Favorite` would answer 500 while
+  every other admin page stayed fine. Not a fear: it is what failed CI on the 6.1 pull request,
+  in the test written for exactly that.
+
+  `.github/dependabot.yml` now ignores django at 6.1 and above, so the same red pull request
+  stops being opened weekly. The 6.0 line still comes through, which is the version actually
+  running. What an ignore costs is memory — nothing would ever say the wall had fallen, and that
+  is how a project sits three versions behind for years — so a second test reads the ceiling out
+  of the configuration and fails the moment the package ships a script for it. That will happen
+  in a pull request about a different package entirely, which is precisely where nobody would
+  think to look.
+
+- **The development toolchain moved: ruff 0.9.6 → 0.16.4, pytest 9.0.3 → 9.1.1, pytest-cov 6.0.0
+  → 7.1.0, django-stubs 6.0.9 → 6.1.0.** Nothing here is imported by the application and nothing
+  reaches the production image, which is built without `INSTALL_DEV`. The ruff jump spans seven
+  minor versions and changed no source line, because the lint rules are selected explicitly in
+  `pyproject.toml` rather than inherited from whatever its defaults happen to be that release.
+
 - **`/favorites/` says whose favourites it is showing, and offers the way in.** Arriving with no
   selection of your own quietly served the owner's curated picks, so a first-time visitor read
   somebody else's agenda believing it was theirs, with nothing suggesting they could have their
