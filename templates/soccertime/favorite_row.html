@@ -1,0 +1,34 @@
+{% load soccertime_tags %}
+{% load i18n %}
+{# One thing the visitor may follow, with the star that adds or removes it.                 #}
+{#                                                                                          #}
+{# It decides both of its own variables — whether this row is followed, and which toggle to #}
+{# post to — so callers pass the item and the context and nothing else. Two template        #}
+{# filters existed for that job before this comment and neither needed to.                  #}
+{#                                                                                          #}
+{# `back` is a literal the view compares against, never a URL from the request: a `next=`   #}
+{# here would be an open redirect on a form that any page can post to.                      #}
+<div class="d-flex align-items-center gap-3 py-2 border-bottom border-secondary-subtle">
+  {# A team carries its own crest; a competition carries a flag on a related row, and    #}
+  {# `render_image_markup` reads `image_file` off whatever it is given. Passing the      #}
+  {# competition itself raises AttributeError — caught by a test, not by production.     #}
+  <span class="flex-shrink-0">{% if kind == "competition" %}{{ item.flag|render_image_markup }}{% else %}{{ item|render_image_markup }}{% endif %}</span>
+  <span class="flex-grow-1">{{ item.name }}</span>
+  <form method="post" class="d-flex flex-shrink-0"
+        action="{% if kind == "competition" %}{% url 'toggle-favorite-competition' item.pk %}{% else %}{% url 'toggle-favorite-team' item.pk %}{% endif %}">
+    {% csrf_token %}
+    <input type="hidden" name="back" value="edit">
+    {% if kind == "competition" %}<input type="hidden" name="kind" value="competitions">{% endif %}
+    {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+    <button type="submit" class="favorite-star btn btn-sm border-0 p-0 d-flex align-items-center"
+            aria-pressed="{% if item.pk in followed_ids %}true{% else %}false{% endif %}"
+            aria-label="{% if item.pk in followed_ids %}{% blocktranslate with name=item.name %}Dejar de seguir a {{ name }}{% endblocktranslate %}{% else %}{% blocktranslate with name=item.name %}Seguir a {{ name }}{% endblocktranslate %}{% endif %}">
+      <svg class="star-outline" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.866 14.85c-.078.444.36.791.746.593l4.39-2.256 4.389 2.256c.386.198.824-.149.746-.592l-.83-4.73 3.522-3.356c.33-.314.16-.888-.282-.95l-4.898-.696L8.465.792a.513.513 0 0 0-.927 0L5.354 5.12l-4.898.696c-.441.062-.612.636-.283.95l3.523 3.356-.83 4.73zm4.905-2.767-3.686 1.894.694-3.957a.56.56 0 0 0-.163-.505L1.71 6.745l4.052-.576a.53.53 0 0 0 .393-.288L8 2.223l1.847 3.658a.53.53 0 0 0 .393.288l4.052.575-2.906 2.77a.56.56 0 0 0-.163.506l.694 3.957-3.686-1.894a.5.5 0 0 0-.461 0z"/>
+      </svg>
+      <svg class="star-filled" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3.612 15.443c-.386.198-.824-.149-.746-.592l.83-4.73L.173 6.765c-.329-.314-.158-.888.283-.95l4.898-.696L7.538.792c.197-.39.73-.39.927 0l2.184 4.327 4.898.696c.441.062.612.636.282.95l-3.522 3.356.83 4.73c.078.443-.36.79-.746.592L8 13.187l-4.389 2.256z"/>
+      </svg>
+    </button>
+  </form>
+</div>

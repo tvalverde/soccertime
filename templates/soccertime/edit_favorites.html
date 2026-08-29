@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}Soccertime :: {% translate "Mis favoritos" %}{% endblock %}
+{% block og_title %}Soccertime :: {% translate "Mis favoritos" %}{% endblock %}
+{% block twitter_title %}Soccertime :: {% translate "Mis favoritos" %}{% endblock %}
+{% block content %}
+<div class="container">
+  <h2 class="pt-3 pb-2 text-light">{% translate "Mis favoritos" %}</h2>
+
+  {# A list and not a table: there is nothing to compare across columns here, and the        #}
+  {# agenda's table is the one that overflows horizontally below 1200px. A flex row grows    #}
+  {# and shrinks with the container instead.                                                 #}
+  <ul class="nav nav-pills gap-2 mb-3">
+    <li class="nav-item">
+      <a class="nav-link{% if kind == "team" %} active{% else %} text-secondary{% endif %}"
+         href="{% url 'edit-favorites' %}">
+        {% blocktranslate count counter=team_count %}Equipos · {{ counter }}{% plural %}Equipos · {{ counter }}{% endblocktranslate %}
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link{% if kind == "competition" %} active{% else %} text-secondary{% endif %}"
+         href="{% url 'edit-favorites' %}?kind=competitions">
+        {% blocktranslate count counter=competition_count %}Competiciones · {{ counter }}{% plural %}Competiciones · {{ counter }}{% endblocktranslate %}
+      </a>
+    </li>
+  </ul>
+
+  {# GET, so a search is a link the visitor can share or reload, and the tab travels with it #}
+  {# in a hidden field rather than being lost on submit.                                     #}
+  <form method="get" action="{% url 'edit-favorites' %}" role="search" class="d-flex gap-2 mb-3">
+    {% if kind == "competition" %}<input type="hidden" name="kind" value="competitions">{% endif %}
+    {# The header's own search, component for component: an `input-group` with the magnifier #}
+    {# as an addon and the outline button beside it. Styling a bare `form-control` with       #}
+    {# `border-secondary` painted a bright cyan box the site uses nowhere else.               #}
+    <div class="input-group">
+      <span class="input-group-text">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+        </svg>
+      </span>
+      <input class="form-control" type="search" name="q" value="{{ query }}" autocomplete="off"
+             placeholder="{% if kind == "competition" %}{% translate "Buscar una competición" %}{% else %}{% translate "Buscar un equipo" %}{% endif %}"
+             aria-label="{% translate "Buscar" %}">
+    </div>
+    <button class="btn btn-outline-primary" type="submit">{% translate "Buscar" %}</button>
+  </form>
+
+  <div class="section-heading px-3 py-2 small">{% translate "Sigues ahora" %}</div>
+  {% for item in followed %}
+    {% include "soccertime/favorite_row.html" with item=item %}
+  {% empty %}
+    <p class="text-secondary py-3 m-0">
+      <em>{% if kind == "competition" %}{% translate "No sigues ninguna competición todavía. Busca una arriba." %}{% else %}{% translate "No sigues ningún equipo todavía. Busca uno arriba." %}{% endif %}</em>
+    </p>
+  {% endfor %}
+
+  {% if query %}
+    <div class="section-heading px-3 py-2 small mt-4">
+      {% blocktranslate %}Resultados de «{{ query }}»{% endblocktranslate %}
+    </div>
+    {% for item in results %}
+      {% include "soccertime/favorite_row.html" with item=item %}
+    {% empty %}
+      <p class="text-secondary py-3 m-0"><em>{% translate "Nada coincide con esa búsqueda." %}</em></p>
+    {% endfor %}
+  {% endif %}
+
+  <p class="text-secondary small pt-4 pb-3 m-0">
+    {% translate "Tus favoritos viven en tu navegador, no en una cuenta. Se pierden si borras las cookies de este sitio." %}
+  </p>
+</div>
+{% endblock %}

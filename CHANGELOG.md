@@ -12,6 +12,43 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Added
+- **A page that answers "what do I follow?", which nothing answered before.** A visitor's
+  favourites live in a signed `httponly` cookie, so the only control that could ever remove one
+  was the star on that team's own page — reachable only by remembering the team and navigating
+  back to it. No script could read the cookie to list them, and no page did either. A selection
+  made and forgotten was a selection that could not be undone.
+
+  `/favorites/edit/` shows both kinds behind two tabs, searches the 4,796 teams and 1,125
+  competitions by name, and carries the same star every other listing carries — the same form,
+  posting to the same toggle. Storage did not change: `visitor_favorites.py` is untouched, and
+  the page says out loud what the site never told anybody, that the list lives in the browser
+  and goes with the cookies.
+
+  A star pressed there returns there, keeping the tab and the search, or editing four
+  favourites would be four journeys through four team pages. The way back is a literal the view
+  compares against — never a URL out of the request, which on a form any page may post to would
+  be an open redirect.
+
+  It is a list of rows and not a table on purpose. The agenda's table overflows horizontally
+  below 1200px, which is where most of this site is read; a screen holding a name and a star has
+  no columns to compare and would inherit that defect for nothing.
+
+### Changed
+- **`/favorites/` says whose favourites it is showing, and offers the way in.** Arriving with no
+  selection of your own quietly served the owner's curated picks, so a first-time visitor read
+  somebody else's agenda believing it was theirs, with nothing suggesting they could have their
+  own. It says so now, and offers the screen that fixes it.
+
+  Both rows sit **after** the events and the pagination — the count and the link to edit when
+  there is a selection, the notice when there is not. The events are what the page is for, and
+  nothing about managing favourites is worth pushing them down for. It costs the notice its
+  prominence: on a fallback page of 25 events it lands at 97% of the document, so a visitor
+  reads the owner's agenda before learning it is not theirs. That was weighed and accepted;
+  the alternative was a block above the fold on every first visit. `/agenda/` renders the same
+  template and carries neither row.
+
+
 ### Fixed
 - **The Android make targets now refuse a Gradle cache that is not the developer's.** `~/.gradle`
   is three gigabytes every project on this machine already shares, and sharing it is the point:

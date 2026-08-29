@@ -29,6 +29,7 @@ from soccertime.views import (
     channels,
     competition_events,
     competitions,
+    edit_favorites,
     favorites,
     healthz,
     sport_events,
@@ -62,6 +63,9 @@ site_urlpatterns: list[URLPattern | URLResolver] = [
     path("robots.txt", TemplateView.as_view(template_name="robots.txt", content_type="text/plain"), name="robots-txt"),
     path("", RedirectView.as_view(url="favorites/")),
     path("favorites/", favorites, name="favorites"),
+    # Reading, not writing: the stars on it post to `favorite/toggle/…` like every other
+    # star, so this path stays outside the prefix the proxy rate-limits.
+    path("favorites/edit/", edit_favorites, name="edit-favorites"),
     path("events/", RedirectView.as_view(url="../favorites/")),
     path("agenda/", agenda, name="agenda"),
     path("events/team/<int:team>/", team_events, name="team-events"),

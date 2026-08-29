@@ -94,4 +94,25 @@ Soccertime :: {% if events_title %}{{ events_title }}{% else %}{% translate "Age
 {% if events.number %}
     {% include "soccertime/pagination.html" with page=events %}
 {% endif %}
+{# Everything about the visitor's own favourites sits after the events, never before      #}
+{# them. The events are what the page is for; a personal selection rarely fills the 25 a  #}
+{# page holds, so the end of the list is one scroll away. `/agenda/` renders this same    #}
+{# template and is nobody's favourites, so the flag the view sets gates all of it.        #}
+{% if is_favorites_page %}
+<div class="container">
+  {% if showing_own_favorites %}
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 p-3 mt-2 bg-dark border rounded">
+    <span class="text-secondary">
+      {% blocktranslate count counter=team_count %}Sigues {{ counter }} equipo{% plural %}Sigues {{ counter }} equipos{% endblocktranslate %}{% blocktranslate count counter=competition_count %} y {{ counter }} competición{% plural %} y {{ counter }} competiciones{% endblocktranslate %}
+    </span>
+    <a class="btn btn-outline-primary" href="{% url 'edit-favorites' %}">{% translate "Editar mis favoritos" %}</a>
+  </div>
+  {% else %}
+  <div class="d-flex flex-column gap-2 align-items-start p-3 mt-2 border border-warning rounded bg-dark">
+    <div class="text-light">{% translate "Estás viendo los favoritos del sitio, no los tuyos. Marca los tuyos y esta pantalla te dará solo eso." %}</div>
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'edit-favorites' %}">{% translate "Elegir mis favoritos" %}</a>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}

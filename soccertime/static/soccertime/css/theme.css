@@ -246,6 +246,14 @@ a {
    agenda it sits above. It is the same grey the unwatchable channel badge uses, measured at
    6.9:1 against the background there, and the jump from it to the warning gold is what makes
    pressed and unpressed tell apart at a glance rather than by comparison. */
+/* The heading above a group of rows, in the colour the agenda's day headers already use —
+   `.table-active` is a table class and these are not table rows. `bg-dark` was the first
+   attempt and is #1c1b1b, near enough to the page's #131313 that the bar read as an indent. */
+.section-heading {
+    background-color: #2a2a2a;
+    color: var(--bs-body-color);
+}
+
 .favorite-star {
     color: #a29d9b;
     line-height: 1;

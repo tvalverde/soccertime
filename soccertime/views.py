@@ -12,6 +12,7 @@ from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.dateparse import parse_date
 from django.utils.functional import Promise
+from django.utils.http import urlencode
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import cache_control, cache_page
 from django.views.decorators.http import require_POST
@@ -267,7 +268,78 @@ def favorites(request: HttpRequest) -> HttpResponse:
     context = get_base_context(selection=selection)
     context.update({"events": paginate_queryset(window.with_related().chronological(), request)})
     context.update(empty_state(NO_FAVOURITE_EVENTS_MESSAGE, "warning"))
+    # Only this page carries the two rows about the visitor's own selection: `/agenda/`
+    # renders the same template and is nobody's favourites.
+    context.update(
+        {
+            "is_favorites_page": True,
+            "showing_own_favorites": selection is not None,
+            "team_count": len(selection.teams) if selection else 0,
+            "competition_count": len(selection.competitions) if selection else 0,
+        }
+    )
     return render(request, "soccertime/agenda.html", context)
+
+
+# How many search results one page of `edit_favorites` offers. The same 25 the listings
+# paginate by, and for the same reason: it is what fits without becoming a listing of its own.
+FAVORITE_SEARCH_LIMIT = 25
+
+# The shortest query worth asking the database for. One letter matches thousands of the
+# 4,796 teams and answers nothing, so it is treated as no query at all.
+MIN_QUERY_LENGTH = 2
+
+# Longer than any team or competition name here, and short enough to keep a redirect sane.
+MAX_QUERY_LENGTH = 100
+
+
+def edit_favorites(request: HttpRequest) -> HttpResponse:
+    """See and change everything this visitor follows, in one place.
+
+    The star on a team's own page could only ever remove a favourite the visitor had already
+    remembered and navigated back to; the cookie is `httponly`, so nothing else could list
+    them. This is the page that answers "what do I follow?" — which had no answer at all.
+
+    Never cached, and not through `cached_unless_personalised` either: that decorator serves
+    a shared copy to whoever carries no selection, and here the empty case is its own page
+    rather than somebody else's. Every response is this visitor's.
+    """
+    selection = read_selection(request) or Selection()
+    kind: EntityKind = "competition" if request.GET.get("kind") == "competitions" else "team"
+    query = (request.GET.get("q") or "").strip()
+
+    # Two branches rather than one polymorphic `model`: a competition's image hangs off a
+    # related `flag` row and a team's is its own column, so the querysets differ by more than
+    # the class — and a model picked at runtime is a type the checker cannot follow.
+    followed_ids = selection.ids_for(kind)
+    searching = len(query) >= MIN_QUERY_LENGTH
+    if kind == "competition":
+        followed: QuerySet[Any] = Competition.objects.filter(pk__in=followed_ids).select_related("flag")
+        results: QuerySet[Any] = (
+            Competition.objects.filter(name__icontains=query).select_related("flag")[:FAVORITE_SEARCH_LIMIT]
+            if searching
+            else Competition.objects.none()
+        )
+    else:
+        followed = Team.objects.filter(pk__in=followed_ids)
+        results = (
+            Team.objects.filter(name__icontains=query)[:FAVORITE_SEARCH_LIMIT] if searching else Team.objects.none()
+        )
+
+    return render(
+        request,
+        "soccertime/edit_favorites.html",
+        {
+            **get_base_context(selection=selection),
+            "kind": kind,
+            "query": query,
+            "followed": followed,
+            "results": results,
+            "followed_ids": followed_ids,
+            "team_count": len(selection.teams),
+            "competition_count": len(selection.competitions),
+        },
+    )
 
 
 @cached_unless_personalised
@@ -440,8 +512,33 @@ def _toggle_favorite(request: HttpRequest, kind: EntityKind, entity_id: int, des
     rather than a number stored in a cookie forever.
     """
     selection = read_selection(request) or Selection()
-    response = redirect(destination, entity_id)
+    response = redirect(_after_toggle(request, destination, entity_id))
     return write_selection(response, selection.toggled(kind, entity_id))
+
+
+def _after_toggle(request: HttpRequest, destination: str, entity_id: int) -> str:
+    """Where the redirect goes: the entity's own page, or back to the edit screen.
+
+    A star pressed on `edit_favorites` has to return there, keeping the tab and the search
+    the visitor was looking at, or every change would throw them onto a team page and make
+    editing four favourites four journeys.
+
+    The choice is a literal, never a URL from the request. `?next=` would be an open
+    redirect on a form that any page can post to, for the sake of one destination that is
+    known here anyway.
+    """
+    if request.POST.get("back") != "edit":
+        return reverse(destination, args=[entity_id])
+    parameters = {}
+    if request.POST.get("kind") == "competitions":
+        parameters["kind"] = "competitions"
+    # Bounded, because it is echoed into a redirect: the value is harmless — the destination
+    # is this site's own path either way — but an unbounded one makes an unbounded URL.
+    query = (request.POST.get("q") or "").strip()[:MAX_QUERY_LENGTH]
+    if query:
+        parameters["q"] = query
+    suffix = f"?{urlencode(parameters)}" if parameters else ""
+    return f"{reverse('edit-favorites')}{suffix}"
 
 
 @require_POST
