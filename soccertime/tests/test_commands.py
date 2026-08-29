@@ -87,9 +87,20 @@ class TestScrapitCommandProcessing:
 
     @pytest.fixture
     def mock_race_event(self):
-        """Create a mock race event."""
+        """Create a mock race event, at an hour that cannot drift over a day boundary.
+
+        It used to sit at `now() + 3 hours`, and the test that shifts it by five minutes
+        failed for five minutes of every day: between 20:55 and 21:00 Madrid — the zone the
+        reconciliation groups days by — the base event landed at 23:5x and the shifted one
+        on the next day, so the scrape kept both instead of superseding one. Observed twice
+        on 2026-08-29, once locally and once on CI, eleven minutes apart and in the same
+        window. Noon tomorrow is far from either edge of its day.
+        """
+        noon_tomorrow = (datetime.datetime.now() + datetime.timedelta(days=1)).replace(
+            hour=12, minute=0, second=0, microsecond=0
+        )
         return ScrapingEvent(
-            datetime=datetime.datetime.now() + datetime.timedelta(hours=3),
+            datetime=noon_tomorrow,
             sport="Ciclismo Test",
             competition="Test Tour",
             competition_crest=None,
