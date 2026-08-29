@@ -12,6 +12,16 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Fixed
+- **A scraper test failed for five minutes of every day.** Its fixture placed a race at
+  `now() + 3 hours` and the test shifted it by five minutes to assert the shifted race
+  supersedes the old one rather than duplicating it. Reconciliation groups by the local day, so
+  whenever those five minutes carried the event over midnight in `TIME_ZONE`, the scrape kept
+  both and the count was two. Seen twice on 2026-08-29 — once locally, once on CI eleven
+  minutes later, both inside the same window — and unreproducible either side of it. The
+  fixture sits at noon the next day now, which is far from either edge of its day whichever
+  zone reads it.
+
 ### Added
 - **A page that answers "what do I follow?", which nothing answered before.** A visitor's
   favourites live in a signed `httponly` cookie, so the only control that could ever remove one
