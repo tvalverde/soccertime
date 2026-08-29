@@ -7,7 +7,7 @@ beautifulsoup4==4.15.0
 # of this file under the tooling, unpinned, which made it look like a development
 # dependency — it is not, and moving it would break the scraper without the site noticing.
 lxml==6.1.2
-uvicorn==0.40.0
+uvicorn==0.52.4
 Pillow==12.3.0
 whitenoise==6.12.0
 
