@@ -68,6 +68,32 @@ class TestItRefusesToPublishSomethingNobodyCanInstall:
         assert re.search(r'if \[ -z "\$KEYSTORE_B64" \]', body)
         assert "exit 1" in body
 
+    def test_a_secret_that_arrives_empty_falls_back_instead_of_signing_with_it(self):
+        """The fourth secret does not exist, and the build is meant not to need it.
+
+        A PKCS12 keystore has one password, so `ANDROID_KEY_PASSWORD` is deliberately unset
+        and the signing config falls back to the store's. What makes that fallback subtle is
+        how a missing secret arrives: GitHub still sets the environment variable, to the empty
+        string. `getenv` returns `""` and not null there, so a bare elvis never fires and the
+        key would be signed with a blank password — while on a developer machine, where the
+        variable is genuinely absent, the same expression works. Local success, release
+        failure, and this workflow has never run.
+        """
+        for module in MODULES:
+            build = (ROOT / "android" / module / "build.gradle.kts").read_text()
+            found = re.search(r"keyPassword = ([^\n]+)", build)
+            assert found, f"{module} declares no key password"
+            expression = found.group(1)
+            assert "ANDROID_KEY_PASSWORD" in expression, expression
+            assert "isNotBlank" in expression or "isNullOrBlank" in expression, (
+                f"{module} falls back only on null: {expression.strip()} — "
+                "an absent secret arrives as an empty string, not as nothing"
+            )
+
+    def test_the_workflow_still_passes_the_optional_password(self):
+        """So that adding the secret one day is enough, without editing the workflow too."""
+        assert "ANDROID_KEY_PASSWORD" in workflow()
+
     def test_the_signature_is_verified_rather_than_assumed(self):
         """The call, not the word: `apksigner` also appears on the line that merely finds it."""
         assert re.search(r'apksigner"? verify', workflow())

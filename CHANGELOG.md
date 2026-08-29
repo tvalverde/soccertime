@@ -392,6 +392,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
+- **The release build would have signed with a blank password, and only on CI.** The fourth
+  signing secret is deliberately absent: a PKCS12 keystore has one password, so the config
+  falls back to the store's. But a secret the repository does not hold still reaches the runner
+  — as an environment variable set to the empty string — and `""` is not null, so the bare
+  elvis behind that fallback never fired there. On a developer machine, where the variable is
+  genuinely unset, the same expression worked. Blank counts as absent now.
+
+  Nothing had caught it because `android-release.yml` has never run: this would have been its
+  first tag, and it would have failed at the signature check the workflow already does. Local
+  success and release failure from one expression is the shape this project keeps paying for —
+  the flag rows whose file was gone, the health check that carried no `X-Forwarded-Proto`.
+  `test_android_release.py` now reads the expression and rejects one that falls back only on
+  null.
+
 - **The Material rule was checked at the window and not at the door.** `test_android_materials.py`
   read imports, so nothing stopped `api(libs.compose.material3)` from sitting in `:core` — green,
   and waiting for the first import to make it matter. It now reads the build files too: each

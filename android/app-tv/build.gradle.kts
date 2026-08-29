@@ -37,7 +37,13 @@ android {
                 // KeyStores" — and ignores the second, so the key's password *is* the store's.
                 // Falling back means forgetting the fourth secret costs nothing rather than
                 // failing a release build with an authentication error nobody expects.
-                keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: store
+                //
+                // Blank counts as absent, and that is the whole point: a secret the repository
+                // does not hold still reaches the runner, as an environment variable set to the
+                // empty string. Only an unset one is null, which is the local case and the one
+                // a bare elvis covers — so the fallback this comment promises would have fired
+                // on a developer machine and nowhere else.
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")?.takeIf(String::isNotBlank) ?: store
             }
         }
     }
