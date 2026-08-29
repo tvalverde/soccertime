@@ -16,7 +16,7 @@ This document provides the necessary context for understanding and working on th
     -   **Containerization:** Docker and Docker Compose
     -   **Production Server:** Uvicorn (with Nginx as a reverse proxy)
     -   **Code Style & Linting:** The project uses [Ruff](https://docs.astral.sh/ruff/) for all code formatting and linting. Configuration is located in `pyproject.toml`. Before committing, always run `ruff format .` and `ruff check . --fix`.
-    -   **Changelog:** Maintain the `CHANGELOG.md` file. Document all notable changes (Added, Changed, Deprecated, Removed, Fixed, Security) after every modification, following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) standard.
+    -   **Changelog:** Document all notable changes (Added, Changed, Deprecated, Removed, Fixed, Security) after every modification, following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) standard. **There are two, and they are not interchangeable:** `CHANGELOG.md` is the website and its API; `android/CHANGELOG.md` is the two applications. They release on separate tags — `v*` and `android-v*` — so an entry in the wrong file is filed under a release its reader will never install.
     -   **Testing:** The project uses `pytest` and `pytest-django`. All new features or bug fixes should be accompanied by tests.
     -   **Regression Testing:** Always create a regression test when fixing a bug to prevent it from reappearing in the future.
     -   Tests are located in the `soccertime/tests/` directory.
@@ -160,7 +160,8 @@ so `COPY . .` never carries it.
     `assembleRelease` still builds, unsigned, which is what makes it a check anybody can run
     against R8.
 -   Everything in section 2 applies here unchanged: English in all source and comments,
-    Conventional Commits, tests with every change, and a `CHANGELOG.md` entry.
+    Conventional Commits, tests with every change, and a changelog entry — which for anything
+    under `android/` means **`android/CHANGELOG.md`**, not the one at the root.
 
 ## 7. Language & Localization
 

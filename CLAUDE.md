@@ -1,7 +1,8 @@
 # Soccertime — instructions for Claude Code
 
 **Read `AGENTS.md` first.** It holds the project conventions: stack, testing rules,
-the mandatory `CHANGELOG.md` entry after every change, and the Ruff commands. The other
+the mandatory changelog entry after every change — `CHANGELOG.md` for the website and its API,
+`android/CHANGELOG.md` for the two applications, which release on their own tags — and the Ruff commands. The other
 CLIs load it automatically; Claude Code does not, so it is easy to work a whole session
 without ever seeing it. That is exactly how the changelog went unmaintained.
 
