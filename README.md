@@ -4,7 +4,7 @@ Django application for aggregating and displaying sports events (football, cycli
 
 ## Key Features
 
-- **Automated Scraping:** Robust daily scraping from multiple sports sources with intelligent deduplication and updates.
+- **Automated Scraping:** Robust four-hourly scraping from multiple sports sources with intelligent deduplication and updates.
 - **Optimized Performance:** Aggressive N+1 query prevention using nested prefetching and view-level data pre-calculation.
 - **Unified Visual Experience:** Consistent dark-themed UI across all event listings (favorites, daily agenda, sports, channels, and competitions).
 - **Accessibility:** Accessible UI components with semantic HTML and ARIA labels.

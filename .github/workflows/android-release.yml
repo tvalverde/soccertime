@@ -15,7 +15,12 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # Full history and every tag, because the step below reads the website's latest `v*`
+      # to record what these applications were built against. The default shallow clone has
+      # neither, and `git describe` would fail here and nowhere else.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -48,6 +53,18 @@ jobs:
             exit 1
           fi
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      # The applications talk to the website's API, and the two release on separate tags, so
+      # nothing otherwise records which site a given APK was built against. Asked here rather
+      # than remembered later, when the answer is gone.
+      #
+      # It does not gate the release. An application-only version — a layout fix, a placeholder
+      # — legitimately needs no new website tag, and a check that fails on the honest cases is
+      # one people learn to work around.
+      - name: Note which website release these were built against
+        run: |
+          site=$(git describe --tags --abbrev=0 --match "v[0-9]*" 2>/dev/null || true)
+          echo "site=${site:-no website release tagged at this commit}" >> "$GITHUB_ENV"
 
       - name: Build
         working-directory: android
@@ -82,8 +99,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          printf '%s\n\n%s\n' \
+            "Sideload \`soccertime-$version.apk\` on a phone and \`soccertime-tv-$version.apk\` on the Fire TV. Both are signed with the same key, so each installs over its own previous version without losing the favourites stored on the device." \
+            "Built against the website at **$site**, which is the API these read. The site releases on its own tags and keeps its own changelog." \
+            > release-notes.md
           gh release create "$GITHUB_REF_NAME" \
             --title "Soccertime Android $version" \
-            --notes "Sideload \`soccertime-$version.apk\` on a phone and \`soccertime-tv-$version.apk\` on the Fire TV. Both are signed with the same key, so each installs over its own previous version without losing the favourites stored on the device." \
+            --notes-file release-notes.md \
             release/soccertime-"$version".apk \
             release/soccertime-tv-"$version".apk

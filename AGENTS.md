@@ -14,13 +14,13 @@ This document provides the necessary context for understanding and working on th
     -   **Backend:** Python / Django
     -   **Database:** SQLite (for both development and production)
     -   **Containerization:** Docker and Docker Compose
-    -   **Production Server:** Uvicorn (with Nginx as a reverse proxy)
+    -   **Production Server:** Uvicorn, behind the host's **Traefik**, which is the reverse proxy: it terminates TLS, carries `X-Forwarded-Proto` and strips the path prefix. A small Nginx container serves `/static` and `/media` only, on a router of its own. Getting this backwards is not academic — the `SECURE_SSL_REDIRECT` outage in `CLAUDE.md` turned on which component sends that header.
     -   **Code Style & Linting:** The project uses [Ruff](https://docs.astral.sh/ruff/) for all code formatting and linting. Configuration is located in `pyproject.toml`. Before committing, always run `ruff format .` and `ruff check . --fix`.
     -   **Changelog:** Document all notable changes (Added, Changed, Deprecated, Removed, Fixed, Security) after every modification, following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) standard. **There are two, and they are not interchangeable:** `CHANGELOG.md` is the website and its API; `android/CHANGELOG.md` is the two applications. They release on separate tags — `v*` and `android-v*` — so an entry in the wrong file is filed under a release its reader will never install.
     -   **Testing:** The project uses `pytest` and `pytest-django`. All new features or bug fixes should be accompanied by tests.
     -   **Regression Testing:** Always create a regression test when fixing a bug to prevent it from reappearing in the future.
-    -   Tests are located in the `soccertime/tests/` directory.
-    -   Run the full test suite with: `docker compose exec web pytest`
+    -   The Django tests are in `soccertime/tests/`. The applications' Kotlin tests are in `android/core/src/test/`, and run with `make android-test`.
+    -   Run the suite with `make test`, and `make test-integration` for the ones that make real HTTP calls. Prefer them over a raw `pytest`: the targets pass `-u $(DOCKER_UID):$(DOCKER_GID)` so nothing lands in the bind mount owned by another user, and `-m "not integration"` so a routine run does not go out to the network.
 
 ## 3. Workflow & Commands
 
@@ -31,7 +31,7 @@ This document provides the necessary context for understanding and working on th
     4.  Access the app at `http://localhost:8000`.
 
 -   **Key Management Commands:**
-    -   `docker compose exec web python manage.py scrapit`: This is the core command for fetching event data. It is run automatically as a daily cron job in production to keep the schedule updated.
+    -   `docker compose exec web python manage.py scrapit`: This is the core command for fetching event data. It runs from cron in production **every four hours** (`4 */4 * * *`, read from the server's crontab on 2026-08-29 — the schedule lives there, not in this repository). The `tokyo` link import runs separately at 01:20, 07:20, 13:20 and 19:20.
     -   `docker compose exec web python manage.py addlinksource --source <name> --file <path>`: This command is used to manually update the TV channel links from a local text file.
     -   `docker compose exec web python manage.py resetdb`: Resets the database (deletes and recreates with migrations + fixtures). Useful for development.
 
@@ -52,7 +52,7 @@ This document provides the necessary context for understanding and working on th
 -   **Database:** As the project uses SQLite, be mindful that complex schema changes and data migrations should be handled with care. It runs in **WAL mode**, so the database is two files: the newest commits live in `db.sqlite3-wal` until a checkpoint folds them in. Anything that copies, moves or replaces it must go through a connection (`python -m soccertime.backups snapshot-db`) and must delete the `-wal`/`-shm` of the database it replaces, with the service stopped. `test_database_transport.py` enforces both rules against the `Makefile`.
 -   **External Data Files:** Files used as input for `addlinksource` (like `elcano.txt` or `newera.txt`) are considered external data sources and are **not** part of the git repository. Do not commit them.
 -   **Local TLS Key Material:** For local production simulation with Traefik, generate `.docker/traefik/certs/mojon.local.key` locally. This private key file must never be committed; only non-sensitive templates/configuration should be tracked.
--   **Initial Fixtures:** The application includes initial fixtures (`soccertime/fixtures/`) that are automatically loaded via a `post_migrate` signal when the database is empty. These include basic sports, competitions (La Liga, Champions League, Fórmula 1, MotoGP), teams (FC Barcelona, CD Castellón, Barça Basket, etc.), and their corresponding favorites. Fixtures use sequential PKs starting from 1.
+-   **Initial Fixtures:** The application includes initial fixtures (`soccertime/fixtures/`) that are automatically loaded via a `post_migrate` signal when the database is empty. These include basic sports, competitions (La Liga EA Sports, Champions League, Fórmula 1, MotoGP), teams (FC Barcelona, CD Castellón, Barça Basket, etc.), and their corresponding favorites. Fixtures use sequential PKs starting from 1.
 
 ## 5. Development Best Practices & Patterns
 
@@ -160,8 +160,11 @@ so `COPY . .` never carries it.
     `assembleRelease` still builds, unsigned, which is what makes it a check anybody can run
     against R8.
 -   Everything in section 2 applies here unchanged: English in all source and comments,
-    Conventional Commits, tests with every change, and a changelog entry — which for anything
-    under `android/` means **`android/CHANGELOG.md`**, not the one at the root.
+    Conventional Commits, tests with every change, and a changelog entry — which goes by the
+    release that carries it, not by the path. Anything the applications ship goes in
+    **`android/CHANGELOG.md`**: everything under `android/`, and also
+    `.github/workflows/android-release.yml`, the `android-*` Makefile targets and the
+    `test_android_*` guards, none of which live there.
 
 ## 7. Language & Localization
 
