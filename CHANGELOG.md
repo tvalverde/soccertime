@@ -12,6 +12,26 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Fixed
+- **Four claims in `AGENTS.md` were not true, and one of them was the expensive kind.** The guide
+  called Nginx the production reverse proxy. Traefik is: it terminates TLS, carries
+  `X-Forwarded-Proto` and routes `/soccertime` straight to uvicorn, while Nginx serves `/static`
+  and `/media` on a router of its own. That is the exact distinction the `SECURE_SSL_REDIRECT`
+  outage turned on, so the file was teaching the next reader to reason about the wrong component
+  at the one place this project has already fallen over.
+
+  The other three: the scraper was called a daily cron job, and the server's crontab says
+  `4 */4 * * *` — every four hours (`README.md` carried the same word); `docker compose exec web
+  pytest` was offered as the way to run the suite, which runs as the wrong user into a bind mount
+  and includes the integration tests that make real HTTP calls, where `make test` does neither;
+  and tests were said to live in `soccertime/tests/`, which stopped being the whole truth when
+  the Kotlin suite arrived under `android/core/src/test/`.
+
+  They were found by checking every claim in the file against the tree rather than reading it —
+  the same sweep that had just found two false statements in a test docstring whose own argument
+  was that facts about artifacts go stale.
+
+
 ## [0.9.0] - 2026-08-29
 
 ### Added
