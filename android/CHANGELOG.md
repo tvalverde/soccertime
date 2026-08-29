@@ -12,6 +12,24 @@ The website's own changelog is `../CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Added
+- **Each release now says which website release it was built against.** These applications read
+  the site's API and the two ship on separate tags, so nothing recorded the pairing — the
+  question "which API does this APK need?" had no answer and never would have. The workflow asks
+  `git describe` at build time, while the answer still exists, and prints it into the release
+  notes.
+
+  It does not gate anything, on purpose. An application-only version — a layout fix, a
+  placeholder — needs no new website tag, and a check that fails on the honest cases is one
+  people learn to work around. Recording is enough to make a mismatch visible: at the commit
+  `android-v0.1.0` sits on, `git describe` answers **v0.8.0**, because the site was not tagged
+  until later that day. A reader who knew the API was new would have seen the gap in the notes.
+
+  The checkout had to grow with it. `actions/checkout` clones one commit and no tags by default,
+  so `git describe` would have failed on the runner and nowhere else — the same shape as the
+  signing password that fell back on null and never on the empty string GitHub actually sends.
+  `fetch-depth: 0`, and a test that fails if it goes back.
+
 ## [0.1.0] - 2026-08-29
 
 The first release. Both applications carry `versionName = "0.1.0"`, which the release workflow

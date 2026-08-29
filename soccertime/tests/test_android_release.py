@@ -106,6 +106,40 @@ class TestItRefusesToPublishSomethingNobodyCanInstall:
         assert re.search(r'\[ -f "\$apk" \] \|\|', workflow())
 
 
+class TestTheReleaseSaysWhatItWasBuiltAgainst:
+    """These applications read the website's API, and the two release on separate tags.
+
+    Nothing else records the pairing. Asked at build time, when `git describe` can still
+    answer, rather than reconstructed later from two tag lists and a guess.
+
+    It deliberately does not gate the release: an application-only version — a layout fix, a
+    placeholder — needs no new website tag, and a check that fails on the honest cases is one
+    people learn to work around. Recording is enough to make a mismatch visible. Tagged at the
+    commit `android-v0.1.0` sits on, `git describe` answers `v0.8.0`, because the site was not
+    tagged until later the same day; a reader who knew the API was new would have seen it.
+    """
+
+    def test_it_reads_the_website_tag(self):
+        assert re.search(r'git describe .*--match "v\[0-9\]\*"', workflow())
+
+    def test_it_puts_that_in_the_release_notes(self):
+        """A value computed and not published answers nobody."""
+        body = workflow()
+        assert re.search(r"\$site", body), "the notes never mention the site version"
+        assert "--notes-file" in body or "--notes" in body
+
+    def test_the_checkout_is_deep_enough_to_answer(self):
+        """`git describe` needs history and tags; a shallow clone has neither.
+
+        This is the half that cannot fail on a developer machine, where the checkout is a real
+        clone. It would fail on CI and only there — the same shape as the signing password
+        that fell back on null and never on the empty string GitHub actually sends.
+        """
+        assert re.search(r"fetch-depth:\s*0", workflow()), (
+            "checkout is shallow; `git describe` will find no tags on the runner"
+        )
+
+
 class TestTheKeyNeverLandsWhereItCouldEscape:
     def test_it_is_written_outside_the_workspace_on_ci(self):
         """Anything inside the checkout can reach an artifact, a cache or a commit."""
