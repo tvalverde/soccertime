@@ -12,6 +12,8 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-29
+
 ### Fixed
 - **A scraper test failed for five minutes of every day.** Its fixture placed a race at
   `now() + 3 hours` and the test shifted it by five minutes to assert the shifted race
@@ -45,6 +47,20 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
   no columns to compare and would inherit that defect for nothing.
 
 ### Changed
+- **Four dependencies production actually runs moved: `requests` 2.33.0 → 2.34.2,
+  `beautifulsoup4` 4.14.3 → 4.15.0, `lxml` 6.1.1 → 6.1.2 and `uvicorn` 0.40.0 → 0.52.4.**
+  Unlike the development toolchain below, these are in the image, so a green CI run is worth
+  less here than it looks: the only three tests that drive the parser and the HTTP client
+  against the real websites are marked `integration`, and CI deselects them. They were run
+  locally instead, before and after — three passed each time.
+
+  `uvicorn` spans twelve minor versions and is the process that serves every page, which no
+  unit test exercises at all. It was rehearsed on the local production replica — the same three
+  compose files the server runs, behind Traefik, over TLS, with `/soccertime` stripped by the
+  proxy and handed back through `--root-path`. Ten real pages answered 200, the log carried no
+  5xx and no deprecation, and `ASGI 'lifespan' protocol appears unsupported` is the same line
+  0.40.0 printed.
+
 - **Nothing the environment leaves lying around can be versioned by accident any more.** Run
   through a tool sandbox, this working copy appears to contain twelve untracked entries it does
   not have — `.bashrc`, `.zshrc`, `.gitconfig`, `.gitmodules`, `.mcp.json`, `.idea`, `.vscode`
