@@ -420,6 +420,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
+- **The Material rule was checked at the window and not at the door.** `test_android_materials.py`
+  read imports, so nothing stopped `api(libs.compose.material3)` from sitting in `:core` — green,
+  and waiting for the first import to make it matter. It now reads the build files too: each
+  application must declare its own Material and not the other's, and `:core` neither. Coordinates
+  are resolved through the version catalog rather than matched by alias, comments are dropped so
+  a commented-out line cannot satisfy an assertion, and a coordinate written out as a string is
+  read as well as one written as an alias — all three of which were shown to slip past a first
+  draft of the check.
+
+  Two claims in that file were false and are gone. `androidx.tv:tv-material:1.1.0` does **not**
+  depend on `androidx.compose.material3` — its metadata brings `material-icons-core` and nothing
+  else of Material — so the classpath is narrower than the file claimed and the compiler, today,
+  would already refuse the wrong import. And `ImageVector` never moved between `ui-graphics` and
+  `ui`; it has been in `ui` throughout. A file arguing that facts about artifacts go stale should
+  not have carried two that had.
+
 - **`Retry-After` was bounded below and not above, and the screens narrow it to an `Int`.** Both
   applications pick a plural with `retryAfterSeconds.toInt()`, so a header past `Int.MAX_VALUE`
   wraps: `4294967296` would choose the wording for zero while printing four billion seconds. The
