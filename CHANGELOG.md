@@ -45,6 +45,25 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
   no columns to compare and would inherit that defect for nothing.
 
 ### Changed
+- **Nothing the environment leaves lying around can be versioned by accident any more.** Run
+  through a tool sandbox, this working copy appears to contain twelve untracked entries it does
+  not have — `.bashrc`, `.zshrc`, `.gitconfig`, `.gitmodules`, `.mcp.json`, `.idea`, `.vscode`
+  and the rest. Eleven of them do not exist on disk at all: they are bind mounts laid over the
+  working directory, and they vanish with it. `git status` cannot tell them from real files, so
+  `git add -A` sweeps them in.
+
+  Nothing ever did — 250+ commits, none of them, verified. But the only thing preventing it was
+  a sentence of prose in `CLAUDE.md`, and a rule that lives in prose is a rule somebody has to
+  have read; this project has already paid for one of those, which is how the changelog went
+  unmaintained. `test_no_artefact_of_the_environment_is_tracked` is the same rule with a machine
+  behind it, written as an allowlist of the ten dotfiles the root really versions rather than a
+  list of the twelve known intruders — the interesting failure is the artefact nobody has seen
+  yet. Confirmed to fail: staging one makes it fail, and removing it makes it pass.
+
+  It runs on CI, which checks the repository out for real. `make test` runs inside the
+  application image, which ships no `git`, so there it skips and says so rather than passing on
+  a check it never made.
+
 - **Django is held at 6.0, and Dependabot is told why instead of asking every week.**
   `django-admin-sortable2` swaps the admin's own `actions.js` for a copy named after the running
   Django, and 2.3.1 — the latest release, from January 2026 — ships
