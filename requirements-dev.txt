@@ -2,7 +2,7 @@
 # passes and the production build does not. Nothing here is imported by the application.
 
 # Testing
-pytest==9.0.3
+pytest==9.1.1
 pytest-django==4.14.0
 pytest-cov==7.1.0
 
