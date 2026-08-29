@@ -4,7 +4,7 @@
 # Testing
 pytest==9.0.3
 pytest-django==4.14.0
-pytest-cov==6.0.0
+pytest-cov==7.1.0
 
 # Linting & Formatting
 ruff==0.9.6
