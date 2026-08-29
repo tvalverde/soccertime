@@ -420,6 +420,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
+- **A scraper test failed on 2026-08-29 because of the calendar, not the code.** Its fixture
+  carried the literal date `21/08/2026` while `is_valid_date` reads the wall clock and accepts a
+  window of seven days back to a year ahead. Written on 2026-08-10 the date was comfortably
+  inside it; eight days after it passed, the header was dropped as out of range, the rows beneath
+  it had no date to sit on, and `test_a_dated_event_alongside_one_pending_is_still_produced`
+  reported the calendar rather than the scraper. The fixture builds its header from today's date
+  now, and a guard reads that header back out of the fixture and asserts the scraper accepts it.
+
+  The guard reads the real header rather than building one of its own, because the literal lived
+  in that template and a guard aimed anywhere else would have watched it go stale. It does not
+  make a literal impossible — one typed in today still has its week — but it fails naming the
+  fixture, instead of leaving four tests about counting events to report the calendar.
+
 - **The phone's bottom bar was laid out but invisible, which left the Agenda unreachable.** Its
   row said `fillMaxSize(fraction = 0f)` — zero per cent of *both* dimensions — and the `height`
   beside it only put one of them back. Sixty-six points tall and nothing wide. It is

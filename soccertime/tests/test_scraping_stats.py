@@ -1,11 +1,32 @@
 """Tests for how the scraper accounts for the rows it does not turn into events."""
 
+import datetime
+
 import pytest
 from bs4 import BeautifulSoup
 
-from soccertime.management.commands.scraping.futbolenlatv import ScrapingStats, parse_iter
+from soccertime.management.commands.scraping.futbolenlatv import ScrapingStats, parse_date_row, parse_iter
 
 BASE_URL = "https://example.com/deporte/automovilismo"
+
+WEEKDAYS = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
+
+
+def header_date():
+    """A date the scraper will still accept tomorrow, which a literal one is not.
+
+    `is_valid_date` reads the wall clock — it takes a date from seven days ago to a year
+    ahead — so a date typed into a fixture is inside the window on the day it is typed and
+    outside it a week later. This one said `21/08/2026`, written on 2026-08-10, and every run
+    from 2026-08-29 onwards read it as out of range: the header was dropped, the rows under it
+    had no date to sit on, and a test asserting an event came out of them failed for a reason
+    that had nothing to do with what it was testing.
+
+    The weekday is decoration — `parse_date_row` splits at `", "` and keeps the tail — but the
+    fixture is shaped like the source it stands for, so it is the real one.
+    """
+    today = datetime.date.today()
+    return f"{WEEKDAYS[today.weekday()]}, {today:%d/%m/%Y}"
 
 
 def page(rows):
@@ -13,7 +34,7 @@ def page(rows):
     return BeautifulSoup(
         f"""
         <table>
-          <tr class="cabeceraTabla"><td>Viernes, 21/08/2026</td></tr>
+          <tr class="cabeceraTabla"><td>{header_date()}</td></tr>
           <tr class="cabeceraCompericion"><td><a>Fórmula 1</a></td></tr>
           {rows}
         </table>
@@ -25,6 +46,26 @@ def page(rows):
 def event_row(time_text, name="G.P. Holanda (Zandvoort) Clasificación"):
     return (
         f"<tr><td>{time_text}</td><td><span>detalle</span></td><td>{name}</td><td><ul><li>DAZN F1</li></ul></td></tr>"
+    )
+
+
+def test_the_fixture_carries_a_date_the_scraper_accepts():
+    """Guards every test below, which read a page this builds.
+
+    A header out of range is dropped, and the rows under it lose the date they sit on — so
+    these tests stop testing what they say they test and start reporting the calendar.
+
+    It reads the header out of `page()` rather than building one of its own, because the
+    literal that expired lived in that template and a guard aimed anywhere else would have
+    watched it go stale. What this catches on the spot is a date already outside the window;
+    a literal typed in today still has its week, but it fails here, naming the fixture, rather
+    than in four tests that appear to be about counting events.
+    """
+    header = page("").select_one("tr.cabeceraTabla")
+
+    assert header is not None, "the fixture no longer has a date header for the rows to sit on"
+    assert parse_date_row(header, "Automovilismo", BASE_URL) is not None, (
+        f"{header.get_text(strip=True)!r} is outside the window is_valid_date allows"
     )
 
 
