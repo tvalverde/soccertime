@@ -2,7 +2,7 @@ Django==6.0.8
 django-admin-sortable2==2.3.1
 requests==2.33.0
 requests-cache==1.3.3
-beautifulsoup4==4.14.3
+beautifulsoup4==4.15.0
 # The parser `futbolenlatv.py` asks BeautifulSoup for by name. It used to sit at the bottom
 # of this file under the tooling, unpinned, which made it look like a development
 # dependency — it is not, and moving it would break the scraper without the site noticing.
