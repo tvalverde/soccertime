@@ -603,10 +603,13 @@ remote-import-links:
 
 # Install, or refresh, the crontab entry that imports a published list into production.
 #
-# The default schedule is every six hours, deliberately offset from the scraper's own
-# entry so the two never share an hour: a link can only reach a channel the scraper has
-# already created, so importing shortly after a scrape is what gives the new channels a
-# chance. The script replaces any entry for the same source and copies every other line
+# The default schedule is every six hours, at 01:20, 07:20, 13:20 and 19:20, deliberately
+# offset from the scraper's own entry so the two never share an hour: a link can only reach
+# a channel the scraper has already created, so an import has to follow a scrape rather than
+# race it. The scraper runs every four hours (`4 */4 * * *`), so the two drift against each
+# other rather than staying in step — the gap between a scrape and the next import runs from
+# about seventy minutes to about three and a quarter hours, and every scrape is followed by
+# an import well within the day. Close enough is the requirement; "shortly after" was not. The script replaces any entry for the same source and copies every other line
 # through untouched.
 # Usage: make remote-install-import-cron SOURCE=tokyo URL=https://host/list.m3u
 #        make remote-install-import-cron SOURCE=tokyo URL=... CRON_SCHEDULE="0 */6 * * *"
