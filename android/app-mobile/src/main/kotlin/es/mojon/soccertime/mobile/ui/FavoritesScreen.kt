@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import es.mojon.soccertime.core.data.FollowedItem
 import es.mojon.soccertime.core.data.Following
 import es.mojon.soccertime.core.ui.AgendaFilter
+import es.mojon.soccertime.core.ui.Crest
 import es.mojon.soccertime.core.ui.EventUi
 import es.mojon.soccertime.core.ui.FollowableKind
 import es.mojon.soccertime.core.ui.FavoritesIntent

@@ -446,6 +446,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   make a literal impossible — one typed in today still has its week — but it fails naming the
   fixture, instead of leaving four tests about counting events to report the calendar.
 
+- **A crest whose file was gone left a hole in the row, on both applications.** The API serves an
+  image URL whether or not the file is behind it, deliberately and for a reason it already paid
+  for: reading dimensions off the file is what returned 500 from `/competitions/` when 49 flag
+  rows pointed at files that had disappeared, so `serializers.py` says in as many words that a
+  404 from the web server beats a 500 from here. That leaves the client one obligation, and the
+  client never took it. Coil draws *nothing* for a request that fails, so `AsyncImage` without an
+  `error` painter left blank space in a row that had already reserved room for the crest — and
+  without `fallback`, the same for a URL the API never sent, which only worked because the
+  composable branched on `url == null` before ever asking Coil. Both are painters now, and the
+  three states the reader can do nothing about are drawn the same.
+
+  Neither slot is a compile error, neither is a crash, and neither is visible on a machine whose
+  media directory is complete. Production reads clean today — all 229 flags and the team crests
+  checked over HTTP, 302 of 302 answering 200, the missing ones long since repaired by
+  `remote-redownload-images` — which is precisely why this needed writing down rather than
+  waiting to be noticed again.
+
+  The fix had to be written twice or written once. `Crest` and `TvCrest` were byte-identical
+  bodies in the two applications, so there is now one `Crest` in `:core`, beside the fonts and
+  the icons that live there for the same reason. That cost `:core` an explicit
+  `foundation-layout`: `Modifier.size` is in that artifact and not in `foundation`, which exports
+  it on the runtime classpath but not the compile one — the applications never noticed because
+  their Material brings it along, and `:core` carries no Material by design.
+
+  `test_android_images.py` holds both halves: every `AsyncImage` must declare `error` and
+  `fallback`, and only `:core` may import `coil3.compose`, so the copy that drifts cannot come
+  back. The application modules still have no test source set, so a Python meta-test reading the
+  Kotlin as text is what stands in for one — the same technique already guarding the two
+  Materials.
+
 - **The phone's bottom bar was laid out but invisible, which left the Agenda unreachable.** Its
   row said `fillMaxSize(fraction = 0f)` — zero per cent of *both* dimensions — and the `height`
   beside it only put one of them back. Sixty-six points tall and nothing wide. It is

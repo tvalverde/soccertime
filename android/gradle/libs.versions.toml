@@ -41,6 +41,9 @@ compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
+# `foundation` exports this one on the runtime classpath only, so a module that draws a sized
+# box and does not carry a Material — `:core` — has to ask for it by name.
+compose-foundation-layout = { module = "androidx.compose.foundation:foundation-layout" }
 
 androidx-tv-material = { module = "androidx.tv:tv-material", version.ref = "tvMaterial" }
 

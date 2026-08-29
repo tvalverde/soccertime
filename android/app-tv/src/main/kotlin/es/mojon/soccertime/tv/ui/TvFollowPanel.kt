@@ -36,6 +36,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import es.mojon.soccertime.core.data.Favorites
+import es.mojon.soccertime.core.ui.Crest
 import es.mojon.soccertime.core.ui.Followable
 import es.mojon.soccertime.core.ui.FollowableKind
 import es.mojon.soccertime.core.ui.Palette
@@ -153,7 +154,7 @@ private fun FollowRow(
                 .border(1.dp, MaterialTheme.colorScheme.border, RoundedCornerShape(50)),
             contentAlignment = Alignment.Center,
         ) {
-            TvCrest(candidate.item.imageUrl, size = 24.dp, rounded = 3.dp)
+            Crest(candidate.item.imageUrl, size = 24.dp, rounded = 3.dp)
         }
 
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

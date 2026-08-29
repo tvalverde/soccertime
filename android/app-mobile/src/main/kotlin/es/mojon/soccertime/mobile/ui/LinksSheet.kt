@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import es.mojon.soccertime.core.model.LinkDto
 import es.mojon.soccertime.core.ui.ChannelLinks
+import es.mojon.soccertime.core.ui.Crest
 import es.mojon.soccertime.core.ui.EventLinks
 import es.mojon.soccertime.core.ui.Palette
 import es.mojon.soccertime.mobile.R

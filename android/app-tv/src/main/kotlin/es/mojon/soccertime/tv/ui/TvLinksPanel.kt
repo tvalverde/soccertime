@@ -51,6 +51,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import es.mojon.soccertime.core.model.LinkDto
 import es.mojon.soccertime.core.ui.ChannelLinks
+import es.mojon.soccertime.core.ui.Crest
 import es.mojon.soccertime.core.ui.EventLinks
 import es.mojon.soccertime.core.ui.Palette
 import es.mojon.soccertime.tv.R
@@ -222,7 +223,7 @@ private fun Header(links: EventLinks) {
         horizontalArrangement = Arrangement.spacedBy(11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        links.home?.let { TvCrest(it.crestUrl, size = 26.dp) }
+        links.home?.let { Crest(it.crestUrl, size = 26.dp) }
         Text(
             text = links.title,
             style = TvTeamName,
@@ -232,7 +233,7 @@ private fun Header(links: EventLinks) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        links.away?.let { TvCrest(it.crestUrl, size = 26.dp) }
+        links.away?.let { Crest(it.crestUrl, size = 26.dp) }
         if (links.live) {
             Text(
                 text = stringResource(R.string.live),

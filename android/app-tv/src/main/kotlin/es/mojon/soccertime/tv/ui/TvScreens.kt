@@ -49,6 +49,7 @@ import es.mojon.soccertime.core.network.ApiError
 import es.mojon.soccertime.core.ui.AgendaDay
 import es.mojon.soccertime.core.ui.AgendaFilter
 import es.mojon.soccertime.core.ui.AgendaUiState
+import es.mojon.soccertime.core.ui.Crest
 import es.mojon.soccertime.core.ui.anchorPosition
 import es.mojon.soccertime.core.ui.EventUi
 import es.mojon.soccertime.core.ui.FavoritesUiState
@@ -230,7 +231,7 @@ private fun FilterChip(filter: AgendaFilter) {
         horizontalArrangement = Arrangement.spacedBy(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TvCrest(
+        Crest(
             filter.imageUrl,
             size = 17.dp,
             rounded = if (filter.kind == FollowableKind.Competitions) 2.dp else 8.5.dp,
@@ -475,7 +476,7 @@ private fun FollowedAvatar(item: FollowedItem, kind: FollowableKind, onOpen: () 
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            TvCrest(item.imageUrl, size = 28.dp, rounded = if (competition) 3.dp else 14.dp)
+            Crest(item.imageUrl, size = 28.dp, rounded = if (competition) 3.dp else 14.dp)
         }
         Text(
             text = item.name,
