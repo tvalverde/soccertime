@@ -420,6 +420,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subquery cannot produce a duplicate, so there is nothing left to make distinct.
 
 ### Fixed
+- **`Retry-After` was bounded below and not above, and the screens narrow it to an `Int`.** Both
+  applications pick a plural with `retryAfterSeconds.toInt()`, so a header past `Int.MAX_VALUE`
+  wraps: `4294967296` would choose the wording for zero while printing four billion seconds. The
+  parse now takes a value only within nought to an hour, and drops anything else instead of
+  clamping it — what these screens do with the number is print it, so one that cannot be a wait
+  belongs in the sentence that names no number at all. An hour is far past anything either
+  refuser sends; both count in windows of a minute.
+
+  Nothing in front of this API can produce such a header, and that is the point: this is the one
+  correction here that `:core` could carry a real Kotlin test for, since the application modules
+  still have no test source set. Three in `SoccertimeApiTest`, two of which fail without the
+  bound.
+
 - **A scraper test failed on 2026-08-29 because of the calendar, not the code.** Its fixture
   carried the literal date `21/08/2026` while `is_valid_date` reads the wall clock and accepts a
   window of seven days back to a year ahead. Written on 2026-08-10 the date was comfortably

@@ -158,6 +158,38 @@ class SoccertimeApiTest {
     }
 
     @Test
+    fun `a wait too long to be one is left unknown rather than shown`() = runTest {
+        // Past `Int.MAX_VALUE`. The screens narrow this to an Int to pick a plural, so a value
+        // that wraps would choose the wording for zero while printing four billion seconds.
+        server.enqueue(MockResponse.Builder().code(429).setHeader("Retry-After", "4294967296").build())
+
+        val result = events(page = null)
+
+        assertEquals(ApiError.RateLimited(null), (result as ApiResult.Failure).error)
+    }
+
+    @Test
+    fun `an hour is still read, and the second past it is not`() = runTest {
+        server.enqueue(MockResponse.Builder().code(429).setHeader("Retry-After", "3600").build())
+        server.enqueue(MockResponse.Builder().code(429).setHeader("Retry-After", "3601").build())
+
+        val inside = events(page = null)
+        val outside = events(page = null)
+
+        assertEquals(ApiError.RateLimited(3600L), (inside as ApiResult.Failure).error)
+        assertEquals(ApiError.RateLimited(null), (outside as ApiResult.Failure).error)
+    }
+
+    @Test
+    fun `a negative wait is not a wait`() = runTest {
+        server.enqueue(MockResponse.Builder().code(429).setHeader("Retry-After", "-1").build())
+
+        val result = events(page = null)
+
+        assertEquals(ApiError.RateLimited(null), (result as ApiResult.Failure).error)
+    }
+
+    @Test
     fun `a bad filter comes back naming the parameter it could not read`() = runTest {
         server.enqueue(json(400, fixture("error_400_bad_date.json")))
 
