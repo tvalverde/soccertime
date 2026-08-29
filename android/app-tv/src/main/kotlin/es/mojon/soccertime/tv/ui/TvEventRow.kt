@@ -35,18 +35,16 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import coil3.compose.AsyncImage
 import es.mojon.soccertime.core.ui.ChannelChip
+import es.mojon.soccertime.core.ui.Crest
 import es.mojon.soccertime.core.ui.EventUi
 import es.mojon.soccertime.core.ui.Palette
 import es.mojon.soccertime.core.ui.Side
@@ -191,7 +189,7 @@ fun TvEventRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TvCrest(event.flagUrl, size = 12.dp, rounded = 2.dp)
+                Crest(event.flagUrl, size = 12.dp, rounded = 2.dp)
                 Text(
                     text = event.competition,
                     style = TvMeta,
@@ -260,7 +258,7 @@ fun TvEventRow(
 private fun SideOnOneLine(side: Side?) {
     if (side == null) return
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        TvCrest(side.crestUrl, size = 22.dp)
+        Crest(side.crestUrl, size = 22.dp)
         Text(
             text = side.name,
             style = TvTeamName,
@@ -296,21 +294,6 @@ fun TvChannelPill(channel: ChannelChip) {
                 },
             )
             .padding(horizontal = 9.dp, vertical = 4.dp),
-    )
-}
-
-@Composable
-fun TvCrest(url: String?, size: Dp, rounded: Dp = size / 2) {
-    val shape = RoundedCornerShape(rounded)
-    if (url == null) {
-        Box(Modifier.size(size).clip(shape).background(Color(Palette.CARD_BORDER)))
-        return
-    }
-    AsyncImage(
-        model = url,
-        contentDescription = null,
-        contentScale = ContentScale.Fit,
-        modifier = Modifier.size(size).clip(shape),
     )
 }
 

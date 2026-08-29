@@ -54,16 +54,24 @@ dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     api(platform(libs.compose.bom))
-    // Only what `ui/Fonts.kt` and `ui/SoccertimeIcons.kt` need — the two font families and
-    // the icon set, declared once so the phone and the television cannot drift apart. The
-    // view models beside them import nothing of Compose and must not start: the phone draws
-    // with Material 3 and the television with tv-material, and only the drawing differs.
+    // Only what `ui/Fonts.kt`, `ui/SoccertimeIcons.kt` and `ui/Crest.kt` need — the two font
+    // families, the icon set and the one image the applications draw, declared once so the
+    // phone and the television cannot drift apart. The view models beside them import nothing
+    // of Compose and must not start: the phone draws with Material 3 and the television with
+    // tv-material, and only the drawing differs.
     //
     // `ui` and not `ui-graphics`: as of Compose 1.12 the `graphics.vector` package, and with
     // it `ImageVector`, lives in the former. Both applications carry `ui` regardless, so this
     // adds nothing to either APK.
     api(libs.compose.ui)
     api(libs.compose.ui.text)
+
+    // `foundation` for the rounded shape, and `foundation-layout` separately for `Modifier.size`
+    // — `foundation` exports it at runtime but not on the compile classpath, and the two
+    // applications only get away with omitting it because their Material brings it along.
+    api(libs.compose.foundation)
+    api(libs.compose.foundation.layout)
+    api(libs.coil.compose)
 
     api(libs.androidx.lifecycle.viewmodel)
     api(libs.androidx.datastore.preferences)

@@ -22,16 +22,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import es.mojon.soccertime.core.ui.ChannelChip
+import es.mojon.soccertime.core.ui.Crest
 import es.mojon.soccertime.core.ui.EventUi
 import es.mojon.soccertime.core.ui.Palette
 import es.mojon.soccertime.core.ui.SoccertimeIcons
@@ -272,26 +270,6 @@ private fun PlayButton(onPlay: () -> Unit, modifier: Modifier = Modifier) {
             modifier = Modifier.size(24.dp),
         )
     }
-}
-
-/**
- * A crest the API never sent, or one whose file is gone, is a normal state rather than a
- * failure — the media directory has lost files before. The placeholder keeps the row's shape
- * so a list of them does not jitter.
- */
-@Composable
-fun Crest(url: String?, size: Dp, rounded: Dp = size / 2) {
-    val shape = RoundedCornerShape(rounded)
-    if (url == null) {
-        Box(Modifier.size(size).clip(shape).background(Color(Palette.CARD_BORDER)))
-        return
-    }
-    AsyncImage(
-        model = url,
-        contentDescription = null,
-        contentScale = ContentScale.Fit,
-        modifier = Modifier.size(size).clip(shape),
-    )
 }
 
 /** What `00:00` at 20sp and `DIRECTO` at 8.5sp both fit inside, with room to spare. */

@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import es.mojon.soccertime.core.ui.Crest
 import es.mojon.soccertime.core.ui.FollowableKind
 import es.mojon.soccertime.core.ui.FollowableUi
 import es.mojon.soccertime.core.ui.ManageIntent
