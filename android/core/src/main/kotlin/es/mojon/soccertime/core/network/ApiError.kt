@@ -72,9 +72,19 @@ internal fun errorFrom(e: HttpException): ApiError {
  * `Retry-After` is the source of truth. Traefik refuses at the edge with a plain-text body
  * and the application refuses with JSON, so anything that parsed the body would be reading
  * one of two formats without knowing which — while both send this header.
+ *
+ * Bounded at both ends, and a value outside them is dropped rather than clamped: what the
+ * screens do with this number is pick a plural and print it, so one that cannot be a wait
+ * should send them to the sentence that names no number at all. The upper bound matters
+ * because that pick narrows to `Int` — anything past `Int.MAX_VALUE` wraps, and a header of
+ * `4294967296` would choose the plural for zero while printing four billion. An hour is far
+ * past anything either refuser sends: both count in windows of a minute.
+ *
+ * The header may also carry an HTTP-date instead of seconds. Nothing in front of this API
+ * sends one, and `toLongOrNull` already answers null for it, which is the right answer.
  */
 private fun retryAfterSeconds(response: Response<*>?): Long? =
-    response?.headers()?.get("Retry-After")?.trim()?.toLongOrNull()?.takeIf { it >= 0 }
+    response?.headers()?.get("Retry-After")?.trim()?.toLongOrNull()?.takeIf { it in 0..MAX_RETRY_AFTER_SECONDS }
 
 /**
  * DRF answers a bad filter with `{"<parameter>": "<what was wrong with it>"}`, and the value
@@ -102,6 +112,7 @@ private fun badRequestMessage(response: Response<*>?): String? {
 
 private const val HTTP_BAD_REQUEST = 400
 private const val HTTP_TOO_MANY_REQUESTS = 429
+private const val MAX_RETRY_AFTER_SECONDS = 3600L
 private const val DETAIL_FIELD = "detail"
 private const val DEFAULT_BAD_REQUEST = "La consulta no es válida."
 private val LENIENT = Json { ignoreUnknownKeys = true }
