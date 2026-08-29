@@ -11,6 +11,21 @@ updates:
     schedule:
       interval: weekly
 
+    # Django stops at 6.0 here, and not by preference. `django-admin-sortable2` swaps the
+    # admin's own `actions.js` for a copy named after the running Django, and 2.3.1 — the
+    # latest release, from January 2026 — ships `actions-{4.2,5.0,5.1,5.2,6.0}.js` and nothing
+    # for 6.1. Under `ManifestStaticFilesStorage` a missing static file raises rather than
+    # 404s, so the sortable changelists answer 500 while every other admin page is fine. That
+    # is measured rather than feared: it is what failed CI on the 6.1 pull request, caught by
+    # `test_admin.py::test_the_sortable_admin_has_a_script_for_this_django`.
+    #
+    # The 6.0 line still comes through — the ignore begins at 6.1 — so the version actually
+    # running keeps being offered its patches. Delete this entry when the package catches up;
+    # `test_dependency_updates.py` turns red the moment it does, so nobody has to remember.
+    ignore:
+      - dependency-name: "django"
+        versions: [">=6.1"]
+
   # The actions the workflow pins by major version. Nothing else updates them, and an action
   # left behind stops running at all when its runtime is retired.
   - package-ecosystem: github-actions
