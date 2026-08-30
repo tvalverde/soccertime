@@ -16,22 +16,31 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import es.mojon.soccertime.core.data.FollowedItem
 import es.mojon.soccertime.core.data.Following
+import es.mojon.soccertime.core.data.FontScale
 import es.mojon.soccertime.core.ui.AgendaFilter
 import es.mojon.soccertime.core.ui.Crest
 import es.mojon.soccertime.core.ui.EventUi
@@ -46,7 +55,9 @@ import es.mojon.soccertime.mobile.R
 fun FavoritesScreen(
     state: FavoritesUiState,
     following: Following,
+    fontScale: FontScale,
     onIntent: (FavoritesIntent) -> Unit,
+    onFontScale: (FontScale) -> Unit,
     onEdit: () -> Unit,
     onBrowseAgenda: () -> Unit,
     onOpen: (EventUi) -> Unit,
@@ -70,7 +81,7 @@ fun FavoritesScreen(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Box(Modifier.weight(1f))
-            EditButton(onEdit)
+            FontSizeButton(fontScale, onFontScale)
         }
 
         FollowedStrip(following = following, onEdit = onEdit, onNarrow = onNarrow)
@@ -85,7 +96,7 @@ fun FavoritesScreen(
         }
 
         if (state.loading && state.days.isEmpty()) {
-            EmptyState(stringResource(R.string.loading), Modifier.padding(horizontal = 14.dp))
+            LoadingState(Modifier.fillMaxWidth().weight(1f))
         } else if (state.nothingComingUp) {
             EmptyState(stringResource(R.string.nothing_coming_up), Modifier.padding(horizontal = 14.dp))
         } else {
@@ -101,30 +112,88 @@ fun FavoritesScreen(
     }
 }
 
+/**
+ * The three text sizes, in the spot the Editar button used to hold.
+ *
+ * That button went because it duplicated the (+) tile at the end of the strip — two controls
+ * to the same screen — and what replaced it answers something nothing else did. The options
+ * are drawn as the letter at its own size, because "Pequeño" written small *is* the choice
+ * being offered and a word beside it would only restate it.
+ */
 @Composable
-private fun EditButton(onEdit: () -> Unit) {
-    Row(
+private fun FontSizeButton(scale: FontScale, onScale: (FontScale) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.font_size)
+    Box {
+        Row(
+            Modifier
+                .height(34.dp)
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(50))
+                .clickable(onClick = { open = true })
+                .semantics { contentDescription = label }
+                .padding(horizontal = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "A",
+                color = Color(Palette.ON_BACKGROUND_MUTED),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "a",
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Row(
+                Modifier.padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                FontSizeOption(FontScale.SMALL, R.string.font_small, 13.sp, scale) { onScale(it); open = false }
+                FontSizeOption(FontScale.MEDIUM, R.string.font_medium, 16.sp, scale) { onScale(it); open = false }
+                FontSizeOption(FontScale.LARGE, R.string.font_large, 20.sp, scale) { onScale(it); open = false }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FontSizeOption(
+    option: FontScale,
+    nameRes: Int,
+    letterSize: TextUnit,
+    current: FontScale,
+    onScale: (FontScale) -> Unit,
+) {
+    val chosen = option == current
+    val name = stringResource(nameRes)
+    Box(
         Modifier
-            .height(34.dp)
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(50))
-            .clickable(onClick = onEdit)
-            .padding(horizontal = 13.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .size(48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .then(
+                if (chosen) {
+                    Modifier
+                        .background(Color(Palette.PRIMARY_TINT))
+                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                } else {
+                    Modifier
+                },
+            )
+            .clickable(onClick = { onScale(option) })
+            .semantics { contentDescription = name },
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = SoccertimeIcons.Star,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.tertiary,
-            modifier = Modifier.size(14.dp),
-        )
         Text(
-            text = stringResource(R.string.edit),
-            color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 12.5.sp,
-            fontWeight = FontWeight.SemiBold,
+            text = "A",
+            color = if (chosen) MaterialTheme.colorScheme.primary else Color(Palette.ON_BACKGROUND_MUTED),
+            fontSize = letterSize,
+            fontWeight = if (chosen) FontWeight.Bold else FontWeight.SemiBold,
         )
     }
 }

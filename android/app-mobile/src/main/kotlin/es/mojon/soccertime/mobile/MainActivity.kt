@@ -3,7 +3,9 @@ package es.mojon.soccertime.mobile
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,8 +45,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,6 +59,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import es.mojon.soccertime.core.data.FavoritesTransfer
+import es.mojon.soccertime.core.data.FontScale
 import es.mojon.soccertime.core.playback.LinkSharing
 import es.mojon.soccertime.core.playback.PlayResult
 import es.mojon.soccertime.core.ui.AgendaFilter
@@ -61,13 +70,19 @@ import es.mojon.soccertime.core.ui.FavoritesIntent
 import es.mojon.soccertime.core.ui.ManageIntent
 import es.mojon.soccertime.core.ui.Palette
 import es.mojon.soccertime.core.ui.SoccertimeIcons
+import es.mojon.soccertime.mobile.ui.AGENDA_PAGE
 import es.mojon.soccertime.mobile.ui.AgendaScreen
+import es.mojon.soccertime.mobile.ui.FAVORITES_PAGE
 import es.mojon.soccertime.mobile.ui.FavoritesScreen
+import es.mojon.soccertime.mobile.ui.HomePager
 import es.mojon.soccertime.mobile.ui.LinksSheet
+import es.mojon.soccertime.mobile.ui.SECTION_COUNT
 import es.mojon.soccertime.mobile.ui.ManageFavoritesScreen
 import es.mojon.soccertime.mobile.ui.NoHandlerDialog
 import es.mojon.soccertime.mobile.ui.theme.SoccertimeTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -79,8 +94,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private object Routes {
-    const val FAVORITES = "favorites"
-    const val AGENDA = "agenda"
+    const val HOME = "home"
     const val MANAGE = "manage"
 }
 
@@ -93,62 +107,94 @@ private fun Soccertime(models: Models) {
 
     var showing: EventLinks? by remember { mutableStateOf(null) }
     var unopenable: PlayResult.NoHandler? by remember { mutableStateOf(null) }
-    // Chosen on the favourites screen, applied on the agenda: two destinations with two view
+    // Chosen on the favourites screen, applied on the agenda: two sections with two view
     // models, so it is held above both rather than passed between them.
     var narrowing: AgendaFilter? by remember { mutableStateOf(null) }
+    val pagerState = rememberPagerState(initialPage = FAVORITES_PAGE) { SECTION_COUNT }
 
     val copied = stringResource(R.string.link_copied)
 
+    // The chosen size multiplies the density's own `fontScale`, so every sp in the app moves
+    // together and the system's accessibility setting is composed with rather than fought.
+    val fontScale by models.settings.fontScale.collectAsStateWithLifecycle(initialValue = FontScale.MEDIUM)
+    val density = LocalDensity.current
+
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, density.fontScale * fontScale.factor),
+    ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { BottomBar(navController) { narrowing = null } },
+        bottomBar = {
+            val entry by navController.currentBackStackEntryAsState()
+            if (entry?.destination?.route != Routes.MANAGE) {
+                BottomBar(selected = pagerState.currentPage) { page ->
+                    // Tapping the tab you are already on means "show me the agenda", not
+                    // "show me the one team I pressed a crest for ten seconds ago".
+                    if (page == AGENDA_PAGE && pagerState.currentPage == AGENDA_PAGE) narrowing = null
+                    scope.launch { pagerState.animateScrollToPage(page) }
+                }
+            }
+        },
         snackbarHost = { SnackbarHost(snackbars) },
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = Routes.FAVORITES,
+            startDestination = Routes.HOME,
             modifier = Modifier.padding(padding).consumeWindowInsets(padding),
         ) {
-            composable(Routes.FAVORITES) {
-                val favorites = viewModel<es.mojon.soccertime.core.ui.FavoritesViewModel>(factory = models.favorites)
-                val state by favorites.uiState.collectAsStateWithLifecycle()
-                val following by models.following.collectAsStateWithLifecycle(
-                    initialValue = es.mojon.soccertime.core.data.Following(),
-                )
-                OnResumed { favorites.onIntent(FavoritesIntent.Resumed) }
+            composable(Routes.HOME) {
+                HomePager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    favorites = {
+                        val favorites =
+                            viewModel<es.mojon.soccertime.core.ui.FavoritesViewModel>(factory = models.favorites)
+                        val state by favorites.uiState.collectAsStateWithLifecycle()
+                        val following by models.following.collectAsStateWithLifecycle(
+                            initialValue = es.mojon.soccertime.core.data.Following(),
+                        )
+                        OnResumed { favorites.onIntent(FavoritesIntent.Resumed) }
 
-                FavoritesScreen(
-                    state = state,
-                    following = following,
-                    onIntent = favorites::onIntent,
-                    onEdit = { navController.navigate(Routes.MANAGE) },
-                    onBrowseAgenda = { navController.navigate(Routes.AGENDA) },
-                    onOpen = { showing = favorites.linksFor(it.id) },
-                    onNarrow = {
-                        narrowing = it
-                        navController.navigateTop(Routes.AGENDA)
+                        FavoritesScreen(
+                            state = state,
+                            following = following,
+                            fontScale = fontScale,
+                            onIntent = favorites::onIntent,
+                            onFontScale = { chosen -> scope.launch { models.settings.setFontScale(chosen) } },
+                            onEdit = { navController.navigate(Routes.MANAGE) },
+                            onBrowseAgenda = { scope.launch { pagerState.animateScrollToPage(AGENDA_PAGE) } },
+                            onOpen = { showing = favorites.linksFor(it.id) },
+                            onNarrow = {
+                                narrowing = it
+                                scope.launch { pagerState.animateScrollToPage(AGENDA_PAGE) }
+                            },
+                        )
                     },
-                )
-            }
+                    agenda = {
+                        val agenda = viewModel<es.mojon.soccertime.core.ui.AgendaViewModel>(factory = models.agenda)
+                        val state by agenda.uiState.collectAsStateWithLifecycle()
+                        OnResumed { agenda.onIntent(AgendaIntent.Resumed) }
+                        LaunchedEffect(narrowing) { agenda.onIntent(AgendaIntent.Narrow(narrowing)) }
 
-            composable(Routes.AGENDA) {
-                val agenda = viewModel<es.mojon.soccertime.core.ui.AgendaViewModel>(factory = models.agenda)
-                val state by agenda.uiState.collectAsStateWithLifecycle()
-                OnResumed { agenda.onIntent(AgendaIntent.Resumed) }
-                LaunchedEffect(narrowing) { agenda.onIntent(AgendaIntent.Narrow(narrowing)) }
+                        // BACK undoes the filter before it leaves the section, so the press
+                        // that arrived here from a crest is the press that leaves — rather
+                        // than dropping the reader into the whole two-day agenda, a screen
+                        // they never asked for. Only while this page is the one on screen: a
+                        // pager keeps its neighbour composed mid-gesture.
+                        BackHandler(enabled = narrowing != null && pagerState.currentPage == AGENDA_PAGE) {
+                            narrowing = null
+                        }
 
-                // BACK undoes the filter before it leaves the tab, so the press that arrived
-                // here from a crest is the press that leaves — rather than dropping the reader
-                // into the whole two-day agenda, a screen they never asked for.
-                BackHandler(enabled = narrowing != null) { narrowing = null }
-
-                AgendaScreen(
-                    state = state,
-                    onIntent = { intent ->
-                        if (intent is AgendaIntent.Narrow) narrowing = intent.filter
-                        agenda.onIntent(intent)
+                        AgendaScreen(
+                            state = state,
+                            onIntent = { intent ->
+                                if (intent is AgendaIntent.Narrow) narrowing = intent.filter
+                                agenda.onIntent(intent)
+                            },
+                            onOpen = { showing = agenda.linksFor(it.id) },
+                            dayLabel = models.dayLabel,
+                        )
                     },
-                    onOpen = { showing = agenda.linksFor(it.id) },
                 )
             }
 
@@ -156,13 +202,71 @@ private fun Soccertime(models: Models) {
                 val manage = viewModel<es.mojon.soccertime.core.ui.ManageFavoritesViewModel>(factory = models.manage)
                 val state by manage.uiState.collectAsStateWithLifecycle()
 
+                val resources = LocalResources.current
+                val exportDone = stringResource(R.string.export_done)
+                val exportFailed = stringResource(R.string.export_failed)
+                val importFailed = stringResource(R.string.import_failed)
+
+                // Both dialogs are the system's own, so the app never touches a path it was
+                // not handed, and the answer arrives as a URI or as null when dismissed.
+                val exporter = rememberLauncherForActivityResult(
+                    ActivityResultContracts.CreateDocument("application/json"),
+                ) { destination ->
+                    destination?.let { uri ->
+                        scope.launch {
+                            val wrote = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    context.contentResolver.openOutputStream(uri)?.use {
+                                        it.write(manage.exportPayload().encodeToByteArray())
+                                    } != null
+                                }.getOrDefault(false)
+                            }
+                            snackbars.showSnackbar(if (wrote) exportDone else exportFailed)
+                        }
+                    }
+                }
+                val importer = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocument(),
+                ) { source ->
+                    source?.let { uri ->
+                        scope.launch {
+                            val text = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    context.contentResolver.openInputStream(uri)?.use {
+                                        it.readBytes().decodeToString()
+                                    }
+                                }.getOrNull()
+                            }
+                            val summary = text?.let { manage.importPayload(it) }
+                            snackbars.showSnackbar(
+                                summary?.let {
+                                    resources.getString(
+                                        R.string.import_result,
+                                        it.total,
+                                        it.added,
+                                        it.alreadyFollowed,
+                                    )
+                                } ?: importFailed,
+                            )
+                        }
+                    }
+                }
+
                 ManageFavoritesScreen(
                     state = state,
                     onIntent = manage::onIntent,
                     onBack = { navController.popBackStack() },
+                    onExport = { exporter.launch(FavoritesTransfer.SUGGESTED_FILE_NAME) },
+                    // Downloads and messengers hand JSON over with generic types as often as
+                    // the right one, and a filter that excludes them excludes the very file
+                    // this exists to read back.
+                    onImport = {
+                        importer.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
+                    },
                 )
             }
         }
+    }
     }
 
     showing?.let { links ->
@@ -198,11 +302,7 @@ private fun Soccertime(models: Models) {
 }
 
 @Composable
-private fun BottomBar(navController: NavHostController, onLeaveFilter: () -> Unit) {
-    val entry by navController.currentBackStackEntryAsState()
-    val route = entry?.destination?.route ?: Routes.FAVORITES
-    if (route == Routes.MANAGE) return
-
+private fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
     Row(
         // `fillMaxWidth`, not `fillMaxSize(fraction = 0f)`, which is what this said: that
         // takes zero per cent of BOTH dimensions, and the `height` below only put one of them
@@ -217,21 +317,16 @@ private fun BottomBar(navController: NavHostController, onLeaveFilter: () -> Uni
         BottomItem(
             label = stringResource(R.string.tab_favorites),
             icon = SoccertimeIcons.Star,
-            selected = route == Routes.FAVORITES,
+            selected = selected == FAVORITES_PAGE,
             modifier = Modifier.weight(1f),
-        ) { navController.navigateTop(Routes.FAVORITES) }
+        ) { onSelect(FAVORITES_PAGE) }
 
         BottomItem(
             label = stringResource(R.string.tab_agenda),
             icon = SoccertimeIcons.Calendar,
-            selected = route == Routes.AGENDA,
+            selected = selected == AGENDA_PAGE,
             modifier = Modifier.weight(1f),
-        ) {
-            // Tapping the tab you are already on means "show me the agenda", not "show me the
-            // one team I pressed a crest for ten seconds ago".
-            onLeaveFilter()
-            navController.navigateTop(Routes.AGENDA)
-        }
+        ) { onSelect(AGENDA_PAGE) }
     }
 }
 
@@ -290,14 +385,6 @@ private fun BottomItem(
     }
 }
 
-/** Switching tabs must not pile screens on the back stack; Back leaves the app. */
-private fun NavHostController.navigateTop(route: String) {
-    navigate(route) {
-        popUpTo(graph.startDestinationId) { saveState = true }
-        launchSingleTop = true
-        restoreState = true
-    }
-}
 
 /**
  * Ask again every time the screen actually comes back.

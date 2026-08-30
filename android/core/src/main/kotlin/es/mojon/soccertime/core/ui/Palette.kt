@@ -38,6 +38,9 @@ object Palette {
      */
     const val SECONDARY_TINT: Long = 0x1F00E0FF
 
+    /** The green behind a chosen option, quieter than the green that means "on now". */
+    const val PRIMARY_TINT: Long = 0x1F00FF41
+
     /** Something the reader chose to follow. */
     const val FAVOURITE: Long = 0xFFFFC107
 

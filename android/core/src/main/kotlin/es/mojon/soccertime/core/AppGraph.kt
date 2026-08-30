@@ -5,6 +5,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import es.mojon.soccertime.core.data.ApiCatalogRepository
 import es.mojon.soccertime.core.data.ApiEventsRepository
 import es.mojon.soccertime.core.data.FavoritesStore
+import es.mojon.soccertime.core.data.SettingsStore
 import es.mojon.soccertime.core.network.Network
 import es.mojon.soccertime.core.time.EventTimes
 import java.io.File
@@ -19,6 +20,7 @@ import java.io.File
 class AppGraph(
     cacheDirectory: File?,
     val favorites: FavoritesStore,
+    val settings: SettingsStore,
     baseUrl: String = BuildConfig.API_BASE_URL,
 ) {
     val client = Network.okHttp(cacheDirectory)
@@ -34,6 +36,7 @@ class AppGraph(
             AppGraph(
                 cacheDirectory = File(context.cacheDir, HTTP_CACHE_DIRECTORY),
                 favorites = FavoritesStore(context.applicationContext.favoritesStore),
+                settings = SettingsStore(context.applicationContext.settingsStore),
             )
 
         private const val HTTP_CACHE_DIRECTORY = "http"
@@ -47,3 +50,5 @@ class AppGraph(
  * recreated cannot produce a second.
  */
 private val Context.favoritesStore by preferencesDataStore(name = FavoritesStore.FILE_NAME)
+
+private val Context.settingsStore by preferencesDataStore(name = SettingsStore.FILE_NAME)

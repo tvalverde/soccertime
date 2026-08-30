@@ -20,6 +20,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +41,9 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -98,12 +107,7 @@ fun TvFavoritesScreen(
         // from a broken app. Only while there is nothing yet: a refresh over rows already on
         // screen must not blank them.
         if (state.loading && state.days.isEmpty()) {
-            Text(
-                text = stringResource(R.string.loading),
-                style = TvLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 20.dp),
-            )
+            TvLoading()
             return@Column
         }
 
@@ -143,6 +147,8 @@ fun TvAgendaScreen(
     covered: Boolean,
     onOpen: (EventUi) -> Unit,
     onFollow: (EventUi) -> Unit,
+    onLoadMore: () -> Unit,
+    onLoadNextDay: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(13.dp)) {
@@ -173,12 +179,7 @@ fun TvAgendaScreen(
         // from a broken app. Only while there is nothing yet: a refresh over rows already on
         // screen must not blank them.
         if (state.loading && state.days.isEmpty()) {
-            Text(
-                text = stringResource(R.string.loading),
-                style = TvLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 20.dp),
-            )
+            TvLoading()
             return@Column
         }
 
@@ -200,6 +201,15 @@ fun TvAgendaScreen(
             onFollow = onFollow,
             absorbing = listOf(FocusDirection.Up, FocusDirection.Down, FocusDirection.Right),
             modifier = Modifier.weight(1f),
+            // "Ver más" while pages of the day remain, then the day after: the remote's path
+            // to the same rule the phone's foot follows — tomorrow is never reachable past an
+            // unshown tail of today.
+            trailing = when {
+                state.canLoadMore -> stringResource(R.string.load_more) to onLoadMore
+                state.nextDayLabel != null ->
+                    stringResource(R.string.load_next_day, state.nextDayLabel.orEmpty()) to onLoadNextDay
+                else -> null
+            },
         )
 
         TvHints(
@@ -295,6 +305,8 @@ private fun TvEventList(
     onFollow: (EventUi) -> Unit,
     absorbing: List<FocusDirection>,
     modifier: Modifier,
+    /** A focusable row after the last event — its caption, and what pressing it does. */
+    trailing: Pair<String, () -> Unit>? = null,
 ) {
     val listState = rememberLazyListState()
     val opensHere = remember { FocusRequester() }
@@ -364,6 +376,36 @@ private fun TvEventList(
                 )
             }
         }
+
+        trailing?.let { (caption, press) ->
+            item(key = "trailing") { TvTrailingRow(caption, press) }
+        }
+    }
+}
+
+/** The focusable way past the end of the listing: more of this day, or the next one. */
+@Composable
+private fun TvTrailingRow(caption: String, onPress: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(12.dp))
+            .border(
+                2.dp,
+                if (focused) MaterialTheme.colorScheme.primary else Color(Palette.HAIRLINE),
+                RoundedCornerShape(12.dp),
+            )
+            .clickable(onClick = onPress)
+            .padding(vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = caption,
+            style = TvLabel,
+            color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -498,6 +540,50 @@ private fun FollowedAvatar(item: FollowedItem, kind: FollowableKind, onOpen: () 
  * to the phone: the menu button on any event in the agenda offers its two sides and its
  * competition, which is the whole interaction and needs no keyboard.
  */
+/**
+ * The first answer takes seconds, and from three metres a muted 14sp line is invisible.
+ *
+ * The same claim the phone's `LoadingState` makes, drawn by hand because `tv-material` ships
+ * no progress indicator: a ring in the palette's loudest green, turning, under a title in the
+ * display face. Shared by both listings so they cannot drift apart.
+ */
+@Composable
+private fun TvLoading() {
+    val turning = rememberInfiniteTransition(label = "loading")
+    val angle by turning.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+        label = "angle",
+    )
+    Column(
+        Modifier.fillMaxWidth().padding(top = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val ring = MaterialTheme.colorScheme.primary
+        val track = Color(Palette.HAIRLINE)
+        Canvas(Modifier.size(56.dp)) {
+            val stroke = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+            inset(stroke.width / 2) {
+                drawArc(color = track, startAngle = 0f, sweepAngle = 360f, useCenter = false, style = stroke)
+                drawArc(color = ring, startAngle = angle, sweepAngle = 100f, useCenter = false, style = stroke)
+            }
+        }
+        Text(
+            text = stringResource(R.string.loading),
+            style = TvHeading,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(top = 18.dp),
+        )
+        Text(
+            text = stringResource(R.string.loading_body),
+            style = TvMeta,
+            color = Color(Palette.ON_BACKGROUND_MUTED),
+            modifier = Modifier.padding(top = 6.dp),
+        )
+    }
+}
+
 @Composable
 private fun TvFirstRun() {
     Column(

@@ -20,6 +20,53 @@ The website's own changelog is `../CHANGELOG.md`.
   into the build files: `ui-test-manifest` must be `debugImplementation`, because Robolectric
   launches the harness activity from the merged debug manifest and a test-classpath manifest
   never merges into it. The screenshot flavour (pixel comparison) stays deliberately out.
+- **Swiping horizontally moves between Favoritos and the Agenda on the phone.** The two sections
+  are pages of one pager, synchronised with the bottom bar in both directions; a future section
+  is one more page and one more tab. Tapping the Agenda tab while already on it still clears a
+  crest-narrowed listing, and BACK still undoes the filter only while the agenda is the page on
+  screen.
+- **The agenda has a calendar.** The "Ayer y hoy" label — which looked pressable and answered to
+  nothing — is now the control it appeared to be: it opens a date picker, and a chosen day
+  narrows the listing to that day alone (one request, no yesterday), worn as a chip with a cross
+  that returns to the two-day window. Choosing the day already shown asks the network for
+  nothing.
+- **Three text sizes on the phone.** An «Aa» control sits where the Editar button was and offers
+  Pequeño, Mediano (the size every screen was designed at, and the default) and Grande. The
+  choice multiplies the density's own `fontScale`, so every sp in the app moves together and the
+  system's accessibility setting is composed with rather than fought, and it persists in a new
+  settings store beside the favourites.
+
+### Added (fourth batch, same day — mockups approved first)
+- **The pull to tomorrow is visible while it is made, and fires on release.** The listing rides
+  up with the finger at half a pixel per pixel while a ring in the foot fills with the pull;
+  crossing the threshold arms it — ring closed and green over its tint, «Suelta para cargarlo»,
+  a haptic tick — and the load fires when the finger leaves, never mid-drag. Dragging back down
+  pays the stretch off before the list moves, so the gesture can always be walked out of, and
+  letting go early springs everything back. A gesture spent stretching no longer flings the
+  list on release.
+- **«Ver más» is gone from the phone: the next page of a day asks for itself.** When the last
+  ten rows of what is downloaded come into view the following page is requested, so in a
+  normal scroll it has already arrived and there is no seam; only outrunning the network shows
+  a quiet row with a small ring. While a failure stands the automatic ask pauses — parked at
+  the end of a listing it would otherwise retry against the shared rate limit for as long as
+  the reader stared at it — and the error banner's own Retry takes over. The television keeps
+  its focusable «Ver más» row: a remote neither scrolls continuously nor stretches.
+  One wording differs from the approved mockup, deliberately: the quiet row says «Cargando más
+  eventos…» rather than «Cargando más de hoy…», because after pulling into tomorrow the pages
+  being fetched are no longer today's and the label must not lie.
+
+### Added (third batch, same day — mockups approved first)
+- **The agenda continues into tomorrow by pulling past its end.** When a day is exhausted, the
+  listing's foot names the next one («MAÑANA · LUNES 31 AGOSTO»); stretching upward past the
+  end — or simply pressing the foot, so the feature exists before the gesture is found —
+  appends that day under its own heading, and the foot moves on. Every extra day is one
+  request, the active filters travel with it, and tomorrow is never reachable past an unshown
+  tail of today: the foot is only drawn once the day's pages are done. With a calendar-chosen
+  day the pull *moves* to the next day instead of growing — that view means "one day, only
+  one" — and an empty chosen day still offers the way onward under its empty-state message.
+  On television the same rule arrives as a focusable trailing row: «Ver más» while pages of
+  the day remain — which also gives the remote its first way to page a day longer than a
+  hundred events — and «Cargar MAÑANA …» once they are done.
 
 ### Added (second batch, same day — mockups approved first, as the new CLAUDE.md rule requires)
 - **«Editar favoritos» opens on what is already followed.** A SIGUIENDO section, drawn from the
@@ -36,6 +83,16 @@ The website's own changelog is `../CHANGELOG.md`.
   `version` field, and the decoder requires it: every other field has a default, so without
   that requirement any JSON object would import as an empty success. Phone only — the
   televisions have no file manager to open the dialog with; that route is parked in TODO.
+
+### Changed
+- **The Editar button is gone from the favourites header.** It duplicated the (+) tile at the end
+  of the followed strip — two controls to the same screen — and its spot now holds the text-size
+  control. The (+) tile keeps its «Editar» caption and remains the way in.
+- **Loading is unmissable now.** Both applications used to fill the first seconds with one muted
+  13.5sp line — the same voice as an empty state, so a screen busy answering read exactly like a
+  screen with nothing to say. The phone's listings share a `LoadingState` (a ring in the
+  palette's loudest green, a display-face title, a body line) and the television draws the same
+  claim by hand, `tv-material` shipping no progress indicator.
 
 ### Fixed
 - **The favourites screen now fetches its whole three-day window instead of one page of it.**

@@ -63,7 +63,8 @@ class AgendaViewModelTest {
         /** How long each call takes, so one can be made to finish after another. */
         var takes: (AgendaQuery) -> Long = { 0 }
 
-        override suspend fun upcoming(page: Int) = onDate(AgendaQuery(date = "", page = page))
+        override suspend fun upcoming(from: LocalDate, until: LocalDate, page: Int) =
+            onDate(AgendaQuery(date = "", page = page))
 
         override suspend fun onDate(query: AgendaQuery): ApiResult<Page<EventDto>> {
             asks += query
@@ -743,5 +744,107 @@ class AgendaViewModelTest {
         val state = model.uiState.value
         assertNull("a 404 while appending is not shown to anybody", state.error)
         assertFalse(state.canLoadMore)
+    }
+
+    @Test
+    fun `a day chosen on the calendar is one request, for that day alone`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        repository.asks.clear()
+
+        model.onIntent(AgendaIntent.PickDay(LocalDate.of(2026, 9, 5)))
+        advanceUntilIdle()
+
+        // No yesterday: "the evening before it" is a courtesy the present deserves and an
+        // arbitrary Saturday does not.
+        assertEquals(listOf("2026-09-05"), repository.asks.map { it.date })
+        assertFalse(repository.asks.single().newestFirst)
+        assertEquals(LocalDate.of(2026, 9, 5), model.uiState.value.chosenDay)
+    }
+
+    @Test
+    fun `clearing the chosen day returns to yesterday and today`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        model.onIntent(AgendaIntent.PickDay(LocalDate.of(2026, 9, 5)))
+        advanceUntilIdle()
+        repository.asks.clear()
+
+        model.onIntent(AgendaIntent.PickDay(null))
+        advanceUntilIdle()
+
+        assertEquals(listOf("2026-08-30", "2026-08-29"), repository.asks.map { it.date })
+        assertNull(model.uiState.value.chosenDay)
+    }
+
+    @Test
+    fun `an exhausted day offers tomorrow, and pulling appends it under its own heading`() = runTest(dispatcher) {
+        repository.perDay["2026-08-30"] = pageOf("2026-08-30T18:00:00+02:00")
+        repository.perDay["2026-08-29"] = pageOf("2026-08-29T21:00:00+02:00")
+        repository.perDay["2026-08-31"] = pageOf("2026-08-31T12:00:00+02:00", "2026-08-31T20:00:00+02:00")
+        val model = viewModel()
+        advanceUntilIdle()
+
+        assertTrue(
+            "the foot is already worded",
+            model.uiState.value.nextDayLabel.orEmpty().contains("MAÑANA"),
+        )
+        repository.asks.clear()
+
+        model.onIntent(AgendaIntent.LoadNextDay)
+        advanceUntilIdle()
+
+        assertEquals(listOf("2026-08-31"), repository.asks.map { it.date })
+        val days = model.uiState.value.days
+        assertEquals(3, days.size)
+        assertEquals(2, days.last().events.size)
+        // The foot moves on with the window's end.
+        assertFalse(model.uiState.value.nextDayLabel.orEmpty().contains("MAÑANA"))
+    }
+
+    @Test
+    fun `tomorrow is not reachable past an unshown tail of today`() = runTest(dispatcher) {
+        // The recorded page carries `next`, so more of today remains unshown.
+        val model = viewModel()
+        advanceUntilIdle()
+        assertTrue(model.uiState.value.canLoadMore)
+        repository.asks.clear()
+
+        model.onIntent(AgendaIntent.LoadNextDay)
+        advanceUntilIdle()
+
+        assertEquals(emptyList<AgendaQuery>(), repository.asks)
+    }
+
+    @Test
+    fun `with a chosen day, pulling moves to the next one instead of growing`() = runTest(dispatcher) {
+        repository.perDay["2026-09-05"] = pageOf("2026-09-05T18:00:00+02:00")
+        repository.perDay["2026-09-06"] = pageOf("2026-09-06T18:00:00+02:00")
+        val model = viewModel()
+        advanceUntilIdle()
+        model.onIntent(AgendaIntent.PickDay(LocalDate.of(2026, 9, 5)))
+        advanceUntilIdle()
+        repository.asks.clear()
+
+        model.onIntent(AgendaIntent.LoadNextDay)
+        advanceUntilIdle()
+
+        assertEquals(listOf("2026-09-06"), repository.asks.map { it.date })
+        assertEquals(LocalDate.of(2026, 9, 6), model.uiState.value.chosenDay)
+        assertEquals(1, model.uiState.value.days.size)
+    }
+
+    @Test
+    fun `choosing the day already shown asks for nothing`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        model.onIntent(AgendaIntent.PickDay(LocalDate.of(2026, 9, 5)))
+        advanceUntilIdle()
+        repository.asks.clear()
+
+        model.onIntent(AgendaIntent.PickDay(LocalDate.of(2026, 9, 5)))
+        advanceUntilIdle()
+
+        assertEquals(emptyList<AgendaQuery>(), repository.asks)
     }
 }

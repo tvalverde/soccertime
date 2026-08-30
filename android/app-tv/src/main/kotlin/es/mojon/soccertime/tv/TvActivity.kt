@@ -158,6 +158,8 @@ private fun SoccertimeTv(models: TvModels) {
                             showing = agenda.linksFor(row.id)
                         },
                         onFollow = { row -> choosing = row.label() to agenda.followablesFor(row.id) },
+                        onLoadMore = { agenda.onIntent(AgendaIntent.LoadMore) },
+                        onLoadNextDay = { agenda.onIntent(AgendaIntent.LoadNextDay) },
                         modifier = Modifier.weight(1f),
                     )
                 }

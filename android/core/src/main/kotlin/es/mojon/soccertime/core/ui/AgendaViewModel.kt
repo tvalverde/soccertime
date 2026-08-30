@@ -34,8 +34,9 @@ import kotlinx.coroutines.launch
  *
  * The window is two days because midnight is not a boundary the reader observes. At 00:20 the
  * match that kicked off at 23:00 is still on, and a listing that began at the stroke of the
- * hour would have nothing to show. Moving between days, and a calendar, are deliberately not
- * here yet.
+ * hour would have nothing to show. A calendar can narrow the listing to any single day
+ * instead: a chosen day is one request rather than two, because "the evening before it" is a
+ * courtesy the present deserves and an arbitrary Tuesday does not.
  *
  * Two days do not fit in one request — a hundred is the largest page the API serves and two
  * days regularly exceed it — so it is two, and their order is the design: **today first**.
@@ -77,7 +78,7 @@ class AgendaViewModel(
     private val reloads = MutableStateFlow(0)
 
     private val search = MutableStateFlow("")
-    private val filters = MutableStateFlow(Filters(watchableOnly = false, narrowing = null))
+    private val filters = MutableStateFlow(Filters(watchableOnly = false, narrowing = null, day = null))
     private val state = MutableStateFlow(AgendaUiState(day = today()))
 
     val uiState: StateFlow<AgendaUiState> = state.asStateFlow()
@@ -87,6 +88,16 @@ class AgendaViewModel(
     private var loadedFor: Query? = null
     private var nextPage: Int? = null
     private var marked: Favorites = Favorites.NONE
+
+    /**
+     * The last day the listing reaches. Appending pages walks this day; "load tomorrow"
+     * starts the day after it. Advanced only when a fetch for a day succeeds, so a pull whose
+     * request never came back leaves the foot naming the same day it named before.
+     */
+    private var windowEnd: LocalDate? = null
+
+    /** One day-append at a time: the same day arriving twice is a duplicate-key crash. */
+    private var appendingDay = false
 
     /** Which load owns the screen. An older one that answers late is no longer entitled to. */
     private var generation = 0
@@ -108,7 +119,7 @@ class AgendaViewModel(
                     .distinctUntilChanged(),
                 filters,
                 reloads,
-            ) { text, applied, _ -> Query(text, applied.watchableOnly, applied.narrowing) }
+            ) { text, applied, _ -> Query(text, applied.watchableOnly, applied.narrowing, day = applied.day) }
                 // collectLatest, so a query that arrives while an older one is still in
                 // flight cancels it rather than queueing behind it.
                 .collectLatest { load(it, appending = false) }
@@ -142,6 +153,7 @@ class AgendaViewModel(
                 forgetListing()
                 state.value = state.value.copy(
                     filter = intent.filter,
+                    nextDayLabel = null,
                     days = emptyList(),
                     anchorId = null,
                     count = 0,
@@ -159,9 +171,28 @@ class AgendaViewModel(
                 filters.value = filters.value.copy(watchableOnly = intent.only)
                 state.value = state.value.copy(watchableOnly = intent.only)
             }
+            is AgendaIntent.PickDay -> {
+                if (intent.day == filters.value.day) return
+                filters.value = filters.value.copy(day = intent.day)
+                forgetListing()
+                // The same clearing `Narrow` does, and for the same reasons: the rows on
+                // screen belong to a window the reader has just left.
+                state.value = state.value.copy(
+                    chosenDay = intent.day,
+                    nextDayLabel = null,
+                    days = emptyList(),
+                    anchorId = null,
+                    count = 0,
+                    canLoadMore = false,
+                    loading = true,
+                    error = null,
+                    showingStale = false,
+                )
+            }
             AgendaIntent.Refresh -> refresh(minimumAge = MANUAL_REFRESH_INTERVAL)
             AgendaIntent.Resumed -> refresh(minimumAge = STALE_AFTER)
             AgendaIntent.LoadMore -> loadMore()
+            AgendaIntent.LoadNextDay -> loadNextDay()
             AgendaIntent.DismissError -> state.value = state.value.copy(error = null)
         }
     }
@@ -212,6 +243,33 @@ class AgendaViewModel(
         }
     }
 
+    /**
+     * The day after the listing's end, appended under its own heading — or, when the
+     * calendar has narrowed the listing to one day, the jump to the next one: that view
+     * means "one day, only one", so it moves instead of growing.
+     *
+     * Refused while pages of the current day remain: skipping to tomorrow past an unshown
+     * tail would silently drop the evening, and the foot that triggers this is only drawn
+     * once the day is exhausted.
+     */
+    private fun loadNextDay() {
+        val next = windowEnd?.plusDays(1) ?: return
+        if (filters.value.day != null) {
+            onIntent(AgendaIntent.PickDay(next))
+            return
+        }
+        if (replacing || appendingDay || nextPage != null) return
+        val query = loadedFor ?: return
+        appendingDay = true
+        viewModelScope.launch {
+            try {
+                load(query.copy(page = EventsRepository.FIRST_PAGE), appending = true, joining = generation, day = next)
+            } finally {
+                appendingDay = false
+            }
+        }
+    }
+
     private fun mineIsCurrent(mine: Int) = mine == generation
 
     /**
@@ -227,17 +285,28 @@ class AgendaViewModel(
         nextPage = null
         loadedFor = null
         loadedAt = null
+        windowEnd = null
     }
 
     /**
      * [joining] is set only when appending, and names the load whose list this page belongs
      * to. Anything else starts a new one and silences everything before it.
      */
-    private suspend fun load(query: Query, appending: Boolean, joining: Int? = null): Boolean {
+    private suspend fun load(
+        query: Query,
+        appending: Boolean,
+        joining: Int? = null,
+        day: LocalDate? = null,
+    ): Boolean {
         val mine = joining ?: ++generation
         // One day for both halves of one load, so a window opened across midnight cannot ask
-        // for a today and a yesterday that are not next to each other.
-        val day = today()
+        // for a today and a yesterday that are not next to each other. Appending stays on the
+        // day the listing ends on, which after "load tomorrow" is no longer the query's own.
+        @Suppress("NAME_SHADOWING")
+        val day = day
+            ?: (if (appending) windowEnd else null)
+            ?: query.day
+            ?: today()
         if (appending) {
             return fetch(query, day, appending = true, mine = mine)
         }
@@ -258,7 +327,8 @@ class AgendaViewModel(
         // answers yes whether or not today came back — and prepending yesterday onto a list
         // that already held it produced two rows per event, duplicate keys, and a crash in
         // the list rather than the failure banner the reader should have seen.
-        if (fetch(query, day, appending = false, mine = mine)) fetchYesterday(query, day, mine)
+        val arrived = fetch(query, day, appending = false, mine = mine)
+        if (arrived && query.day == null) fetchYesterday(query, day, mine)
     }
 
     /**
@@ -301,8 +371,10 @@ class AgendaViewModel(
                 loadedFor = query.copy(page = EventsRepository.FIRST_PAGE)
                 loaded = if (appending) loaded + answer.value.results else answer.value.results
                 nextPage = if (answer.value.next != null) query.page + 1 else null
+                windowEnd = day
                 state.value.copy(
                     day = day,
+                    nextDayLabel = presenter.times.dayLabel(day.plusDays(1)),
                     days = presenter.days(loaded, marked),
                     anchorId = presenter.anchor(loaded),
                     count = answer.value.count,
@@ -330,6 +402,7 @@ class AgendaViewModel(
                 if (!sameQuery) forgetListing()
                 state.value.copy(
                     days = if (sameQuery) state.value.days else emptyList(),
+                    nextDayLabel = if (sameQuery) state.value.nextDayLabel else null,
                     anchorId = if (sameQuery) state.value.anchorId else null,
                     loading = false,
                     error = answer.error,
@@ -344,12 +417,14 @@ class AgendaViewModel(
     /** A single letter narrows nothing and costs a request across six joined tables. */
     private fun effectiveSearch(text: String) = text.trim().takeIf { it.length >= SHORTEST_SEARCH }.orEmpty()
 
-    private data class Filters(val watchableOnly: Boolean, val narrowing: AgendaFilter?)
+    private data class Filters(val watchableOnly: Boolean, val narrowing: AgendaFilter?, val day: LocalDate?)
 
     private data class Query(
         val search: String,
         val watchableOnly: Boolean,
         val narrowing: AgendaFilter?,
+        /** A single day chosen on the calendar; null is the yesterday-and-today window. */
+        val day: LocalDate? = null,
         val page: Int = EventsRepository.FIRST_PAGE,
     ) {
         fun asRequest(day: LocalDate, newestFirst: Boolean) = AgendaQuery(
@@ -373,7 +448,8 @@ class AgendaViewModel(
 }
 
 /**
- * What the agenda is showing. [day] is today; the window is the day before it and it.
+ * What the agenda is showing. [day] is the day the listing is anchored on — today, whose
+ * window is the day before it and it, or [chosenDay] when the calendar has narrowed it.
  */
 data class AgendaUiState(
     val day: LocalDate,
@@ -381,6 +457,14 @@ data class AgendaUiState(
     val watchableOnly: Boolean = false,
     /** Set when the reader arrived from a followed team or competition. */
     val filter: AgendaFilter? = null,
+    /** The single day chosen on the calendar; null is the yesterday-and-today window. */
+    val chosenDay: LocalDate? = null,
+    /**
+     * What the foot of an exhausted listing offers to load, already worded ("MAÑANA · …").
+     * Null until something has loaded; the foot is drawn only when [canLoadMore] is false,
+     * because tomorrow must not be reachable past an unshown tail of today.
+     */
+    val nextDayLabel: String? = null,
     /**
      * The event the listing should open on — the first one that has not finished. Null when
      * everything in the window is over, and the listing then opens at the end.
@@ -403,6 +487,9 @@ sealed interface AgendaIntent {
     /** Narrow to one followed team or competition, or pass null to show everything again. */
     data class Narrow(val filter: AgendaFilter?) : AgendaIntent
 
+    /** Show one day chosen on the calendar, or pass null to return to yesterday and today. */
+    data class PickDay(val day: LocalDate?) : AgendaIntent
+
     data class OnlyWatchable(val only: Boolean) : AgendaIntent
 
     data object Refresh : AgendaIntent
@@ -411,6 +498,9 @@ sealed interface AgendaIntent {
     data object Resumed : AgendaIntent
 
     data object LoadMore : AgendaIntent
+
+    /** Append the day after the listing's end — or move to it, when a day was chosen. */
+    data object LoadNextDay : AgendaIntent
 
     data object DismissError : AgendaIntent
 }

@@ -11,6 +11,7 @@ import es.mojon.soccertime.core.ui.AgendaViewModel
 import es.mojon.soccertime.core.ui.EventPresenter
 import es.mojon.soccertime.core.ui.FavoritesViewModel
 import es.mojon.soccertime.core.ui.ManageFavoritesViewModel
+import java.time.LocalDate
 
 /**
  * How a screen gets its view model.
@@ -24,6 +25,11 @@ class Models(graph: AppGraph, context: Context) {
     private val presenter = EventPresenter(graph.times)
 
     val following = graph.favorites.following
+
+    val settings = graph.settings
+
+    /** Formats the chip naming a day chosen on the calendar, in the reader's own zone. */
+    val dayLabel: (LocalDate) -> String = graph.times::shortDayLabel
 
     val playback = Playback(SystemIntentLauncher(context))
 

@@ -76,6 +76,11 @@ class EventTimes(
      */
     fun dayLabel(iso: String): String {
         val day = dayOf(iso) ?: return ""
+        return dayLabel(day)
+    }
+
+    /** The same heading for a day named directly — what the "load tomorrow" foot is called. */
+    fun dayLabel(day: LocalDate): String {
         val today = today()
         val named = when (day) {
             today.minusDays(1) -> YESTERDAY
@@ -89,6 +94,10 @@ class EventTimes(
             "$named · ${day.format(SHORT_DAY.withLocale(locale)).uppercase(locale).replace(".", "")}"
         }
     }
+
+    /** `vie 4 sep`, for the chip naming the day the agenda has been narrowed to. */
+    fun shortDayLabel(day: LocalDate): String =
+        day.format(SHORT_DAY.withLocale(locale)).replace(".", "")
 
     /**
      * On right now.
