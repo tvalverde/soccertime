@@ -12,6 +12,15 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Added
+- **`/api/v1/events/days/`: the local days that hold at least one event.** One sorted list of
+  dates, read in Europe/Madrid like every day here, under exactly the same filters the events
+  listing takes — `team`, `competition`, `date_from`/`date_to` and the rest apply and are
+  documented by the same machinery, so a calendar can light only the days that have something
+  behind them without downloading the events themselves. Grouped in Python rather than with a
+  database `DISTINCT` over a date function, because the dates are stored in UTC, "which day"
+  is a question about Madrid, and SQLite's date arithmetic knows nothing about either.
+
 ### Fixed
 - **Sporadic 503s that never reached the application.** Traefik's load-balancer health check
   probed `/healthz/` at `interval=1s, timeout=1s`; on a single uvicorn process sharing a host

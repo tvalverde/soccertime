@@ -15,9 +15,12 @@ from typing import Any, ClassVar
 
 from django.db.models import Count, IntegerField, OuterRef, Q, QuerySet, Subquery
 from django.db.models.functions import Coalesce
+from django.utils.timezone import localtime
 from django.views.generic import TemplateView
 from drf_spectacular.types import OpenApiTypes
-from rest_framework import routers, viewsets
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import routers, serializers, viewsets
+from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
@@ -294,6 +297,31 @@ class EventViewSet(ReadOnlyViewSet):
         of `channels`, which Django refuses.
         """
         return Event.objects.with_related().prefetch_related("channels__links__sources").chronological()
+
+    @extend_schema(
+        description=(
+            "The local days — read in Europe/Madrid, like every day here — holding at least "
+            "one event, under the same filters the listing takes. What a calendar needs to "
+            "light its days without downloading the events behind them."
+        ),
+        responses=inline_serializer(
+            name="EventDays",
+            fields={"days": serializers.ListField(child=serializers.DateField())},
+        ),
+    )
+    @action(detail=False)
+    def days(self, request: Request) -> Response:
+        """One sorted list of dates, however many events each carries.
+
+        The start times are read bare and grouped in Python rather than with a database
+        `DISTINCT` over a date function: the dates are stored in UTC, "which day" is a
+        question about Europe/Madrid, and SQLite's date arithmetic knows nothing about
+        either. The whole table is a few tens of thousands of one-column rows at worst,
+        and every filter the listing takes narrows it first.
+        """
+        starts = self.filter_queryset(Event.objects.all()).values_list("date", flat=True)
+        days = sorted({localtime(start).date() for start in starts})
+        return Response({"days": [day.isoformat() for day in days]})
 
 
 class ApiRootView(routers.APIRootView):

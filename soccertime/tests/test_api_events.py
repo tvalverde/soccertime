@@ -284,3 +284,46 @@ class TestTheListingDoesNotQueryPerRow:
         with_ten = self.queries_for(client, url)
 
         assert with_ten == with_one
+
+
+@pytest.mark.django_db
+class TestTheDaysACalendarLights:
+    """`/events/days/`: which local days hold something, under the listing's own filters."""
+
+    def days(self, client, **params):
+        return client.get(reverse("event-days"), params).json()["days"]
+
+    def test_every_local_day_with_an_event_appears_exactly_once(self, client, match, race):
+        expected = sorted({timezone.localtime(event.date).date().isoformat() for event in Event.objects.all()})
+
+        assert self.days(client) == expected
+
+    def test_a_busy_day_is_still_one_day(self, client, match):
+        Match.objects.create(
+            competition=match.competition,
+            local=match.local,
+            visitor=match.visitor,
+            date=match.date + datetime.timedelta(hours=1),
+        )
+
+        assert len(self.days(client)) == len({timezone.localtime(e.date).date() for e in Event.objects.all()})
+
+    def test_the_listing_filters_narrow_it_too(self, client, match, race):
+        theirs = self.days(client, team=match.local.pk)
+
+        assert theirs == [timezone.localtime(match.date).date().isoformat()]
+        assert self.days(client, competition=race.competition.pk) == [
+            timezone.localtime(race.date).date().isoformat()
+        ]
+
+    def test_days_are_read_in_madrid_not_utc(self, client, race):
+        # 23:30 UTC in January is 00:30 of the NEXT day in Madrid.
+        race.date = datetime.datetime(2026, 1, 10, 23, 30, tzinfo=datetime.UTC)
+        race.save()
+
+        assert self.days(client, date_from="2026-01-01", date_to="2026-01-31") == ["2026-01-11"]
+
+    def test_a_value_that_cannot_be_read_is_refused(self, client):
+        response = client.get(reverse("event-days"), {"date_from": "someday"})
+
+        assert response.status_code == 400
