@@ -312,9 +312,7 @@ class TestTheDaysACalendarLights:
         theirs = self.days(client, team=match.local.pk)
 
         assert theirs == [timezone.localtime(match.date).date().isoformat()]
-        assert self.days(client, competition=race.competition.pk) == [
-            timezone.localtime(race.date).date().isoformat()
-        ]
+        assert self.days(client, competition=race.competition.pk) == [timezone.localtime(race.date).date().isoformat()]
 
     def test_days_are_read_in_madrid_not_utc(self, client, race):
         # 23:30 UTC in January is 00:30 of the NEXT day in Madrid.
