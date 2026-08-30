@@ -21,6 +21,18 @@ The website's own changelog is `../CHANGELOG.md`.
   launches the harness activity from the merged debug manifest and a test-classpath manifest
   never merges into it. The screenshot flavour (pixel comparison) stays deliberately out.
 
+### Fixed
+- **The favourites screen now fetches its whole three-day window instead of one page of it.**
+  It asked for "today onwards" and read only the first hundred events — on a normal Saturday
+  that page ends at teatime the same day, so everything followed tomorrow or the day after was
+  quietly missing while the website, which filters server-side, showed it. The load now bounds
+  the request to the window with `date_from`/`date_to` and walks the pages until the server
+  says there are no more (capped at ten, a third of the shared thirty-a-minute budget). A page
+  lost mid-walk fails the whole load rather than showing a window with a silent gap at its
+  end, and what was on screen stays up, marked stale. Measured against production on a
+  Sunday: 335 events in the window, of which the old single page carried at most 100 — and
+  after the local three-hours-back trim, none of them later than the same evening.
+
 ### Added
 - **Each release now says which website release it was built against.** These applications read
   the site's API and the two ship on separate tags, so nothing recorded the pairing — the

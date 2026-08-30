@@ -6,6 +6,7 @@ import es.mojon.soccertime.core.network.ApiResult
 import es.mojon.soccertime.core.network.SoccertimeApi
 import es.mojon.soccertime.core.network.SoccertimeApi.Companion.MAX_PAGE_SIZE
 import es.mojon.soccertime.core.network.safeCall
+import java.time.LocalDate
 
 /**
  * One day of the agenda, and how it should be narrowed.
@@ -41,7 +42,8 @@ data class AgendaQuery(
  */
 interface EventsRepository {
 
-    suspend fun upcoming(page: Int = FIRST_PAGE): ApiResult<Page<EventDto>>
+    /** One page of the events between two local days, both included. */
+    suspend fun upcoming(from: LocalDate, until: LocalDate, page: Int = FIRST_PAGE): ApiResult<Page<EventDto>>
 
     suspend fun onDate(query: AgendaQuery): ApiResult<Page<EventDto>>
 
@@ -60,24 +62,27 @@ interface EventsRepository {
  */
 class ApiEventsRepository(private val api: SoccertimeApi) : EventsRepository {
 
-    override suspend fun upcoming(page: Int): ApiResult<Page<EventDto>> = safeCall {
-        api.events(
-            todayOnwards = true,
-            date = null,
-            search = null,
-            watchable = null,
-            team = null,
-            competition = null,
-            ordering = null,
-            page = page.takeIf { it != EventsRepository.FIRST_PAGE },
-            pageSize = MAX_PAGE_SIZE,
-        )
-    }
+    override suspend fun upcoming(from: LocalDate, until: LocalDate, page: Int): ApiResult<Page<EventDto>> =
+        safeCall {
+            api.events(
+                date = null,
+                dateFrom = from.toString(),
+                dateTo = until.toString(),
+                search = null,
+                watchable = null,
+                team = null,
+                competition = null,
+                ordering = null,
+                page = page.takeIf { it != EventsRepository.FIRST_PAGE },
+                pageSize = MAX_PAGE_SIZE,
+            )
+        }
 
     override suspend fun onDate(query: AgendaQuery): ApiResult<Page<EventDto>> = safeCall {
         api.events(
-            todayOnwards = null,
             date = query.date,
+            dateFrom = null,
+            dateTo = null,
             search = query.search?.takeIf { it.isNotBlank() },
             watchable = true.takeIf { query.watchableOnly },
             team = query.team,

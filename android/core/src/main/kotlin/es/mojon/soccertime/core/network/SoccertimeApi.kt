@@ -18,8 +18,9 @@ interface SoccertimeApi {
 
     @GET("events/")
     suspend fun events(
-        @Query("today_onwards") todayOnwards: Boolean?,
         @Query("date") date: String?,
+        @Query("date_from") dateFrom: String?,
+        @Query("date_to") dateTo: String?,
         @Query("search") search: String?,
         @Query("watchable") watchable: Boolean?,
         @Query("team") team: Int?,

@@ -10,6 +10,8 @@ import es.mojon.soccertime.core.network.ApiResult
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -26,8 +28,14 @@ import kotlinx.coroutines.launch
  * The first is that the filtering happens here rather than through the API. There is no
  * per-caller state on the server, so the alternative is one request per followed team — and on
  * a limit of thirty a minute shared by every device on the connection, following six teams
- * would spend a fifth of a minute's budget on one screen. One request for the window and a
- * local filter costs one.
+ * would spend a fifth of a minute's budget on one screen. Fetching the window and filtering
+ * locally costs the same handful of pages whether one team is followed or six.
+ *
+ * The window is fetched **whole**, page by page, because one page of it is a different and
+ * wrong answer: a Saturday holds well over a hundred events, so the first hundred of
+ * "today onwards" once ended at teatime the same day — and everything the reader followed
+ * tomorrow was quietly missing while the site showed it. The site filters server-side and
+ * never had the problem.
  *
  * The second is that following nothing asks for nothing. A reader who has chosen nothing gets
  * the screen that invites them to choose, and there is no answer that screen needs — so no
@@ -55,7 +63,7 @@ class FavoritesViewModel(
     /**
      * Whether a load is already in the air.
      *
-     * Nothing here cancels anything — this screen makes one request and has no query to
+     * Nothing here cancels anything — this screen makes one load and has no query to
      * change — so two overlapping loads would simply both answer, and the older could answer
      * last and put a staler window on screen than the one it replaced. It only takes a load
      * outliving the minute that makes the next resume ask again.
@@ -119,22 +127,44 @@ class FavoritesViewModel(
     private suspend fun fetch() {
         state.value = state.value.copy(loading = true, error = null)
 
-        val answer = events.upcoming()
-        // The request can return in the instant between this coroutine being abandoned and
-        // its next suspension point, and writing state is not one.
-        currentCoroutineContext().ensureActive()
+        // The API reads its day filters in Europe/Madrid and this clock names no zone, so
+        // each bound is widened by a day and `shown()` applies the exact window locally.
+        val now = clock.instant()
+        val from = LocalDate.ofInstant(now.minus(HOURS_BEFORE), ZoneOffset.UTC).minusDays(1)
+        val until = LocalDate.ofInstant(now.plus(DAYS_AHEAD), ZoneOffset.UTC).plusDays(1)
 
-        state.value = when (answer) {
-            is ApiResult.Success -> {
-                loadedAt = clock.instant()
-                loaded = answer.value.results
-                show(state.value).copy(loading = false, error = null, showingStale = false)
+        val window = mutableListOf<EventDto>()
+        var page = EventsRepository.FIRST_PAGE
+        while (true) {
+            val answer = events.upcoming(from, until, page)
+            // The request can return in the instant between this coroutine being abandoned
+            // and its next suspension point, and writing state is not one.
+            currentCoroutineContext().ensureActive()
+
+            when (answer) {
+                is ApiResult.Success -> {
+                    window += answer.value.results
+                    if (answer.value.next != null && page < LAST_WINDOW_PAGE) {
+                        page++
+                        continue
+                    }
+                    loadedAt = clock.instant()
+                    loaded = window
+                    state.value = show(state.value).copy(loading = false, error = null, showingStale = false)
+                    return
+                }
+                // A page that never came leaves a window with a silent gap at its end —
+                // exactly the wrong answer this walk exists to avoid — so the whole load
+                // fails and whatever was on screen stays, marked stale.
+                is ApiResult.Failure -> {
+                    state.value = state.value.copy(
+                        loading = false,
+                        error = answer.error,
+                        showingStale = state.value.days.isNotEmpty(),
+                    )
+                    return
+                }
             }
-            is ApiResult.Failure -> state.value.copy(
-                loading = false,
-                error = answer.error,
-                showingStale = state.value.days.isNotEmpty(),
-            )
         }
     }
 
@@ -173,6 +203,14 @@ class FavoritesViewModel(
         /** Both mirror `in_window`'s defaults on the site's favourites view. */
         val HOURS_BEFORE: Duration = Duration.ofHours(3)
         val DAYS_AHEAD: Duration = Duration.ofDays(3)
+
+        /**
+         * Where the walk stops even if the server still offers more. Ten pages is a
+         * thousand events — three times the busiest window measured — and already a third
+         * of the thirty-a-minute budget every device on the connection shares, which is
+         * the resource this cap protects.
+         */
+        const val LAST_WINDOW_PAGE: Int = 10
 
         val MANUAL_REFRESH_INTERVAL: Duration = AgendaViewModel.MANUAL_REFRESH_INTERVAL
         val STALE_AFTER: Duration = AgendaViewModel.STALE_AFTER

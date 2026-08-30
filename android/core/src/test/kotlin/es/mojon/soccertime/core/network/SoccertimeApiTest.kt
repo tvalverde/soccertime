@@ -57,8 +57,9 @@ class SoccertimeApiTest {
     private suspend fun events(page: Int?) =
         safeCall {
             api.events(
-                todayOnwards = null,
                 date = "2026-08-30",
+                dateFrom = null,
+                dateTo = null,
                 search = null,
                 watchable = null,
                 team = null,
@@ -243,7 +244,7 @@ class SoccertimeApiTest {
         server.enqueue(MockResponse.Builder().code(304).setHeader("ETag", "\"v1\"").build())
 
         repeat(2) {
-            val page = cached.events(null, "2026-08-30", null, null, null, null, null, null, MAX_PAGE_SIZE)
+            val page = cached.events("2026-08-30", null, null, null, null, null, null, null, null, MAX_PAGE_SIZE)
             assertEquals(3, page.results.size)
         }
 

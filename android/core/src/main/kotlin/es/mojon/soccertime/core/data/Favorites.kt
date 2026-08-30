@@ -17,7 +17,7 @@ import es.mojon.soccertime.core.model.EventDto
  * chose an empty agenda and is told so. Neither is quietly handed a list they did not pick.
  *
  * Filtering happens here rather than through the API because the API has no per-caller state:
- * one request for the window, then this — instead of one request per followed team, which on
+ * one fetch of the window, then this — instead of one request per followed team, which on
  * a limit of thirty a minute shared with every device in the house is the difference between
  * a session that works and one that starts refusing.
  */

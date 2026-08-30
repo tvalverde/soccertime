@@ -12,6 +12,7 @@ import es.mojon.soccertime.core.time.EventTimes
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -43,12 +44,24 @@ class FavoritesViewModelTest {
         var calls = 0
         var failure: ApiError? = null
 
-        override suspend fun upcoming(page: Int): ApiResult<Page<EventDto>> {
+        /** Pages past the first, by number. `next` is derived from whether one follows. */
+        val later = mutableMapOf<Int, Page<EventDto>>()
+        var failOnPage: Int? = null
+        var askedFrom: LocalDate? = null
+        var askedUntil: LocalDate? = null
+
+        override suspend fun upcoming(from: LocalDate, until: LocalDate, page: Int): ApiResult<Page<EventDto>> {
             calls++
-            return failure?.let { ApiResult.Failure(it) } ?: ApiResult.Success(answer)
+            askedFrom = from
+            askedUntil = until
+            failure?.let { return ApiResult.Failure(it) }
+            failOnPage?.takeIf { it == page }?.let { return ApiResult.Failure(ApiError.Offline) }
+            val body = if (page == EventsRepository.FIRST_PAGE) answer else later.getValue(page)
+            return ApiResult.Success(body.copy(next = "page=${page + 1}".takeIf { later.containsKey(page + 1) }))
         }
 
-        override suspend fun onDate(query: AgendaQuery) = upcoming(query.page)
+        override suspend fun onDate(query: AgendaQuery) =
+            upcoming(LocalDate.EPOCH, LocalDate.EPOCH, query.page)
     }
 
     private class Movable(var now: Instant) : Clock() {
@@ -247,5 +260,55 @@ class FavoritesViewModelTest {
         assertEquals(loaded, state.days)
         assertEquals(ApiError.Offline, state.error)
         assertTrue(state.showingStale)
+    }
+
+    /**
+     * The regression this screen shipped with: production holds far more than one page of
+     * "today onwards", so reading only the first meant the window ended at teatime the same
+     * day and everything followed tomorrow was quietly missing — while the site showed it.
+     */
+    @Test
+    fun `the whole window is fetched, not only its first page`() = runTest(dispatcher) {
+        val overleaf = repository.answer.results.first().copy(id = 909_090)
+        repository.later[2] = repository.answer.copy(results = listOf(overleaf))
+        val model = viewModel()
+
+        followed.value = Favorites(competitionIds = setOf(overleaf.competition.id))
+        advanceUntilIdle()
+
+        assertEquals(2, repository.calls)
+        val shown = model.uiState.value.days.flatMap { it.events }
+        assertTrue("the event on page two is on screen", shown.any { it.id == overleaf.id })
+    }
+
+    @Test
+    fun `the request is bounded to the window, widened a day each side`() = runTest(dispatcher) {
+        followed.value = Favorites(teamIds = setOf(aFollowedTeam))
+        viewModel()
+        advanceUntilIdle()
+
+        // now is 2026-08-29T21:00Z: three hours back is the 29th, three days on is the 1st.
+        assertEquals(LocalDate.of(2026, 8, 28), repository.askedFrom)
+        assertEquals(LocalDate.of(2026, 9, 2), repository.askedUntil)
+    }
+
+    /**
+     * A walk that loses its tail would show a window with a silent gap at the end — the very
+     * shape of the bug the walk fixes — so a page that never comes fails the whole load.
+     */
+    @Test
+    fun `a page lost mid-walk fails the load rather than showing half a window`() = runTest(dispatcher) {
+        val overleaf = repository.answer.results.first().copy(id = 909_090)
+        repository.later[2] = repository.answer.copy(results = listOf(overleaf))
+        repository.failOnPage = 2
+        val model = viewModel()
+
+        followed.value = Favorites(competitionIds = setOf(overleaf.competition.id))
+        advanceUntilIdle()
+
+        val state = model.uiState.value
+        assertEquals(ApiError.Offline, state.error)
+        assertFalse(state.loading)
+        assertTrue("nothing pretends to be the window", state.days.isEmpty())
     }
 }
