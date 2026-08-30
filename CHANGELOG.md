@@ -12,6 +12,8 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-30
+
 ### Added
 - **`/api/v1/events/days/`: the local days that hold at least one event.** One sorted list of
   dates, read in Europe/Madrid like every day here, under exactly the same filters the events
