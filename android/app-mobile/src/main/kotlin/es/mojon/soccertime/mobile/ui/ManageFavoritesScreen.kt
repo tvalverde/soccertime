@@ -45,6 +45,8 @@ fun ManageFavoritesScreen(
     state: ManageUiState,
     onIntent: (ManageIntent) -> Unit,
     onBack: () -> Unit,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxSize()) {
@@ -90,29 +92,123 @@ fun ManageFavoritesScreen(
             )
         }
 
-        if (state.nothingFound) {
-            EmptyState(stringResource(R.string.nothing_found), Modifier.padding(horizontal = 14.dp))
-            return@Column
+        // What the current tab already follows, drawn from the store alone — no request, no
+        // search, and the reason this screen can answer "what do I follow?" the moment it
+        // opens. Searching hides it: the reader asked a different question.
+        val followedHere = when (state.kind) {
+            FollowableKind.Teams -> state.following.teams
+            FollowableKind.Competitions -> state.following.competitions
         }
+        val showingFollowed = state.query.isBlank() && followedHere.isNotEmpty()
 
-        Row(
-            Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = pluralStringResource(R.plurals.results_count, state.total, state.total),
-                style = DayHeadingStyle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Box(Modifier.weight(1f).height(1.dp).background(Color(Palette.HAIRLINE)))
-        }
-
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
-            items(state.results, key = { it.item.id }) { row ->
-                FollowableRow(row) { onIntent(ManageIntent.Follow(row.item, !row.followed, row.kind)) }
+        if (state.nothingFound && !showingFollowed) {
+            EmptyState(stringResource(R.string.nothing_found), Modifier.weight(1f).padding(horizontal = 14.dp))
+        } else {
+            // Keys carry the section, because the same team sits in "Siguiendo" and in the
+            // catalogue below it — and a list keyed by the bare id would crash on the clash.
+            LazyColumn(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                if (showingFollowed) {
+                    item(key = "following-heading") {
+                        SectionHeading(
+                            label = stringResource(R.string.following_section).uppercase(),
+                            trailing = followedHere.size.toString(),
+                        )
+                    }
+                    items(followedHere, key = { "following-${it.id}" }) { item ->
+                        FollowableRow(FollowableUi(item, followed = true, kind = state.kind)) {
+                            onIntent(ManageIntent.Follow(item, false, state.kind))
+                        }
+                    }
+                    item(key = "results-heading") {
+                        SectionHeading(
+                            label = stringResource(R.string.all_section).uppercase(),
+                            trailing = pluralStringResource(R.plurals.results_count, state.total, state.total),
+                        )
+                    }
+                } else {
+                    item(key = "results-heading") {
+                        SectionHeading(
+                            label = pluralStringResource(R.plurals.results_count, state.total, state.total),
+                            trailing = null,
+                        )
+                    }
+                }
+                items(state.results, key = { "all-${it.item.id}" }) { row ->
+                    FollowableRow(row) { onIntent(ManageIntent.Follow(row.item, !row.followed, row.kind)) }
+                }
             }
         }
+
+        PortActions(onExport = onExport, onImport = onImport)
+    }
+}
+
+@Composable
+private fun SectionHeading(label: String, trailing: String?) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = label, style = DayHeadingStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.weight(1f).height(1.dp).background(Color(Palette.HAIRLINE)))
+        trailing?.let {
+            Text(text = it, fontSize = 10.5.sp, color = Color(Palette.ON_BACKGROUND_FAINT))
+        }
+    }
+}
+
+/**
+ * Export and import, always at hand at the foot of the screen.
+ *
+ * They exist because a debug build cannot install over a release: the switch uninstalls, and
+ * the uninstall takes the favourites. Exporting before and importing after is what makes a
+ * signature change cost a minute instead of a memory exercise.
+ */
+@Composable
+private fun PortActions(onExport: () -> Unit, onImport: () -> Unit) {
+    Column {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(Palette.HAIRLINE)))
+        Row(
+            Modifier.fillMaxWidth().padding(start = 14.dp, top = 10.dp, end = 14.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PortButton(R.string.export_favorites, SoccertimeIcons.Export, onExport, Modifier.weight(1f))
+            PortButton(R.string.import_favorites, SoccertimeIcons.Import, onImport, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun PortButton(
+    labelRes: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.weight(1f))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(15.dp),
+        )
+        Text(
+            text = stringResource(labelRes),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Box(Modifier.weight(1f))
     }
 }
 

@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import es.mojon.soccertime.core.data.CatalogRepository
 import es.mojon.soccertime.core.data.FavoritesStore
+import es.mojon.soccertime.core.data.FavoritesTransfer
 import es.mojon.soccertime.core.data.FollowedItem
 import es.mojon.soccertime.core.data.Following
+import es.mojon.soccertime.core.data.PortSummary
 import es.mojon.soccertime.core.network.ApiError
 import es.mojon.soccertime.core.network.ApiResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -78,6 +80,13 @@ class ManageFavoritesViewModel(
             }
         }
     }
+
+    /** The file the reader takes away: whatever is followed right now. */
+    fun exportPayload(): String = FavoritesTransfer.encode(state.value.following)
+
+    /** Null when the text is not an export of ours; otherwise what changed. */
+    suspend fun importPayload(text: String): PortSummary? =
+        FavoritesTransfer.decode(text)?.let { store.followAll(it) }
 
     fun onIntent(intent: ManageIntent) {
         when (intent) {

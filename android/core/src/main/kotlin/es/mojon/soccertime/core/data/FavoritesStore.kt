@@ -79,6 +79,34 @@ class FavoritesStore(private val store: DataStore<Preferences>) {
         store.edit { it.remove(TEAMS); it.remove(COMPETITIONS) }
     }
 
+    /**
+     * Follow everything an import carries that is not already followed.
+     *
+     * Adds and never removes — restoring into a fresh installation is the same either way,
+     * and into a lived-in one this destroys nothing. Ids decide identity, as everywhere:
+     * something already followed keeps its current entry (name included) and is only counted,
+     * and a file carrying the same id twice counts once.
+     */
+    suspend fun followAll(imported: Following): PortSummary {
+        var added = 0
+        var alreadyFollowed = 0
+        store.edit { stored ->
+            fun merge(key: Preferences.Key<String>, items: List<FollowedItem>) {
+                val current = stored[key].parse()
+                val known = current.mapTo(mutableSetOf()) { it.id }
+                val (old, new) = items.distinctBy { it.id }.partition { it.id in known }
+                added += new.size
+                alreadyFollowed += old.size
+                if (new.isNotEmpty()) {
+                    stored[key] = JSON.encodeToString((current + new).sortedBy { it.name.lowercase() })
+                }
+            }
+            merge(TEAMS, imported.teams)
+            merge(COMPETITIONS, imported.competitions)
+        }
+        return PortSummary(added, alreadyFollowed)
+    }
+
     private suspend fun update(
         key: Preferences.Key<String>,
         item: FollowedItem,
@@ -111,6 +139,11 @@ class FavoritesStore(private val store: DataStore<Preferences>) {
         private val EMPTY = androidx.datastore.preferences.core.emptyPreferences()
         private val JSON = Json { ignoreUnknownKeys = true }
     }
+}
+
+/** What an import did: what it added, and what was already there. */
+data class PortSummary(val added: Int, val alreadyFollowed: Int) {
+    val total: Int get() = added + alreadyFollowed
 }
 
 /** A team or a competition the reader chose, with just enough to draw it. */

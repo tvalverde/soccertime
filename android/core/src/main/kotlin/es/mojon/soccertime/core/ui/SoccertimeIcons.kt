@@ -42,6 +42,15 @@ object SoccertimeIcons {
     val Search: ImageVector @Composable get() =
         ImageVector.vectorResource(R.drawable.ic_search)
 
+    val ArrowUp: ImageVector @Composable get() =
+        ImageVector.vectorResource(R.drawable.ic_arrow_up)
+
+    val Export: ImageVector @Composable get() =
+        ImageVector.vectorResource(R.drawable.ic_export)
+
+    val Import: ImageVector @Composable get() =
+        ImageVector.vectorResource(R.drawable.ic_import)
+
     val Close: ImageVector @Composable get() =
         ImageVector.vectorResource(R.drawable.ic_close)
 

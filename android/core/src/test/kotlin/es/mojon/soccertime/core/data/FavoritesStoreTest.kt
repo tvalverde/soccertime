@@ -73,6 +73,8 @@ class FavoritesStoreTest {
     private val madrid = FollowedItem(1, "Real Madrid", "https://www.mojon.es/…/madrid.webp")
     private val laLiga = FollowedItem(10, "La Liga EA Sports", null)
 
+    private val racing = FollowedItem(7, "Racing de Santander", null)
+
     /**
      * Reading fails once and then works, which is what a busy disk looks like.
      *
@@ -199,6 +201,26 @@ class FavoritesStoreTest {
         val kept = store.following.first()
         assertTrue(kept.teams.isEmpty())
         assertEquals(listOf(sameId), kept.competitions)
+    }
+
+    @Test
+    fun `an import adds what is missing and duplicates nothing`() = runTest {
+        val store = openStore()
+        store.setTeam(athletic, followed = true)
+
+        val summary = store.followAll(
+            Following(
+                // The already-followed team arrives under another name, and twice.
+                teams = listOf(athletic.copy(name = "Ath. Club"), athletic.copy(name = "Ath. Club"), racing),
+                competitions = listOf(laLiga),
+            ),
+        )
+
+        assertEquals(PortSummary(added = 2, alreadyFollowed = 1), summary)
+        val after = store.following.first()
+        assertEquals(listOf(athletic, racing).sortedBy { it.name.lowercase() }, after.teams)
+        assertEquals("what was already followed keeps its current name", athletic.name, after.teams.first { it.id == athletic.id }.name)
+        assertEquals(listOf(laLiga), after.competitions)
     }
 
     @Test

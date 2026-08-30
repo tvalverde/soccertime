@@ -15,14 +15,25 @@
     <string name="play">Reproducir</string>
     <string name="refresh">Actualizar</string>
     <string name="clear_search">Borrar la búsqueda</string>
-    <string name="load_more">Ver más</string>
+    <string name="loading_more">Cargando más eventos…</string>
+    <string name="next_day_hint">Estira hacia arriba para cargarlo</string>
+    <string name="next_day_release">Suelta para cargarlo</string>
     <string name="loading">Cargando…</string>
+    <string name="loading_body">Buscando los próximos eventos</string>
+    <string name="pick_day">Elegir día</string>
+    <string name="pick_day_confirm">Ver este día</string>
+    <string name="pick_day_cancel">Cancelar</string>
+    <string name="pick_day_clear">Volver a ayer y hoy</string>
     <string name="empty_agenda">No hay eventos para este día.</string>
     <string name="empty_search">Nada coincide con lo que buscas.</string>
 
     <!-- Favourites -->
     <string name="favorites_title">Favoritos</string>
     <string name="edit">Editar</string>
+    <string name="font_size">Tamaño del texto</string>
+    <string name="font_small">Pequeño</string>
+    <string name="font_medium">Mediano</string>
+    <string name="font_large">Grande</string>
     <string name="first_run_title">Elige tus favoritos</string>
     <string name="first_run_body">Marca los equipos y las competiciones que sigues y esta pantalla te dará solo eso, con los canales y los enlaces de cada evento.</string>
     <string name="first_run_choose">Elegir equipos y competiciones</string>
@@ -37,6 +48,14 @@
     <string name="unfollow">Dejar de seguir</string>
     <string name="back">Atrás</string>
     <string name="nothing_found">No hay nada con ese nombre.</string>
+    <string name="following_section">Siguiendo</string>
+    <string name="all_section">Todos</string>
+    <string name="export_favorites">Exportar</string>
+    <string name="import_favorites">Importar</string>
+    <string name="export_done">Favoritos guardados en el fichero.</string>
+    <string name="export_failed">No se pudo escribir el fichero.</string>
+    <string name="import_failed">Ese fichero no es una exportación de favoritos.</string>
+    <string name="import_result">Importados %1$d favoritos: %2$d nuevos, %3$d ya seguidos</string>
 
     <!-- Opening a link -->
     <string name="quality_unspecified">SIN ESPECIFICAR</string>

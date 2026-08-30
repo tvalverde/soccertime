@@ -244,4 +244,21 @@ class ManageFavoritesViewModelTest {
         assertTrue(state.results.isEmpty())
         assertFalse(state.loading)
     }
+
+    @Test
+    fun `what is exported imports back, and garbage imports nothing`() = runTest(dispatcher) {
+        store.setTeam(FollowedItem(7, "Racing de Santander"), followed = true)
+        val model = viewModel()
+        advanceUntilIdle()
+
+        val payload = model.exportPayload()
+        assertTrue(payload.contains("Racing de Santander"))
+
+        store.clear()
+        val summary = model.importPayload(payload)
+        assertEquals(1, summary?.added)
+        assertEquals("Racing de Santander", store.following.first().teams.single().name)
+
+        assertEquals("a shopping list is not an export", null, model.importPayload("""{"milk": 2}"""))
+    }
 }

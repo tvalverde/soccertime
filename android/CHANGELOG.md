@@ -21,6 +21,22 @@ The website's own changelog is `../CHANGELOG.md`.
   launches the harness activity from the merged debug manifest and a test-classpath manifest
   never merges into it. The screenshot flavour (pixel comparison) stays deliberately out.
 
+### Added (second batch, same day — mockups approved first, as the new CLAUDE.md rule requires)
+- **«Editar favoritos» opens on what is already followed.** A SIGUIENDO section, drawn from the
+  local store alone — the names and crests are kept beside the ids, so it costs no request and
+  renders before the network answers — sits above the catalogue, and each row's star unfollows
+  it right there. Typing a search hides the section: the reader asked a different question.
+  The list's keys carry the section name, because the same team appears in SIGUIENDO and in
+  the catalogue below and a list keyed by the bare id crashes on the clash.
+- **Favourites travel as a file now.** Exportar writes `soccertime-favoritos.json` through the
+  system's save dialog; Importar reads it back through the system's open dialog and **merges by
+  id — adds what is missing, never removes, never duplicates** (a file carrying the same id
+  twice counts once, and something already followed keeps its current name). The result is
+  announced: "Importados 4 favoritos: 2 nuevos, 2 ya seguidos". The envelope carries a
+  `version` field, and the decoder requires it: every other field has a default, so without
+  that requirement any JSON object would import as an empty success. Phone only — the
+  televisions have no file manager to open the dialog with; that route is parked in TODO.
+
 ### Fixed
 - **The favourites screen now fetches its whole three-day window instead of one page of it.**
   It asked for "today onwards" and read only the first hundred events — on a normal Saturday
