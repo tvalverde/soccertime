@@ -163,8 +163,14 @@ services:
       # without the prefix the router strips.
       - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.path=/healthz/"
       - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.hostname=www.mojon.es"
-      - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.interval=1s"
-      - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.timeout=1s"
+      # 10s/5s, not 1s/1s: a single uvicorn process on a shared host takes more than a
+      # second to answer whenever anything else breathes — the scraper writing, a bot
+      # paginating — and at 1s/1s every such blip had Traefik withdraw the backend and
+      # answer 503 for a second or two, with nothing in the application's own logs. Docker's
+      # check (30s/10s, 3 retries) was always this tolerant; now the proxy's is comparable:
+      # a real death is still off the route in ~15 seconds.
+      - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.interval=10s"
+      - "traefik.http.services.soccertime-app-service.loadbalancer.healthcheck.timeout=5s"
       - "traefik.http.routers.soccertime-app.service=soccertime-app-service"
 
 volumes:

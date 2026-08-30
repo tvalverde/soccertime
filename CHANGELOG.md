@@ -12,6 +12,17 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Fixed
+- **Sporadic 503s that never reached the application.** Traefik's load-balancer health check
+  probed `/healthz/` at `interval=1s, timeout=1s`; on a single uvicorn process sharing a host
+  with another site, any blip — the scraper writing, a bot paginating the agenda — pushed the
+  answer past one second, Traefik withdrew the backend and answered 503 by itself for a second
+  or two, and the application's own logs showed nothing. Diagnosed from exactly that mismatch:
+  a user-visible 503 with zero 5xx logged and a container that had been healthy for 22 hours.
+  The probe is now `interval=10s, timeout=5s` — a real death still leaves the route in about
+  fifteen seconds, and a slow breath no longer counts as one. Docker's own check for the same
+  container (30s/10s, 3 retries) was always this tolerant.
+
 ## [0.10.0] - 2026-08-29
 
 ### Fixed
