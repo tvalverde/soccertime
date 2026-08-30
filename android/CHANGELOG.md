@@ -85,6 +85,11 @@ The website's own changelog is `../CHANGELOG.md`.
   televisions have no file manager to open the dialog with; that route is parked in TODO.
 
 ### Changed
+- **`make android-install-mobile` refuses to run against more than one connected device without
+  `ANDROID_SERIAL`, and `android-install-tv` pins the television it just connected.** Gradle's
+  `installDebug` installs on every adb device attached at that moment — measured today, when it
+  quietly put the phone app on both Fire TVs that had stayed connected over the network. The
+  stray installs were removed the same minute.
 - **The Editar button is gone from the favourites header.** It duplicated the (+) tile at the end
   of the followed strip — two controls to the same screen — and its spot now holds the text-size
   control. The (+) tile keeps its «Editar» caption and remains the way in.

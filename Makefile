@@ -224,8 +224,17 @@ android-clean: check-gradle-home
 android-release: check-gradle-home
 	@cd $(ANDROID_DIR) && $(GRADLEW) assembleRelease
 
+# Gradle's installDebug installs on EVERY adb device connected at that moment — measured on
+# 2026-08-30, when it put the phone app on both Fire TVs that had stayed connected. With more
+# than one device attached this refuses to guess; pin the phone with its serial from
+# `adb devices`: make android-install-mobile ANDROID_SERIAL=<serial>.
 android-install-mobile:
-	@cd $(ANDROID_DIR) && $(GRADLEW) :app-mobile:installDebug
+	@if [ -z "$(ANDROID_SERIAL)" ] && [ "$$($(ADB) devices | awk 'NR>1 && $$2=="device"' | wc -l)" -gt 1 ]; then \
+		echo "More than one adb device is connected and installDebug would install on ALL of them."; \
+		echo "Usage: make android-install-mobile ANDROID_SERIAL=<serial from 'adb devices'>"; \
+		exit 1; \
+	fi
+	@cd $(ANDROID_DIR) && $(if $(ANDROID_SERIAL),ANDROID_SERIAL=$(ANDROID_SERIAL)) $(GRADLEW) :app-mobile:installDebug
 
 # The Fire TV has no USB port to plug into, so it is reached over the network: enable ADB
 # debugging in Developer options, read the address from Settings, and pass it here.
@@ -237,7 +246,7 @@ android-install-tv:
 		exit 1; \
 	fi
 	@$(ADB) connect $(ADB_HOST):$(ADB_PORT)
-	@cd $(ANDROID_DIR) && $(GRADLEW) :app-tv:installDebug
+	@cd $(ANDROID_DIR) && ANDROID_SERIAL=$(ADB_HOST):$(ADB_PORT) $(GRADLEW) :app-tv:installDebug
 	@echo "Installed. Read what it does with: $(ADB) -s $(ADB_HOST):$(ADB_PORT) logcat -s Soccertime:V"
 
 # Capture a page for visual review, with no browser extension involved.
