@@ -6,6 +6,15 @@ the mandatory changelog entry after every change — `CHANGELOG.md` for the webs
 CLIs load it automatically; Claude Code does not, so it is easy to work a whole session
 without ever seeing it. That is exactly how the changelog went unmaintained.
 
+## UI changes are shown on a design canvas before they are written
+
+Any change to what either application draws — a new control, a moved one, a layout, a state —
+is mocked up first with the design skill and published for Toni to validate. **Code for it is
+written only after the mockups are approved**, and each approval covers exactly what was shown:
+a new batch of UI work means a new set of artboards, not a licence carried over from the last
+one. Behaviour fixes with nothing visible to draw need no canvas. Asked for explicitly on
+2026-08-30, to be remembered always.
+
 ## Verify the failing path, not the working one
 
 Two production outages in one session came from the same mistake: testing the state the
