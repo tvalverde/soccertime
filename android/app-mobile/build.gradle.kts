@@ -64,6 +64,14 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests {
+            // Robolectric inflates real resources — strings, fonts — so the Compose tests
+            // assert the texts the reader actually sees, not test doubles of them.
+            isIncludeAndroidResources = true
+        }
+    }
+
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
@@ -101,4 +109,11 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
 
     testImplementation(libs.junit)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.robolectric)
+    testImplementation(libs.compose.ui.test.junit4)
+    // `debugImplementation`, not `testImplementation`: Robolectric launches the harness
+    // activity out of the *merged debug manifest*, and a test-classpath library's manifest
+    // never merges into it — as testImplementation the activity is unresolvable at runtime.
+    debugImplementation(libs.compose.ui.test.manifest)
 }

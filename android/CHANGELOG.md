@@ -13,6 +13,15 @@ The website's own changelog is `../CHANGELOG.md`.
 ## [Unreleased]
 
 ### Added
+- **The Compose test harness the applications never had.** `:app-mobile` and `:app-tv` gain a
+  `src/test` on Robolectric + `compose-ui-test-junit4`, so what is drawn and what a gesture does
+  are asserted on the JVM by `make android-test` — the CI step whose log used to read `NO-SOURCE`
+  for both modules now runs real tests against the real resources. One earned lesson is written
+  into the build files: `ui-test-manifest` must be `debugImplementation`, because Robolectric
+  launches the harness activity from the merged debug manifest and a test-classpath manifest
+  never merges into it. The screenshot flavour (pixel comparison) stays deliberately out.
+
+### Added
 - **Each release now says which website release it was built against.** These applications read
   the site's API and the two ship on separate tags, so nothing recorded the pairing — the
   question "which API does this APK need?" had no answer and never would have. The workflow asks

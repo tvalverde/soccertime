@@ -21,6 +21,7 @@ tvFoundation = "1.0.0-alpha13"
 desugar = "2.1.5"
 junit = "4.13.2"
 turbine = "1.2.1"
+robolectric = "4.16"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -64,6 +65,12 @@ desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref 
 
 junit = { module = "junit:junit", version.ref = "junit" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+# The JVM half of the Compose test harness: `ui-test-junit4` drives semantics and gestures,
+# `ui-test-manifest` ships the activity the rule launches. Both run under Robolectric, so a
+# presentation change is checked by `make android-test` instead of by eye on a device.
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 
 # Not a project dependency: the root build puts this on the buildscript classpath so AGP's
 # built-in Kotlin compiles with this version instead of the older one AGP bundles.
