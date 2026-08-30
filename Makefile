@@ -129,7 +129,7 @@ ERROR_STATUS ?= 5[0-9][0-9]
 # 502, then 503, then the router is dropped altogether and every path answers 404. Measured
 # at 13 seconds in production and 2.4 in the replica once its proxy was pinned to the same
 # version. Five probe intervals is the margin that removed it.
-PROXY_SETTLE_SECONDS ?= 5
+PROXY_SETTLE_SECONDS ?= 50
 
 HEALTH_TIMEOUT ?= 90
 

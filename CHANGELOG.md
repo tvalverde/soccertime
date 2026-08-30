@@ -21,6 +21,12 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
   database `DISTINCT` over a date function, because the dates are stored in UTC, "which day"
   is a question about Madrid, and SQLite's date arithmetic knows nothing about either.
 
+### Changed
+- **`PROXY_SETTLE_SECONDS` rises from 5 to 50.** The guard test connecting it to Traefik's
+  probe interval caught what the 503 fix below left dangling: with the probe at 10s, retiring
+  the old container five seconds into a deploy is before Traefik has ever probed the new one —
+  the measured 404 window of 0.5.1 again. Five intervals of margin, as the test demands.
+
 ### Fixed
 - **Sporadic 503s that never reached the application.** Traefik's load-balancer health check
   probed `/healthz/` at `interval=1s, timeout=1s`; on a single uvicorn process sharing a host
