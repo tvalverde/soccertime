@@ -12,6 +12,8 @@ The website's own changelog is `../CHANGELOG.md`.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-30
+
 ### Added
 - **The Compose test harness the applications never had.** `:app-mobile` and `:app-tv` gain a
   `src/test` on Robolectric + `compose-ui-test-junit4`, so what is drawn and what a gesture does
