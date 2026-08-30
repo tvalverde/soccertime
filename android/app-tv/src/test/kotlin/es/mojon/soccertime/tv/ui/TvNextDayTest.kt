@@ -5,7 +5,9 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import es.mojon.soccertime.core.ui.AgendaDay
+import es.mojon.soccertime.core.ui.AgendaFilter
 import es.mojon.soccertime.core.ui.AgendaUiState
+import es.mojon.soccertime.core.ui.FollowableKind
 import es.mojon.soccertime.core.ui.EventUi
 import es.mojon.soccertime.tv.ui.theme.SoccertimeTvTheme
 import java.time.LocalDate
@@ -79,6 +81,22 @@ class TvNextDayTest {
         compose.onNodeWithText("Cargar MAÑANA · LUN 31 AGO").performClick()
         assertEquals(1, nextDays)
         assertEquals(0, more)
+    }
+
+    @Test
+    fun `narrowed, the rows are gone and the focus feeds the listing itself`() {
+        screen(
+            AgendaUiState(
+                day = LocalDate.of(2026, 8, 30),
+                filter = AgendaFilter(42, "FC Barcelona", null, FollowableKind.Teams),
+                days = oneDay(),
+                canLoadMore = true,
+            ),
+        )
+
+        compose.onNodeWithText("Ver más").assertDoesNotExist()
+        // The whole short listing is on screen, which is as near the end as focus gets.
+        assertEquals(1, more)
     }
 
     @Test

@@ -13,6 +13,10 @@ import kotlinx.serialization.Serializable
  * incomplete row instead of failing the whole page.
  */
 
+/** `/events/days/`: the local days holding at least one event, for a calendar to light. */
+@Serializable
+data class DaysDto(val days: List<String> = emptyList())
+
 @Serializable
 data class Page<T>(
     val count: Int = 0,

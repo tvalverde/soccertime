@@ -11,12 +11,15 @@ import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeUp
 import es.mojon.soccertime.core.network.ApiError
 import es.mojon.soccertime.core.ui.AgendaDay
+import es.mojon.soccertime.core.ui.AgendaFilter
 import es.mojon.soccertime.core.ui.AgendaIntent
 import es.mojon.soccertime.core.ui.AgendaUiState
+import es.mojon.soccertime.core.ui.FollowableKind
 import es.mojon.soccertime.core.ui.EventUi
 import es.mojon.soccertime.mobile.ui.theme.SoccertimeTheme
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -47,13 +50,15 @@ class AgendaScreenTest {
     }
 
     @Test
-    fun `pressing the window chip opens the calendar`() {
+    fun `pressing the window chip peeks the month and opens the calendar`() {
         screen(AgendaUiState(day = august30))
 
         compose.onNodeWithText("Ayer y hoy").performClick()
 
         compose.onNodeWithText("Ver este día").assertIsDisplayed()
         compose.onNodeWithText("Cancelar").assertIsDisplayed()
+        // Asked before the dialog exists, so the index usually beats the grid.
+        assertTrue(intents.contains(AgendaIntent.PeekMonth(java.time.YearMonth.of(2026, 8))))
     }
 
     @Test
@@ -190,6 +195,37 @@ class AgendaScreenTest {
         compose.onNodeWithText("DOMINGO 6 SEPTIEMBRE").performClick()
 
         assertEquals(listOf<AgendaIntent>(AgendaIntent.LoadNextDay), intents)
+    }
+
+    @Test
+    fun `narrowed, the listing simply continues - no foot, and the chip reads Desde hoy`() {
+        screen(
+            AgendaUiState(
+                day = august30,
+                filter = AgendaFilter(42, "FC Barcelona", null, FollowableKind.Teams),
+                days = oneQuietDay(),
+                nextDayLabel = null,
+                canLoadMore = false,
+            ),
+        )
+
+        compose.onNodeWithText("FC Barcelona").assertIsDisplayed()
+        compose.onNodeWithText("Desde hoy").assertIsDisplayed()
+        compose.onNodeWithText("Estira hacia arriba para cargarlo").assertDoesNotExist()
+    }
+
+    @Test
+    fun `narrowed with a chosen day, the chip wears where the listing starts`() {
+        screen(
+            AgendaUiState(
+                day = LocalDate.of(2026, 9, 5),
+                filter = AgendaFilter(42, "FC Barcelona", null, FollowableKind.Teams),
+                chosenDay = LocalDate.of(2026, 9, 5),
+                days = oneQuietDay(),
+            ),
+        )
+
+        compose.onNodeWithText("sáb 5 sep").assertIsDisplayed()
     }
 
     @Test

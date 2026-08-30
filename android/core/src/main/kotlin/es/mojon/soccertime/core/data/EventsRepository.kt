@@ -16,7 +16,10 @@ import java.time.LocalDate
  * whose arguments are `(date, null, false, null, 42, true, 1)` is one nobody can read.
  */
 data class AgendaQuery(
-    val date: String,
+    /** One local day — or null with [dateFrom] set, which is the open-ended narrowed listing. */
+    val date: String? = null,
+    /** Everything from this local day onward, however far the pages reach. */
+    val dateFrom: String? = null,
     val search: String? = null,
     val watchableOnly: Boolean = false,
     val team: Int? = null,
@@ -47,6 +50,14 @@ interface EventsRepository {
 
     suspend fun onDate(query: AgendaQuery): ApiResult<Page<EventDto>>
 
+    /** The local days between two dates holding at least one event, for a calendar to light. */
+    suspend fun days(
+        from: LocalDate,
+        until: LocalDate,
+        team: Int? = null,
+        competition: Int? = null,
+    ): ApiResult<List<LocalDate>>
+
     companion object {
         const val FIRST_PAGE: Int = 1
 
@@ -61,6 +72,18 @@ interface EventsRepository {
  * site answers on — a client that followed it verbatim would walk off the site.
  */
 class ApiEventsRepository(private val api: SoccertimeApi) : EventsRepository {
+
+    override suspend fun days(
+        from: LocalDate,
+        until: LocalDate,
+        team: Int?,
+        competition: Int?,
+    ): ApiResult<List<LocalDate>> = safeCall {
+        api.eventDays(dateFrom = from.toString(), dateTo = until.toString(), team = team, competition = competition)
+            .days
+            // A malformed date is one day the calendar cannot light, never a screen that fails.
+            .mapNotNull { runCatching { LocalDate.parse(it) }.getOrNull() }
+    }
 
     override suspend fun upcoming(from: LocalDate, until: LocalDate, page: Int): ApiResult<Page<EventDto>> =
         safeCall {
@@ -81,7 +104,7 @@ class ApiEventsRepository(private val api: SoccertimeApi) : EventsRepository {
     override suspend fun onDate(query: AgendaQuery): ApiResult<Page<EventDto>> = safeCall {
         api.events(
             date = query.date,
-            dateFrom = null,
+            dateFrom = query.dateFrom,
             dateTo = null,
             search = query.search?.takeIf { it.isNotBlank() },
             watchable = true.takeIf { query.watchableOnly },

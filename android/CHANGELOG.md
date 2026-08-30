@@ -36,6 +36,24 @@ The website's own changelog is `../CHANGELOG.md`.
   system's accessibility setting is composed with rather than fought, and it persists in a new
   settings store beside the favourites.
 
+### Added (fifth batch, same day — mockups approved first)
+- **Narrowed to a team or a competition, the agenda shows everything that is coming.** Tapping
+  a crest used to show the same two-day window as the plain agenda; now it is the agenda
+  without the daily stoppers: every event from today onward in one continuous listing, day
+  headings kept for orientation, opening anchored on the event in progress, pages feeding
+  themselves — no «MAÑANA» foot, no pull, because there is no frontier to cross. The chip
+  beside the filter reads «Desde hoy», and the calendar takes a second meaning there: a chosen
+  day moves where the listing *starts*, still endless onward. On television the narrowed
+  listing feeds itself as the remote's focus nears the end, and the trailing row disappears.
+- **The calendar dims the days that hold nothing, and refuses their press.** Powered by the
+  API's new `/events/days/` — asked month by month as the reader flips, under the active
+  narrowing, so a followed team's month lights only its match days. Deliberately fail-open:
+  a month whose index never arrived stays fully pressable, because a nicety that failed must
+  never lock a date away. Two beats keep the first open honest: the month is asked for when
+  the chip is pressed, before the dialog exists, and the grid is rebuilt the moment an index
+  arrives — the picker builds its month once and never re-asks `isSelectableDate`, so without
+  the rebuild an answer landing a beat late dimmed nothing until the reader flipped months.
+
 ### Added (fourth batch, same day — mockups approved first)
 - **The pull to tomorrow is visible while it is made, and fires on release.** The listing rides
   up with the finger at half a pixel per pixel while a ring in the foot fills with the pull;

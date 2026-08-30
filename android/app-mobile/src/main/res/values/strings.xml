@@ -9,6 +9,7 @@
     <!-- Agenda -->
     <string name="search_hint">Buscar equipo o competición</string>
     <string name="filter_today">Ayer y hoy</string>
+    <string name="from_today">Desde hoy</string>
     <string name="clear_filter">Quitar el filtro</string>
     <string name="filter_watchable">Con enlace</string>
     <string name="live">DIRECTO</string>

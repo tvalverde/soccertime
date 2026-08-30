@@ -12,6 +12,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -99,6 +100,9 @@ class AgendaViewModel(
     /** One day-append at a time: the same day arriving twice is a duplicate-key crash. */
     private var appendingDay = false
 
+    /** Months whose day-index request is in the air, so a flipped-back month asks once. */
+    private val peekingMonths = mutableSetOf<YearMonth>()
+
     /** Which load owns the screen. An older one that answers late is no longer entitled to. */
     private var generation = 0
 
@@ -151,9 +155,13 @@ class AgendaViewModel(
                 if (intent.filter == filters.value.narrowing) return
                 filters.value = filters.value.copy(narrowing = intent.filter)
                 forgetListing()
+                peekingMonths.clear()
                 state.value = state.value.copy(
                     filter = intent.filter,
                     nextDayLabel = null,
+                    // A different thing's days light differently; the calendar re-asks.
+                    litDays = emptySet(),
+                    litMonths = emptySet(),
                     days = emptyList(),
                     anchorId = null,
                     count = 0,
@@ -193,6 +201,7 @@ class AgendaViewModel(
             AgendaIntent.Resumed -> refresh(minimumAge = STALE_AFTER)
             AgendaIntent.LoadMore -> loadMore()
             AgendaIntent.LoadNextDay -> loadNextDay()
+            is AgendaIntent.PeekMonth -> peekMonth(intent.month)
             AgendaIntent.DismissError -> state.value = state.value.copy(error = null)
         }
     }
@@ -252,8 +261,41 @@ class AgendaViewModel(
      * tail would silently drop the evening, and the foot that triggers this is only drawn
      * once the day is exhausted.
      */
+    /**
+     * Which days of one calendar month hold anything, for the picker to light.
+     *
+     * Quiet on purpose, in both directions: a month already known or already asked for is
+     * not asked again, and a failure leaves the month unknown — an unknown month stays fully
+     * pressable, because a calendar nicety that failed must never lock a date away.
+     */
+    private fun peekMonth(month: YearMonth) {
+        if (month in state.value.litMonths || !peekingMonths.add(month)) return
+        val narrowing = filters.value.narrowing
+        viewModelScope.launch {
+            val answer = events.days(
+                from = month.atDay(1),
+                until = month.atEndOfMonth(),
+                team = narrowing?.id?.takeIf { narrowing.kind == FollowableKind.Teams },
+                competition = narrowing?.id?.takeIf { narrowing.kind == FollowableKind.Competitions },
+            )
+            currentCoroutineContext().ensureActive()
+            peekingMonths.remove(month)
+            // Only if the narrowing it was asked under still stands; a stale answer would
+            // light another team's days.
+            if (narrowing != filters.value.narrowing) return@launch
+            if (answer is ApiResult.Success) {
+                state.value = state.value.copy(
+                    litDays = state.value.litDays + answer.value,
+                    litMonths = state.value.litMonths + month,
+                )
+            }
+        }
+    }
+
     private fun loadNextDay() {
         val next = windowEnd?.plusDays(1) ?: return
+        // Narrowed, the listing is already every coming day; there is no next one to add.
+        if (filters.value.narrowing != null) return
         if (filters.value.day != null) {
             onIntent(AgendaIntent.PickDay(next))
             return
@@ -328,7 +370,9 @@ class AgendaViewModel(
         // that already held it produced two rows per event, duplicate keys, and a crash in
         // the list rather than the failure banner the reader should have seen.
         val arrived = fetch(query, day, appending = false, mine = mine)
-        if (arrived && query.day == null) fetchYesterday(query, day, mine)
+        // Yesterday is a courtesy of the two-day window alone: a chosen day means that day,
+        // and a narrowed listing already begins where the reader is.
+        if (arrived && query.day == null && query.narrowing == null) fetchYesterday(query, day, mine)
     }
 
     /**
@@ -374,7 +418,8 @@ class AgendaViewModel(
                 windowEnd = day
                 state.value.copy(
                     day = day,
-                    nextDayLabel = presenter.times.dayLabel(day.plusDays(1)),
+                    // A narrowed listing has no frontier to cross, so no foot to offer.
+                    nextDayLabel = if (query.narrowing == null) presenter.times.dayLabel(day.plusDays(1)) else null,
                     days = presenter.days(loaded, marked),
                     anchorId = presenter.anchor(loaded),
                     count = answer.value.count,
@@ -427,8 +472,14 @@ class AgendaViewModel(
         val day: LocalDate? = null,
         val page: Int = EventsRepository.FIRST_PAGE,
     ) {
+        /**
+         * Narrowed to a team or competition the listing is open-ended — everything from
+         * [day] onward, pages walking as far as the reader scrolls — where the plain agenda
+         * asks for exactly one day at a time.
+         */
         fun asRequest(day: LocalDate, newestFirst: Boolean) = AgendaQuery(
-            date = day.toString(),
+            date = day.toString().takeIf { narrowing == null },
+            dateFrom = day.toString().takeIf { narrowing != null },
             search = search.ifBlank { null },
             watchableOnly = watchableOnly,
             team = narrowing?.id?.takeIf { narrowing.kind == FollowableKind.Teams },
@@ -465,6 +516,10 @@ data class AgendaUiState(
      * because tomorrow must not be reachable past an unshown tail of today.
      */
     val nextDayLabel: String? = null,
+    /** The days the calendar lights: known to hold at least one event, under the narrowing. */
+    val litDays: Set<LocalDate> = emptySet(),
+    /** The months [litDays] is complete for. An unknown month stays fully pressable. */
+    val litMonths: Set<YearMonth> = emptySet(),
     /**
      * The event the listing should open on — the first one that has not finished. Null when
      * everything in the window is over, and the listing then opens at the end.
@@ -501,6 +556,9 @@ sealed interface AgendaIntent {
 
     /** Append the day after the listing's end — or move to it, when a day was chosen. */
     data object LoadNextDay : AgendaIntent
+
+    /** The calendar is showing this month; fetch which of its days hold anything. */
+    data class PeekMonth(val month: YearMonth) : AgendaIntent
 
     data object DismissError : AgendaIntent
 }

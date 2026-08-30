@@ -14,6 +14,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -65,6 +66,20 @@ class AgendaViewModelTest {
 
         override suspend fun upcoming(from: LocalDate, until: LocalDate, page: Int) =
             onDate(AgendaQuery(date = "", page = page))
+
+        val dayAsks = mutableListOf<Triple<LocalDate, Int?, Int?>>()
+        var litAnswer: List<LocalDate> = emptyList()
+        var litFailure: ApiError? = null
+
+        override suspend fun days(
+            from: LocalDate,
+            until: LocalDate,
+            team: Int?,
+            competition: Int?,
+        ): ApiResult<List<LocalDate>> {
+            dayAsks += Triple(from, team, competition)
+            return litFailure?.let { ApiResult.Failure(it) } ?: ApiResult.Success(litAnswer)
+        }
 
         override suspend fun onDate(query: AgendaQuery): ApiResult<Page<EventDto>> {
             asks += query
@@ -267,18 +282,20 @@ class AgendaViewModelTest {
     }
 
     @Test
-    fun `narrowing to a followed team is a filter the server applies, to both days`() = runTest(dispatcher) {
+    fun `narrowing to a followed team is a filter the server applies, in one open-ended ask`() = runTest(dispatcher) {
         val model = viewModel()
         advanceUntilIdle()
+        repository.asks.clear()
 
         model.onIntent(
             AgendaIntent.Narrow(AgendaFilter(42, "Argentina", null, FollowableKind.Teams)),
         )
         advanceUntilIdle()
 
-        val forTheFilter = repository.asks.takeLast(2)
-        assertEquals(listOf(42, 42), forTheFilter.map { it.team })
-        assertEquals(listOf(null, null), forTheFilter.map { it.competition })
+        val ask = repository.asks.single()
+        assertEquals(42, ask.team)
+        assertNull(ask.competition)
+        assertEquals("everything from here onward, not a window", "2026-08-30", ask.dateFrom)
         assertEquals("Argentina", model.uiState.value.filter?.name)
     }
 
@@ -832,6 +849,75 @@ class AgendaViewModelTest {
         assertEquals(listOf("2026-09-06"), repository.asks.map { it.date })
         assertEquals(LocalDate.of(2026, 9, 6), model.uiState.value.chosenDay)
         assertEquals(1, model.uiState.value.days.size)
+    }
+
+    private val newey = AgendaFilter(7, "Racing", null, FollowableKind.Teams)
+
+    @Test
+    fun `narrowed to a team, the listing is open-ended and yesterday stays out`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        repository.asks.clear()
+
+        model.onIntent(AgendaIntent.Narrow(newey))
+        advanceUntilIdle()
+
+        val ask = repository.asks.single()
+        assertNull("no single day: everything from here onward", ask.date)
+        assertEquals("2026-08-30", ask.dateFrom)
+        assertEquals(7, ask.team)
+        assertNull("no foot: there is no frontier to cross", model.uiState.value.nextDayLabel)
+    }
+
+    @Test
+    fun `narrowed, a chosen day moves where the listing starts`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        model.onIntent(AgendaIntent.Narrow(newey))
+        advanceUntilIdle()
+        repository.asks.clear()
+
+        model.onIntent(AgendaIntent.PickDay(LocalDate.of(2026, 9, 12)))
+        advanceUntilIdle()
+
+        assertEquals("2026-09-12", repository.asks.single().dateFrom)
+        assertEquals(LocalDate.of(2026, 9, 12), model.uiState.value.chosenDay)
+    }
+
+    @Test
+    fun `a month is peeked once, and its lit days arrive under the narrowing`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        model.onIntent(AgendaIntent.Narrow(newey))
+        advanceUntilIdle()
+        repository.litAnswer = listOf(LocalDate.of(2026, 9, 12), LocalDate.of(2026, 9, 19))
+
+        model.onIntent(AgendaIntent.PeekMonth(YearMonth.of(2026, 9)))
+        model.onIntent(AgendaIntent.PeekMonth(YearMonth.of(2026, 9)))
+        advanceUntilIdle()
+
+        assertEquals(1, repository.dayAsks.size)
+        assertEquals(7, repository.dayAsks.single().second)
+        assertEquals(setOf(LocalDate.of(2026, 9, 12), LocalDate.of(2026, 9, 19)), model.uiState.value.litDays)
+        assertTrue(YearMonth.of(2026, 9) in model.uiState.value.litMonths)
+    }
+
+    @Test
+    fun `a failed peek leaves the month unknown, and therefore fully pressable`() = runTest(dispatcher) {
+        val model = viewModel()
+        advanceUntilIdle()
+        repository.litFailure = ApiError.Offline
+
+        model.onIntent(AgendaIntent.PeekMonth(YearMonth.of(2026, 9)))
+        advanceUntilIdle()
+
+        assertTrue(model.uiState.value.litMonths.isEmpty())
+        // Known again once the network is back: the month may be asked for anew.
+        repository.litFailure = null
+        repository.litAnswer = listOf(LocalDate.of(2026, 9, 5))
+        model.onIntent(AgendaIntent.PeekMonth(YearMonth.of(2026, 9)))
+        advanceUntilIdle()
+        assertTrue(LocalDate.of(2026, 9, 5) in model.uiState.value.litDays)
     }
 
     @Test

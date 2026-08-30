@@ -1,6 +1,7 @@
 package es.mojon.soccertime.core.network
 
 import es.mojon.soccertime.core.model.CompetitionDto
+import es.mojon.soccertime.core.model.DaysDto
 import es.mojon.soccertime.core.model.EventDto
 import es.mojon.soccertime.core.model.Page
 import es.mojon.soccertime.core.model.TeamDto
@@ -29,6 +30,14 @@ interface SoccertimeApi {
         @Query("page") page: Int?,
         @Query("page_size") pageSize: Int,
     ): Page<EventDto>
+
+    @GET("events/days/")
+    suspend fun eventDays(
+        @Query("date_from") dateFrom: String,
+        @Query("date_to") dateTo: String,
+        @Query("team") team: Int?,
+        @Query("competition") competition: Int?,
+    ): DaysDto
 
     @GET("teams/")
     suspend fun teams(

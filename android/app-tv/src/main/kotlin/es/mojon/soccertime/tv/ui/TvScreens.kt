@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,6 +71,7 @@ import es.mojon.soccertime.tv.ui.theme.TvHeading
 import es.mojon.soccertime.tv.ui.theme.TvLabel
 import es.mojon.soccertime.tv.ui.theme.TvMeta
 import es.mojon.soccertime.tv.ui.theme.TvScreenTitle
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun TvFavoritesScreen(
@@ -203,13 +205,18 @@ fun TvAgendaScreen(
             modifier = Modifier.weight(1f),
             // "Ver más" while pages of the day remain, then the day after: the remote's path
             // to the same rule the phone's foot follows — tomorrow is never reachable past an
-            // unshown tail of today.
+            // unshown tail of today. Narrowed there is no row at all: the open-ended listing
+            // feeds itself as the focus approaches its end.
             trailing = when {
+                state.filter != null -> null
                 state.canLoadMore -> stringResource(R.string.load_more) to onLoadMore
                 state.nextDayLabel != null ->
                     stringResource(R.string.load_next_day, state.nextDayLabel.orEmpty()) to onLoadNextDay
                 else -> null
             },
+            feedOnFocus = state.filter != null && state.canLoadMore,
+            loadingMore = state.filter != null && state.loading && state.days.isNotEmpty(),
+            onLoadMore = { if (state.error == null) onLoadMore() },
         )
 
         TvHints(
@@ -307,8 +314,23 @@ private fun TvEventList(
     modifier: Modifier,
     /** A focusable row after the last event — its caption, and what pressing it does. */
     trailing: Pair<String, () -> Unit>? = null,
+    /** The remote's infinite scroll: ask for the next page as the focus nears the end. */
+    feedOnFocus: Boolean = false,
+    loadingMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
+
+    if (feedOnFocus) {
+        LaunchedEffect(listState, days) {
+            snapshotFlow {
+                val info = listState.layoutInfo
+                (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - TV_FEED_AHEAD
+            }
+                .distinctUntilChanged()
+                .collect { nearTheEnd -> if (nearTheEnd) onLoadMore() }
+        }
+    }
     val opensHere = remember { FocusRequester() }
 
     // Where the list opens, and which row the cursor starts on. Both come from the anchor, so
@@ -380,8 +402,47 @@ private fun TvEventList(
         trailing?.let { (caption, press) ->
             item(key = "trailing") { TvTrailingRow(caption, press) }
         }
+
+        if (loadingMore) {
+            item(key = "loading-more") {
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TvSmallRing()
+                    Text(
+                        text = stringResource(R.string.loading_more),
+                        style = TvMeta,
+                        color = Color(Palette.ON_BACKGROUND_FAINT),
+                    )
+                }
+            }
+        }
     }
 }
+
+/** The quiet ring beside "Cargando más eventos…", when the focus outruns the network. */
+@Composable
+private fun TvSmallRing() {
+    val turning = rememberInfiniteTransition(label = "more")
+    val angle by turning.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+        label = "angle",
+    )
+    Canvas(Modifier.size(16.dp)) {
+        val stroke = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+        inset(stroke.width / 2) {
+            drawArc(color = Color(Palette.HAIRLINE), startAngle = 0f, sweepAngle = 360f, useCenter = false, style = stroke)
+            drawArc(color = Color(Palette.PRIMARY), startAngle = angle, sweepAngle = 100f, useCenter = false, style = stroke)
+        }
+    }
+}
+
+/** Rows left below the viewport's end when the next page is asked for, focus-driven. */
+private const val TV_FEED_AHEAD = 6
 
 /** The focusable way past the end of the listing: more of this day, or the next one. */
 @Composable

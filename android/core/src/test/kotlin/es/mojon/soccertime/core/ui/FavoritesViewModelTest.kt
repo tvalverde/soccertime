@@ -62,6 +62,9 @@ class FavoritesViewModelTest {
 
         override suspend fun onDate(query: AgendaQuery) =
             upcoming(LocalDate.EPOCH, LocalDate.EPOCH, query.page)
+
+        override suspend fun days(from: LocalDate, until: LocalDate, team: Int?, competition: Int?) =
+            ApiResult.Success(emptyList<LocalDate>())
     }
 
     private class Movable(var now: Instant) : Clock() {

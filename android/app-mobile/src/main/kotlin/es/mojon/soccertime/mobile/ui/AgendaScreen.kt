@@ -24,6 +24,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,8 +35,10 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -69,6 +72,7 @@ import es.mojon.soccertime.core.ui.SoccertimeIcons
 import es.mojon.soccertime.mobile.R
 import es.mojon.soccertime.mobile.ui.theme.DayHeadingStyle
 import java.time.LocalDate
+import java.time.YearMonth
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -95,7 +99,11 @@ fun AgendaScreen(
             dayLabel = dayLabel,
             onWatchableOnly = { onIntent(AgendaIntent.OnlyWatchable(it)) },
             onClearFilter = { onIntent(AgendaIntent.Narrow(null)) },
-            onChooseDay = { choosingDay = true },
+            onChooseDay = {
+                // Asked before the dialog exists, so the index usually beats the grid.
+                onIntent(AgendaIntent.PeekMonth(YearMonth.from(state.day)))
+                choosingDay = true
+            },
             onClearDay = { onIntent(AgendaIntent.PickDay(null)) },
             modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
         )
@@ -157,6 +165,9 @@ fun AgendaScreen(
     if (choosingDay) {
         DayPickerDialog(
             shown = state.day,
+            litDays = state.litDays,
+            litMonths = state.litMonths,
+            onPeekMonth = { onIntent(AgendaIntent.PeekMonth(it)) },
             onPick = { day ->
                 choosingDay = false
                 onIntent(AgendaIntent.PickDay(day))
@@ -174,8 +185,35 @@ fun AgendaScreen(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DayPickerDialog(shown: LocalDate, onPick: (LocalDate) -> Unit, onDismiss: () -> Unit) {
-    val picker = rememberDatePickerState(initialSelectedDateMillis = shown.toEpochDay() * MILLIS_PER_DAY)
+private fun DayPickerDialog(
+    shown: LocalDate,
+    litDays: Set<LocalDate>,
+    litMonths: Set<YearMonth>,
+    onPeekMonth: (YearMonth) -> Unit,
+    onPick: (LocalDate) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // Days without events are dimmed and refuse the press — but only in months the index
+    // has answered for. An unknown month stays fully pressable: the dimming is a nicety,
+    // and a nicety that failed to load must never lock a date away.
+    val lit = rememberUpdatedState(litDays)
+    val known = rememberUpdatedState(litMonths)
+    val picker = rememberDatePickerState(
+        initialSelectedDateMillis = shown.toEpochDay() * MILLIS_PER_DAY,
+        selectableDates = remember {
+            object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                    val day = LocalDate.ofEpochDay(utcTimeMillis / MILLIS_PER_DAY)
+                    return YearMonth.from(day) !in known.value || day in lit.value
+                }
+            }
+        },
+    )
+    // Asked month by month as the reader flips, so the index never costs more than what is
+    // actually looked at.
+    LaunchedEffect(picker.displayedMonthMillis) {
+        onPeekMonth(YearMonth.from(LocalDate.ofEpochDay(picker.displayedMonthMillis / MILLIS_PER_DAY)))
+    }
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -191,7 +229,13 @@ private fun DayPickerDialog(shown: LocalDate, onPick: (LocalDate) -> Unit, onDis
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.pick_day_cancel)) }
         },
     ) {
-        DatePicker(state = picker, showModeToggle = false)
+        // The picker builds its month grid once and never asks `isSelectableDate` again, so
+        // an index that lands a beat after the dialog opened would dim nothing until the
+        // reader flipped months. Keying the composable on the index rebuilds the grid the
+        // moment an answer arrives; the state object survives, so the month stays put.
+        key(litDays, litMonths) {
+            DatePicker(state = picker, showModeToggle = false)
+        }
     }
 }
 
@@ -529,6 +573,7 @@ private fun Filters(
         }
         DayChip(
             chosen = state.chosenDay?.let(dayLabel),
+            narrowed = filter != null,
             onChoose = onChooseDay,
             onClear = onClearDay,
         )
@@ -549,7 +594,7 @@ private fun Filters(
  * kind of thing: a filter the reader applied and can take off.
  */
 @Composable
-private fun DayChip(chosen: String?, onChoose: () -> Unit, onClear: () -> Unit) {
+private fun DayChip(chosen: String?, narrowed: Boolean, onChoose: () -> Unit, onClear: () -> Unit) {
     if (chosen == null) {
         Row(
             Modifier
@@ -569,7 +614,8 @@ private fun DayChip(chosen: String?, onChoose: () -> Unit, onClear: () -> Unit) 
                 modifier = Modifier.size(14.dp),
             )
             Text(
-                text = stringResource(R.string.filter_today),
+                // Narrowed, the listing is open-ended and yesterday is not on it.
+                text = stringResource(if (narrowed) R.string.from_today else R.string.filter_today),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.5.sp,
                 fontWeight = FontWeight.SemiBold,
