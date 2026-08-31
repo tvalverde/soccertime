@@ -420,16 +420,20 @@ class BaseLinkImportCommand(BaseCommand):
 
                 category = re.sub(r" \d+", "", channel_name).title()
 
+                defaults: dict[str, Any] = {
+                    "name": channel_name.title(),
+                    "category": category,
+                    "subcategory": subcategory.title() if subcategory else None,
+                }
+                # ANY means the entry carries no tag, not that the quality is unknown to
+                # everyone: a later list naming the same hash untagged must not erase what
+                # an earlier one recorded. A link being created still gets the model's
+                # default, and an explicit tag still replaces the stored one.
+                if quality != ChannelLink.Quality.ANY:
+                    defaults["quality"] = quality
+
                 try:
-                    channel_link, created = ChannelLink.objects.update_or_create(
-                        link=link,
-                        defaults={
-                            "name": channel_name.title(),
-                            "category": category,
-                            "subcategory": subcategory.title() if subcategory else None,
-                            "quality": quality,
-                        },
-                    )
+                    channel_link, created = ChannelLink.objects.update_or_create(link=link, defaults=defaults)
                 except ValidationError:
                     # These files come from outside the project, so one unusable entry
                     # must be reported and stepped over rather than abandoning the

@@ -12,6 +12,19 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Fixed
+- **An untagged link import no longer erases a known quality.** `addlinksource` writes every
+  entry with `update_or_create`, so a list naming a hash without a quality tag reset the
+  stored quality to `ANY` — the 2026-08-31 newera import degraded 28 links elcano had just
+  tagged 720p/1080p. `ANY` now means "the entry says nothing" and leaves the stored value
+  alone; an explicit tag still replaces it, and a link being created still starts at the
+  model's default.
+- **The newera parser accepts the arrow glued to the name.** Real lists write
+  `DAZN FIFA 1--> NEW ERA III`; the parser required ` --> ` with spaces and dropped five such
+  lines as malformed. The separator is now `-->` with optional surrounding whitespace, and
+  each of those lines keeps its channel number with the name, so `DAZN FIFA 1` and
+  `DAZN FIFA 2` land on their own channels.
+
 ## [0.11.0] - 2026-08-30
 
 ### Added

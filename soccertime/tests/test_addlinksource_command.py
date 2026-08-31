@@ -222,6 +222,63 @@ acestream://ffffffffffffffffffffffffffffffffffffffff
         link = ChannelLink.objects.get(link="acestream://ffffffffffffffffffffffffffffffffffffffff")
         assert tennis.links.filter(pk=link.pk).exists()
 
+    def test_addlinksource_newera_accepts_a_spaceless_separator(self, tmp_path):
+        """Real lists glue the name to the arrow ("DAZN FIFA 1--> NEW ERA III").
+
+        Each of those lines names its own numbered channel, so the pair must keep the
+        number with the name and land on that channel alone.
+        """
+        fifa_1 = Channel.objects.create(name="DAZN FIFA 1")
+        fifa_2 = Channel.objects.create(name="DAZN FIFA 2")
+
+        source_file = tmp_path / "test_newera_spaceless_separator.txt"
+        source_file.write_text(
+            "DAZN FIFA 1--> NEW ERA III\nacestream://7777777777777777777777777777777777777777\n"
+            "DAZN FIFA 2--> NEW ERA III\nacestream://8888888888888888888888888888888888888888\n",
+            encoding="utf-8",
+        )
+
+        call_command("addlinksource", "--source=newera", f"--file={source_file}")
+
+        link_1 = ChannelLink.objects.get(link="acestream://7777777777777777777777777777777777777777")
+        link_2 = ChannelLink.objects.get(link="acestream://8888888888888888888888888888888888888888")
+        assert fifa_1.links.filter(pk=link_1.pk).exists()
+        assert fifa_2.links.filter(pk=link_2.pk).exists()
+        assert not fifa_1.links.filter(pk=link_2.pk).exists()
+        assert not fifa_2.links.filter(pk=link_1.pk).exists()
+
+    def test_addlinksource_update_keeps_quality_when_the_entry_carries_none(self, tmp_path):
+        """A later list naming the same hash untagged must not erase a known quality."""
+        Channel.objects.create(name="DAZN 1")
+        link_url = "acestream://1212121212121212121212121212121212121212"
+
+        tagged_file = tmp_path / "tagged.txt"
+        tagged_file.write_text(f"DAZN 1 FHD --> NEW ERA\n{link_url}\n", encoding="utf-8")
+        call_command("addlinksource", "--source=newera", f"--file={tagged_file}")
+
+        untagged_file = tmp_path / "untagged.txt"
+        untagged_file.write_text(f"DAZN 1 --> ELCANO\n{link_url}\n", encoding="utf-8")
+        call_command("addlinksource", "--source=newera", f"--file={untagged_file}")
+
+        link = ChannelLink.objects.get(link=link_url)
+        assert link.quality == ChannelLink.Quality.FHD
+
+    def test_addlinksource_update_retags_quality_when_the_entry_names_one(self, tmp_path):
+        """An explicit tag is information, and a different one replaces the stored quality."""
+        Channel.objects.create(name="DAZN 1")
+        link_url = "acestream://3434343434343434343434343434343434343434"
+
+        fhd_file = tmp_path / "fhd.txt"
+        fhd_file.write_text(f"DAZN 1 FHD --> NEW ERA\n{link_url}\n", encoding="utf-8")
+        call_command("addlinksource", "--source=newera", f"--file={fhd_file}")
+
+        hd_file = tmp_path / "hd.txt"
+        hd_file.write_text(f"DAZN 1 HD --> ELCANO\n{link_url}\n", encoding="utf-8")
+        call_command("addlinksource", "--source=newera", f"--file={hd_file}")
+
+        link = ChannelLink.objects.get(link=link_url)
+        assert link.quality == ChannelLink.Quality.HD
+
     def test_addlinksource_newera_sky_sports_laliga_maps_to_dazn_laliga(self, tmp_path):
         dazn_laliga = Channel.objects.create(name="DAZN LaLiga")
 

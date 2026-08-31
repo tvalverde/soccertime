@@ -7,6 +7,10 @@ from django.core.management.base import CommandError
 
 from soccertime.management.commands._link_import_base import BaseLinkImportCommand, ParsedEntry
 
+# The published lists sometimes glue the name to the arrow ("DAZN FIFA 1--> NEW ERA III"),
+# so the spaces around it are optional rather than part of the separator.
+SOURCE_SEPARATOR_RE = re.compile(r"\s*-->\s*")
+
 
 class Command(BaseLinkImportCommand):
     help = "Import channel links from different sources, read from a file or a URL"
@@ -40,10 +44,10 @@ class Command(BaseLinkImportCommand):
         for i in range(0, len(lines), 2):
             name_line = lines[i]
             link_line = lines[i + 1]
-            if " --> " not in name_line:
+            if "-->" not in name_line:
                 self.warnings.append(f"Malformed name line: {name_line}")
                 continue
-            raw_name, source_label = name_line.split(" --> ", 1)
+            raw_name, source_label = SOURCE_SEPARATOR_RE.split(name_line, 1)
 
             name_norm, quality = self.extract_name_parts(raw_name)
             subcategory = source_label.strip().lower() if source_label else None
