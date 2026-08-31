@@ -585,7 +585,7 @@ def channels(request: HttpRequest) -> HttpResponse:
             continue
 
         categories: dict[str, dict[str, list[ChannelLink]]] = {}
-        unmatched = []
+        unmatched: list[dict[str, Any]] = []
         for link in source_links:
             if not link.channels.all():
                 quality = link.quality if link.quality != ChannelLink.Quality.ANY else None
@@ -596,9 +596,9 @@ def channels(request: HttpRequest) -> HttpResponse:
             category_name = link.category or str(_("General"))
             categories.setdefault(category_name, {}).setdefault(link.name, []).append(link)
 
-        category_entries = []
+        category_entries: list[dict[str, Any]] = []
         for category_name, groups in categories.items():
-            group_entries = [
+            group_entries: list[dict[str, Any]] = [
                 {
                     "name": group_name,
                     "links": group_links,

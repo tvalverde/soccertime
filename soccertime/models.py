@@ -2,7 +2,7 @@ import datetime
 import hashlib
 import io
 from collections.abc import Sequence
-from typing import Any, ClassVar, Self, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 from urllib.parse import urlparse
 
 from django.core.cache import cache
@@ -17,6 +17,9 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from soccertime.images import extension_for
+
+if TYPE_CHECKING:
+    from django.db.models.fields.related_descriptors import RelatedManager
 
 ALLOWED_LINK_SCHEMES = ["http", "https", "ftp", "ftps", "acestream", "sop", "intent", "rtmp", "m3u8"]
 standard_url_validator = URLValidator(schemes=["http", "https", "ftp", "ftps"])
@@ -336,6 +339,11 @@ class ChannelLink(models.Model):
     date_updated = models.DateTimeField(auto_now=True)
     enabled = models.BooleanField(default=True)
     verified = models.BooleanField(default=False)
+
+    if TYPE_CHECKING:
+        # The reverse of Channel.links, which mypy's plugin cannot infer through that
+        # field's explicit annotation.
+        channels: "RelatedManager[Channel]"
 
     class Meta:
         verbose_name_plural = "channels links"
