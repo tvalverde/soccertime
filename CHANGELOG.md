@@ -12,6 +12,8 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-31
+
 ### Added
 - **The channels page starts at the source.** One tab per link source (Elcano, Newera,
   Tokyo…) with its link count, then the category accordion and the name cards as before.
