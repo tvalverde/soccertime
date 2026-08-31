@@ -116,7 +116,7 @@ acestream://4444444444444444444444444444444444444444
         assert fhd_link.quality == ChannelLink.Quality.FHD
         assert uhd_link.quality == ChannelLink.Quality.UHD
 
-    def test_importm3u_unmatched_channel_discarded(self, tmp_path):
+    def test_importm3u_unmatched_channel_stored_without_association(self, tmp_path):
         playlist = write_m3u(
             tmp_path,
             """#EXTINF:-1 group-title="MUNDIAL",FUSSBALL TV
@@ -127,7 +127,9 @@ acestream://5555555555555555555555555555555555555555
         out = StringIO()
         call_command("importm3u", f"--file={playlist}", stdout=out)
 
-        assert ChannelLink.objects.count() == 0
+        link = ChannelLink.objects.get(link="acestream://5555555555555555555555555555555555555555")
+        assert link.channels.count() == 0
+        assert link.sources.filter(name="MUNDIAL").exists()
         assert "Channel not found" in out.getvalue()
 
     def test_importm3u_dry_run(self, tmp_path):
@@ -147,6 +149,7 @@ acestream://6666666666666666666666666666666666666666
         assert "DRY RUN" in out.getvalue()
 
     def test_importm3u_invalid_hash_skipped(self, tmp_path):
+        """The broken entries are skipped with a warning while the valid one lands."""
         Channel.objects.create(name="DAZN Mundial 1")
 
         playlist = write_m3u(
@@ -156,13 +159,16 @@ acestream://xyz
 
 #EXTINF:-1 group-title="MUNDIAL",DAZN Mundial 1
 123456789012345678901234567890123456789
+
+#EXTINF:-1 group-title="MUNDIAL",DAZN Mundial 1
+acestream://1111111111111111111111111111111111111111
 """,
         )
 
         out = StringIO()
         call_command("importm3u", f"--file={playlist}", stdout=out)
 
-        assert ChannelLink.objects.count() == 0
+        assert ChannelLink.objects.count() == 1
         assert "Invalid hash" in out.getvalue()
         assert "Non-acestream URL" in out.getvalue()
 
@@ -173,13 +179,17 @@ acestream://xyz
             tmp_path,
             """#EXTINF:-1 group-title="MUNDIAL",DAZN Mundial 1
 http://example.com/stream.m3u8
+
+#EXTINF:-1 group-title="MUNDIAL",DAZN Mundial 1
+acestream://2222222222222222222222222222222222222222
 """,
         )
 
         out = StringIO()
         call_command("importm3u", f"--file={playlist}", stdout=out)
 
-        assert ChannelLink.objects.count() == 0
+        assert not ChannelLink.objects.filter(link="http://example.com/stream.m3u8").exists()
+        assert ChannelLink.objects.count() == 1
         assert "Non-acestream URL" in out.getvalue()
 
     def test_importm3u_bare_hash_accepted(self, tmp_path):
@@ -233,7 +243,8 @@ acestream://abcdefabcdefabcdefabcdefabcdefabcdefabcd
         out = StringIO()
         call_command("importm3u", f"--file={playlist}", stdout=out)
 
-        assert ChannelLink.objects.count() == 0
+        link = ChannelLink.objects.get(link="acestream://abcdefabcdefabcdefabcdefabcdefabcdefabcd")
+        assert link.channels.count() == 0
         assert "Channel not found" in out.getvalue()
 
     def test_importm3u_orphan_directives(self, tmp_path):

@@ -9,17 +9,6 @@ from soccertime.rendering import image_markup
 
 
 @register.filter
-def sort_by_list_length(regroup_list: Any, reverse: str = "True") -> list[Any]:
-    """Order regroup results by how many items each group holds, largest first.
-
-    Usage: {% regroup items by field as grouped %}{{ grouped|sort_by_list_length }}
-    """
-    reverse_bool = str(reverse).lower() not in ("false", "0", "")
-    items = list(regroup_list)
-    return sorted(items, key=lambda x: len(x.list), reverse=reverse_bool)
-
-
-@register.filter
 def marked_favorite(parent_event: Any, selection: Any) -> bool:
     """Whether a listing row carries the gold border, for whoever is reading the page.
 
@@ -38,31 +27,6 @@ def marked_favorite(parent_event: Any, selection: Any) -> bool:
         return True
     child = parent_event.child_event
     return isinstance(child, Match) and (child.local_id in selection.teams or child.visitor_id in selection.teams)
-
-
-@register.filter
-def normalize_subcategory(value: Any) -> str:
-    """Normalise a subcategory for comparisons and querystrings.
-
-    None would render as the string "None" in a querystring, which then fails to match
-    the tab it came from; both None and the empty string collapse to empty.
-    """
-    if value is None or value == "":
-        return ""
-    return str(value)
-
-
-@register.filter
-def sort_categories_by_total_links(regroup_list: Any, reverse: str = "True") -> list[Any]:
-    """Order categories by how many links they hold in total, largest first."""
-    reverse_bool = str(reverse).lower() not in ("false", "0", "")
-    items = list(regroup_list)
-
-    def count_total_links(category_group: Any) -> int:
-        # The group holds one entry per link, so its length is the total
-        return len(category_group.list)
-
-    return sorted(items, key=count_total_links, reverse=reverse_bool)
 
 
 @register.filter

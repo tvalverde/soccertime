@@ -295,6 +295,147 @@ acestream://9999999999999999999999999999999999999999
 
 
 @pytest.mark.django_db
+class TestAddLinkSourceUnmatchedAndPrune:
+    """Unmatched links are stored, and every import prunes its source to its list."""
+
+    def test_unmatched_entry_is_stored_without_channel(self, tmp_path, capsys):
+        source_file = tmp_path / "newera.txt"
+        source_file.write_text(
+            "Totally Unknown Channel --> NEW ERA\nacestream://1111111111111111111111111111111111111111\n",
+            encoding="utf-8",
+        )
+
+        call_command("addlinksource", "--source=newera", f"--file={source_file}")
+
+        link = ChannelLink.objects.get(link="acestream://1111111111111111111111111111111111111111")
+        assert link.channels.count() == 0
+        assert link.sources.filter(name="NEWERA").exists()
+        output = capsys.readouterr().out
+        assert "Unmatched links (stored)" in output
+
+    def test_prune_removes_delisted_link_and_deletes_orphan(self, tmp_path, capsys):
+        Channel.objects.create(name="DAZN 1")
+        Channel.objects.create(name="DAZN 2")
+
+        both = tmp_path / "both.txt"
+        both.write_text(
+            "DAZN 1 --> NEW ERA\nacestream://1111111111111111111111111111111111111111\n"
+            "DAZN 2 --> NEW ERA\nacestream://2222222222222222222222222222222222222222\n",
+            encoding="utf-8",
+        )
+        call_command("addlinksource", "--source=newera", f"--file={both}")
+
+        only_first = tmp_path / "only_first.txt"
+        only_first.write_text(
+            "DAZN 1 --> NEW ERA\nacestream://1111111111111111111111111111111111111111\n",
+            encoding="utf-8",
+        )
+        call_command("addlinksource", "--source=newera", f"--file={only_first}")
+
+        assert ChannelLink.objects.filter(link="acestream://1111111111111111111111111111111111111111").exists()
+        assert not ChannelLink.objects.filter(link="acestream://2222222222222222222222222222222222222222").exists()
+        assert "Pruned from source" in capsys.readouterr().out
+
+    def test_prune_spares_link_alive_in_another_source(self, tmp_path):
+        Channel.objects.create(name="DAZN 1")
+        shared = "DAZN 1\nacestream://3333333333333333333333333333333333333333\n"
+
+        elcano_file = tmp_path / "elcano.txt"
+        elcano_file.write_text(f"=== DAZN ===\n\n{shared}", encoding="utf-8")
+        call_command("addlinksource", "--source=elcano", f"--file={elcano_file}")
+
+        newera_file = tmp_path / "newera.txt"
+        newera_file.write_text(
+            "DAZN 1 --> NEW ERA\nacestream://3333333333333333333333333333333333333333\n",
+            encoding="utf-8",
+        )
+        call_command("addlinksource", "--source=newera", f"--file={newera_file}")
+
+        elcano_without = tmp_path / "elcano_without.txt"
+        elcano_without.write_text(
+            "=== DAZN ===\n\nDAZN 1\nacestream://4444444444444444444444444444444444444444\n",
+            encoding="utf-8",
+        )
+        call_command("addlinksource", "--source=elcano", f"--file={elcano_without}")
+
+        survivor = ChannelLink.objects.get(link="acestream://3333333333333333333333333333333333333333")
+        assert [source.name for source in survivor.sources.all()] == ["NEWERA"]
+
+    def test_prune_ignores_handmade_sourceless_links(self, tmp_path):
+        Channel.objects.create(name="DAZN 1")
+        handmade = ChannelLink.objects.create(
+            name="Handmade", link="acestream://5555555555555555555555555555555555555555"
+        )
+
+        source_file = tmp_path / "newera.txt"
+        source_file.write_text(
+            "DAZN 1 --> NEW ERA\nacestream://6666666666666666666666666666666666666666\n",
+            encoding="utf-8",
+        )
+        call_command("addlinksource", "--source=newera", f"--file={source_file}")
+
+        assert ChannelLink.objects.filter(pk=handmade.pk).exists()
+
+    def test_zero_valid_entries_aborts_without_pruning(self, tmp_path):
+        """An empty parse reads as a truncated download, and pruning on it would wipe the source."""
+        Channel.objects.create(name="DAZN 1")
+        seeded = tmp_path / "seeded.txt"
+        seeded.write_text(
+            "DAZN 1 --> NEW ERA\nacestream://7777777777777777777777777777777777777777\n",
+            encoding="utf-8",
+        )
+        call_command("addlinksource", "--source=newera", f"--file={seeded}")
+
+        garbage = tmp_path / "garbage.txt"
+        garbage.write_text("no arrow here\nnothing valid either\n", encoding="utf-8")
+        with pytest.raises(CommandError, match="No valid entries"):
+            call_command("addlinksource", "--source=newera", f"--file={garbage}")
+
+        link = ChannelLink.objects.get(link="acestream://7777777777777777777777777777777777777777")
+        assert link.sources.filter(name="NEWERA").exists()
+
+    def test_dry_run_reports_prune_but_changes_nothing(self, tmp_path, capsys):
+        Channel.objects.create(name="DAZN 1")
+        Channel.objects.create(name="DAZN 2")
+        both = tmp_path / "both.txt"
+        both.write_text(
+            "DAZN 1 --> NEW ERA\nacestream://8888888888888888888888888888888888888888\n"
+            "DAZN 2 --> NEW ERA\nacestream://9999999999999999999999999999999999999999\n",
+            encoding="utf-8",
+        )
+        call_command("addlinksource", "--source=newera", f"--file={both}")
+        capsys.readouterr()
+
+        only_first = tmp_path / "only_first.txt"
+        only_first.write_text(
+            "DAZN 1 --> NEW ERA\nacestream://8888888888888888888888888888888888888888\n",
+            encoding="utf-8",
+        )
+        call_command("addlinksource", "--source=newera", f"--file={only_first}", "--dry")
+
+        assert "Pruned from source" in capsys.readouterr().out
+        delisted = ChannelLink.objects.get(link="acestream://9999999999999999999999999999999999999999")
+        assert delisted.sources.filter(name="NEWERA").exists()
+
+    def test_rejected_scheme_entry_is_not_counted_as_seen(self):
+        """A row the project refuses to store must not stay attached through a rejected entry."""
+        from soccertime.management.commands.addlinksource import Command
+        from soccertime.models import ChannelLinkSource
+
+        source, _ = ChannelLinkSource.get_or_create_by_name("NEWERA")
+        row = ChannelLink.objects.create(
+            name="Predates The Validator", link="acestream://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+        ChannelLink.objects.filter(pk=row.pk).update(link="javascript:alert(1)")
+        row.sources.add(source)
+
+        command = Command()
+        command.import_entries([("some name", None, ChannelLink.Quality.ANY, "javascript:alert(1)")], "NEWERA", False)
+
+        assert not ChannelLink.objects.filter(pk=row.pk).exists()
+
+
+@pytest.mark.django_db
 class TestAddLinkSourceOrigin:
     """`--file` and `--url` are the two ways in, and exactly one must be given."""
 

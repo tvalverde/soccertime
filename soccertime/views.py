@@ -13,6 +13,7 @@ from django.utils.cache import patch_vary_headers
 from django.utils.dateparse import parse_date
 from django.utils.functional import Promise
 from django.utils.http import urlencode
+from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import cache_control, cache_page
 from django.views.decorators.http import require_POST
@@ -21,6 +22,7 @@ from soccertime.models import (
     CHANNEL_LINK_ORDERING,
     Channel,
     ChannelLink,
+    ChannelLinkSource,
     Competition,
     Event,
     Favorite,
@@ -29,6 +31,7 @@ from soccertime.models import (
     Team,
     start_of_today,
 )
+from soccertime.text import fold
 from soccertime.visitor_favorites import EntityKind, Selection, read_selection, write_selection
 
 
@@ -553,17 +556,90 @@ def toggle_favorite_competition(request: HttpRequest, competition: int) -> HttpR
     return _toggle_favorite(request, "competition", competition, "competition-events")
 
 
+def _folded_search_text(*parts: "str | None") -> str:
+    """What the page filter matches a card against: its texts, folded, deduplicated."""
+    return fold(" ".join(dict.fromkeys(part for part in parts if part)))
+
+
 @cached_page
 def channels(request: HttpRequest) -> HttpResponse:
-    # The template regroups by subcategory, category and name; those keys come first so
-    # the grouping works, and the model's own ordering decides the order inside each card.
-    # Without it the links of a card come back in whatever order the database chose.
-    queryset = ChannelLink.objects.order_by("category", "subcategory", "name", *CHANNEL_LINK_ORDERING)
+    """Every enabled source with its links, grouped in Python into one cached body.
+
+    Source, then category, then name; links whose channels are empty travel apart as the
+    source's "unmatched" list. Grouped here rather than with template `regroup`s because
+    the old template's tabs read `?subcategory=` while the view ignored it, which grew an
+    unbounded set of identical hour-long cache entries. This page reads no GET parameter:
+    the client switches tabs and filters on its own, and the URL hash carries deep links.
+    """
+    links = ChannelLink.objects.order_by(*CHANNEL_LINK_ORDERING).prefetch_related("sources", "channels")
+
+    links_by_source: dict[int, list[ChannelLink]] = {}
+    for link in links:
+        for source in link.sources.all():
+            links_by_source.setdefault(source.pk, []).append(link)
+
+    sources = []
+    for source in ChannelLinkSource.objects.filter(enabled=True):
+        source_links = links_by_source.get(source.pk, [])
+        if not source_links:
+            continue
+
+        categories: dict[str, dict[str, list[ChannelLink]]] = {}
+        unmatched = []
+        for link in source_links:
+            if not link.channels.all():
+                quality = link.quality if link.quality != ChannelLink.Quality.ANY else None
+                unmatched.append(
+                    {"link": link, "search_text": _folded_search_text(link.name, link.subcategory, quality)}
+                )
+                continue
+            category_name = link.category or str(_("General"))
+            categories.setdefault(category_name, {}).setdefault(link.name, []).append(link)
+
+        category_entries = []
+        for category_name, groups in categories.items():
+            group_entries = [
+                {
+                    "name": group_name,
+                    "links": group_links,
+                    "search_text": _folded_search_text(
+                        group_name,
+                        category_name,
+                        *(group_link.subcategory for group_link in group_links),
+                        *(
+                            group_link.quality
+                            for group_link in group_links
+                            if group_link.quality != ChannelLink.Quality.ANY
+                        ),
+                    ),
+                }
+                for group_name, group_links in groups.items()
+            ]
+            group_entries.sort(key=lambda group: len(group["links"]), reverse=True)
+            category_entries.append(
+                {
+                    "name": category_name,
+                    "count": sum(len(group["links"]) for group in group_entries),
+                    "groups": group_entries,
+                }
+            )
+        category_entries.sort(key=lambda category: category["count"], reverse=True)
+
+        sources.append(
+            {
+                "source": source,
+                "slug": slugify(str(source)) or f"source-{source.pk}",
+                "total": len(source_links),
+                "categories": category_entries,
+                "unmatched": unmatched,
+            }
+        )
+
     return render(
         request,
         "soccertime/channels.html",
         {
-            "channels_links": queryset,
+            "sources": sources,
             **empty_state(NO_CHANNELS_MESSAGE, "danger"),
         },
     )

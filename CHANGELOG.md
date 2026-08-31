@@ -12,6 +12,34 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Added
+- **The channels page starts at the source.** One tab per link source (Elcano, Newera,
+  Tokyo…) with its link count, then the category accordion and the name cards as before.
+  Every source travels in the same page and the tab switches client-side with the URL hash
+  (`#elcano`) as the deep link — the old `?subcategory=` tabs were template-side over a
+  view that ignored them, so every value minted another identical hour-long cache entry;
+  now the page caches once.
+- **"Enlaces sin canal": links that match no catalogued channel.** Each source's page ends
+  with the links the importer could not associate — dashed cards carrying the name the
+  list gave them, their subcategory, and the quality next to each play button. They were
+  discarded until now, and they are often exactly the feed one needs.
+- **A page filter that covers channels and loose links alike.** Every card carries its
+  searchable text (name, category, subcategory, link names and qualities) folded of case
+  and accents, so "futbol" finds "Fútbol"; matching categories auto-expand, each source
+  tab shows its match count, and a summary line totals the hits per source. Client-side,
+  from this origin, with no new requests.
+
+### Changed
+- **An import now prunes its source down to exactly what the list brought.** Links a
+  source's list stopped carrying lose that source, and a link left with no source at all
+  is deleted by the existing orphan cleanup — a dead link no longer keeps its play button,
+  nor its event marked watchable, forever. An import whose parse yields zero valid entries
+  aborts instead of running, so a truncated download cannot empty a source. **The first
+  import of each source after this release will delete the stale links accumulated since
+  that source began** (measured against a production copy: 86 for elcano, 230 for newera).
+- Links that match no channel are stored (and listed by the new section) rather than
+  discarded; the "Channel not found" warning now says so.
+
 ## [0.11.1] - 2026-08-31
 
 ### Fixed

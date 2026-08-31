@@ -1,7 +1,5 @@
 import re
-import unicodedata
 from collections.abc import Iterable
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypedDict
 from urllib.parse import urlparse
@@ -13,6 +11,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from soccertime.models import Channel, ChannelLink, ChannelLinkSource
+from soccertime.text import fold
 
 EXTINF_RE = re.compile(
     r"^#EXTINF:\s*-?\d+(?:\.\d+)?"  # duration: -1, 0, 10.5
@@ -40,21 +39,6 @@ class PendingEntry(TypedDict):
 
     name: str
     group_title: str | None
-
-
-@lru_cache(maxsize=2048)
-def fold(text: str) -> str:
-    """Lower case and drop the diacritics, so a name can be compared to a catalogue entry.
-
-    67 of the 568 channels in production carry an accent and the published lists usually
-    do not: "Aragon TV" found no channel, and every link naming it was dropped. Only the
-    comparison is folded — the name that reaches the database keeps its accents.
-
-    Cached because the catalogue is asked about once per entry and never changes within a
-    run, so the same few hundred names would otherwise be decomposed thousands of times.
-    """
-    decomposed = unicodedata.normalize("NFKD", text.lower())
-    return "".join(character for character in decomposed if not unicodedata.combining(character))
 
 
 def _named_exactly_or_bracketed(channel_name: str, wanted: str) -> bool:
@@ -396,7 +380,20 @@ class BaseLinkImportCommand(BaseCommand):
     # Persistence
     # ------------------------------------------------------------------
     def import_entries(self, entries: Iterable[ParsedEntry], source_name: str, dry_run: bool) -> None:
-        """Persist (channel_name, subcategory, quality, link) tuples."""
+        """Persist (channel_name, subcategory, quality, link) tuples, then prune the source.
+
+        After a run the source holds exactly the links its list brought: entries whose
+        channel cannot be found are stored anyway (the channels page lists them under
+        "Enlaces sin canal"), and links the list stopped carrying lose the source.
+        """
+        entries = list(entries)
+        if not entries:
+            # A parse that yields nothing reads as a truncated or empty download, and the
+            # prune below would take it at its word and empty the source. Failing loudly
+            # reaches cron's log and the Make wrapper's exit code; deliberately emptying
+            # a source is the admin's delete button, which the orphan cleanup follows.
+            raise CommandError(f"No valid entries parsed for {source_name}: refusing to import (and prune)")
+
         source_obj, _ = ChannelLinkSource.get_or_create_by_name(source_name)
 
         stats = {
@@ -404,9 +401,11 @@ class BaseLinkImportCommand(BaseCommand):
             "new_links": 0,
             "updated_links": 0,
             "linked_links": 0,
-            "channels_not_found": 0,
+            "unmatched_links": 0,
             "rejected_links": 0,
+            "pruned_links": 0,
         }
+        seen_pks: set[int] = set()
 
         with transaction.atomic():
             for channel_name, subcategory, quality, link in entries:
@@ -414,9 +413,9 @@ class BaseLinkImportCommand(BaseCommand):
 
                 channels = self.match_channels(channel_name)
                 if not channels:
-                    self.warnings.append(f"Channel not found: {channel_name}")
-                    stats["channels_not_found"] += 1
-                    continue
+                    # The warning stays because it drives catalogue and fix_name curation.
+                    self.warnings.append(f"Channel not found (link stored without channel): {channel_name}")
+                    stats["unmatched_links"] += 1
 
                 category = re.sub(r" \d+", "", channel_name).title()
 
@@ -441,6 +440,11 @@ class BaseLinkImportCommand(BaseCommand):
                     self.warnings.append(f"Rejected link with a disallowed scheme for {channel_name}: {link[:60]}")
                     stats["rejected_links"] += 1
                     continue
+
+                # A rejected entry deliberately never reaches this point: a stored row an
+                # import cannot re-create should not stay attached to the source either,
+                # so the prune below is what detaches (and orphan-deletes) it.
+                seen_pks.add(channel_link.pk)
 
                 if not dry_run:
                     channel_link.sources.add(source_obj)
@@ -473,6 +477,16 @@ class BaseLinkImportCommand(BaseCommand):
                     stats["linked_links"] += 1
                     self.stdout.write(f"  Linked to: {channel.name}")
 
+            # The source ends holding exactly what this list brought. Removing the source
+            # is enough: `delete_orphan_channel_links_on_m2m` deletes any link left with
+            # no sources at all, and a link another source still lists survives there.
+            # In a dry run `sources.add` was skipped, but every processed entry still
+            # reached `seen_pks`, so the stale set matches what a real run would remove.
+            stale_links = list(source_obj.links.exclude(pk__in=seen_pks))
+            if stale_links:
+                source_obj.links.remove(*stale_links)
+                stats["pruned_links"] = len(stale_links)
+
             if dry_run:
                 # Everything above ran against the database so the counts are real; the
                 # rollback undoes it on the way out, with no exception to catch.
@@ -491,7 +505,8 @@ class BaseLinkImportCommand(BaseCommand):
         self.stdout.write(f"New links:            {stats['new_links']}")
         self.stdout.write(f"Updated links:        {stats['updated_links']}")
         self.stdout.write(f"Links linked:         {stats['linked_links']}")
-        self.stdout.write(f"Channels not found:   {stats['channels_not_found']}")
+        self.stdout.write(f"Unmatched links (stored): {stats['unmatched_links']}")
+        self.stdout.write(f"Pruned from source:   {stats['pruned_links']}")
         if stats["rejected_links"]:
             self.stdout.write(self.style.ERROR(f"Rejected links:       {stats['rejected_links']}"))
 

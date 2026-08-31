@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% load soccertime_tags %}
+{% load static %}
 {% block title %}
 Soccertime :: {% translate "Canales" %}
 {% endblock %}
@@ -8,80 +8,138 @@ Soccertime :: {% translate "Canales" %}
 {% block twitter_title %}Soccertime :: {% translate "Canales" %}{% endblock %}
 {% block og_description %}{% translate "Directorio de canales de televisión y plataformas deportivas con enlaces directos." %}{% endblock %}
 {% block twitter_description %}{% translate "Directorio de canales de televisión y plataformas deportivas con enlaces directos." %}{% endblock %}
+{% block javascript %}
+<script src="{% static 'soccertime/js/channels_filter.js' %}" defer></script>
+{% endblock %}
 {% block content %}
-{% if not channels_links %}
+{% if not sources %}
     {% include "soccertime/empty_state.html" %}
 {% endif %}
 <div class="container py-3">
 
-    {% regroup channels_links|dictsort:"subcategory" by subcategory as subcategorized_channels %}
+    {# Hidden until channels_filter.js reveals it: a visitor without scripts never sees a dead control. #}
+    <div id="channels-filter-wrap" class="d-none mb-3">
+        <div class="input-group channels-filter-group">
+            <span class="input-group-text">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-funnel" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5zm1 .5v1.308l4.372 4.858A.5.5 0 0 1 7 8.5v5.306l2-.666V8.5a.5.5 0 0 1 .128-.334L13.5 3.308V2z"/>
+                </svg>
+            </span>
+            <input id="channels-filter" class="form-control" type="search"
+                   placeholder="{% translate 'Filtrar canales y enlaces…' %}"
+                   aria-label="{% translate 'Filtrar canales y enlaces' %}"
+                   aria-describedby="channels-filter-hint">
+        </div>
+        <p id="channels-filter-hint" class="form-text fst-italic d-none" aria-live="polite"
+           data-template-plural="{% translate '%COUNT% coincidencias con «%QUERY%»' %}"
+           data-template-singular="{% translate '1 coincidencia con «%QUERY%»' %}"
+           data-template-source="{% translate '%COUNT% en %SOURCE%' %}"
+           data-template-none="{% translate 'Sin coincidencias con «%QUERY%»' %}"></p>
+    </div>
 
-    {# Pestañas de subcategorías #}
-    <ul class="nav nav-tabs mb-3">
-    {% for subcat_group in subcategorized_channels|sort_categories_by_total_links %}
-        {% with normalized_grouper=subcat_group.grouper|normalize_subcategory %}
-        <li class="nav-item">
+    {# Level 1: one tab per source. Bootstrap's data API switches them; the JS only adds hash deep links. #}
+    <ul class="nav nav-tabs mb-3" role="tablist">
+    {% for entry in sources %}
+        <li class="nav-item" role="presentation">
             {% spaceless %}
-            <a class="nav-link{% if request.GET.subcategory == normalized_grouper or request.GET.subcategory is None and forloop.first %} active{% endif %}" href="{% querystring subcategory=normalized_grouper %}" aria-label="{% translate "Filtrar por subcategoría" %} {% if subcat_group.grouper %}{{ subcat_group.grouper }}{% else %}{% translate "General" %}{% endif %}">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-broadcast me-1" viewBox="0 0 16 16">
+            <button class="nav-link{% if forloop.first %} active{% endif %}" id="tab-{{ entry.slug }}" type="button"
+                    role="tab" data-bs-toggle="tab" data-bs-target="#source-{{ entry.slug }}"
+                    data-source-slug="{{ entry.slug }}" aria-controls="source-{{ entry.slug }}"
+                    aria-selected="{{ forloop.first|yesno:'true,false' }}"
+                    aria-label="{% translate 'Ver los enlaces de la fuente' %} {{ entry.source }}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-broadcast me-1" viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M3.05 3.05a7 7 0 0 0 0 9.9.5.5 0 0 1-.707.707 8 8 0 0 1 0-11.314.5.5 0 0 1 .707.707m2.122 2.122a4 4 0 0 0 0 5.656.5.5 0 1 1-.708.708 5 5 0 0 1 0-7.072.5.5 0 0 1 .708.708m5.656-.708a.5.5 0 0 1 .708 0 5 5 0 0 1 0 7.072.5.5 0 1 1-.708-.708 4 4 0 0 0 0-5.656.5.5 0 0 1 0-.708m2.122-2.12a.5.5 0 0 1 .707 0 8 8 0 0 1 0 11.313.5.5 0 0 1-.707-.707 7 7 0 0 0 0-9.9.5.5 0 0 1 0-.707zM10 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0"/>
                 </svg>
-                {% if subcat_group.grouper %}{{ subcat_group.grouper }}{% else %}{% translate "General" %}{% endif %}
-                <span class="badge bg-secondary ms-1">{{ subcat_group.list|length }}</span>
-            </a>
+                {{ entry.source }}
+                <span class="badge bg-secondary ms-1" data-count-badge data-total="{{ entry.total }}">{{ entry.total }}</span>
+            </button>
             {% endspaceless %}
         </li>
-        {% endwith %}
     {% endfor %}
     </ul>
 
-    {# Contenido de cada subcategoría #}
-    {% for subcat_group in subcategorized_channels|sort_categories_by_total_links %}
-        {% with normalized_grouper=subcat_group.grouper|normalize_subcategory %}
-        {% if request.GET.subcategory == normalized_grouper or request.GET.subcategory is None and forloop.first %}
-{% regroup subcat_group.list|dictsort:"category" by category as categorized_channels %}
+    <div class="tab-content">
+    {% for entry in sources %}
+        <div class="tab-pane fade{% if forloop.first %} show active{% endif %}" id="source-{{ entry.slug }}"
+             role="tabpanel" aria-labelledby="tab-{{ entry.slug }}"
+             data-source-pane data-source-name="{{ entry.source }}">
 
-            <div class="accordion" id="accordionChannels">
-{% for cat_group in categorized_channels|sort_categories_by_total_links %}
-                <div class="accordion-item">
+            <div class="accordion" id="accordion-{{ entry.slug }}">
+            {% for category in entry.categories %}
+                <div class="accordion-item" data-category-item>
                     <h2 class="accordion-header">
-<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ forloop.counter }}" aria-expanded="false" aria-controls="collapse-{{ forloop.counter }}">
-                            <span class="fw-semibold">{% if cat_group.grouper %}{{ cat_group.grouper }}{% else %}{% translate "General" %}{% endif %}</span>
-                            <span class="badge bg-primary ms-2">{{ cat_group.list|length }}</span>
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#collapse-{{ entry.slug }}-{{ forloop.counter }}" aria-expanded="false"
+                                aria-controls="collapse-{{ entry.slug }}-{{ forloop.counter }}">
+                            <span class="fw-semibold">{{ category.name }}</span>
+                            <span class="badge bg-primary ms-2">{{ category.count }}</span>
                         </button>
                     </h2>
-<div id="collapse-{{ forloop.counter }}" class="accordion-collapse collapse">
+                    <div id="collapse-{{ entry.slug }}-{{ forloop.counter }}" class="accordion-collapse collapse" data-category-collapse>
                         <div class="accordion-body">
                             <div class="row g-3">
-{% regroup cat_group.list|dictsort:"name" by name as named_links %}
-                                {% for group in named_links|sort_by_list_length %}
-                                <div class="col-12 col-sm-6 col-lg-4">
+                            {% for group in category.groups %}
+                                <div class="col-12 col-sm-6 col-lg-4" data-search="{{ group.search_text }}">
                                     <div class="card h-100 border-0 shadow-sm">
                                         <div class="card-body py-2 px-3">
                                             <div class="d-flex align-items-center mb-2">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-tv-fill text-secondary me-2 flex-shrink-0" viewBox="0 0 16 16">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-tv-fill text-secondary me-2 flex-shrink-0" viewBox="0 0 16 16" aria-hidden="true">
                                                     <path d="M2.5 13.5A.5.5 0 0 1 3 13h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5M2 2h12s2 0 2 2v6s0 2-2 2H2s-2 0-2-2V4s0-2 2-2"/>
                                                 </svg>
-                                                <span class="fw-medium" title="{{ group.grouper }}">{{ group.grouper }}</span>
-                                                <span class="badge bg-secondary ms-auto">{{ group.list|length }}</span>
+                                                <span class="fw-medium" title="{{ group.name }}">{{ group.name }}</span>
+                                                <span class="badge bg-secondary ms-auto">{{ group.links|length }}</span>
                                             </div>
                                             <div class="d-flex flex-wrap gap-1">
-                                                {% for link in group.list %}
+                                                {% for link in group.links %}
                                                     {% include "soccertime/link_button.html" %}
                                                 {% endfor %}
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                                {% endfor %}
+                            {% endfor %}
                             </div>
                         </div>
                     </div>
                 </div>
             {% endfor %}
             </div>
-        {% endif %}
-        {% endwith %}
-    {% endfor %}
 
+            {% if entry.unmatched %}
+            <section class="mt-4" data-unmatched-section>
+                <div class="section-heading rounded d-flex align-items-center gap-2 px-3 py-2 mb-3">
+                    <h2 class="fs-6 fw-semibold mb-0">{% translate "Enlaces sin canal" %}</h2>
+                    <span class="badge bg-primary">{{ entry.unmatched|length }}</span>
+                    <span class="ms-auto small text-secondary fst-italic d-none d-md-inline">{% translate "Enlaces de esta fuente que no casan con ningún canal del catálogo" %}</span>
+                </div>
+                <div class="row g-3">
+                {% for item in entry.unmatched %}
+                    <div class="col-12 col-sm-6 col-lg-4" data-search="{{ item.search_text }}">
+                        <div class="card h-100 card-dashed">
+                            <div class="card-body py-2 px-3">
+                                <div class="d-flex align-items-center mb-2">
+                                    <span class="fw-medium" title="{{ item.link.name }}">{{ item.link.name }}</span>
+                                    {% if item.link.subcategory %}
+                                    <span class="badge channel-unlinked ms-auto">{{ item.link.subcategory }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="d-flex flex-wrap gap-1 align-items-center">
+                                    {% with link=item.link %}
+                                        {% include "soccertime/link_button.html" %}
+                                    {% endwith %}
+                                    {% if item.link.quality != "ANY" %}
+                                    <span class="badge text-bg-info">{{ item.link.quality }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+        </div>
+    {% endfor %}
+    </div>
+</div>
 {% endblock %}

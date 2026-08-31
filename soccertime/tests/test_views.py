@@ -444,11 +444,6 @@ class TestChannelsView:
         response = client.get(reverse("channels"))
         assert "soccertime/channels.html" in [t.name for t in response.templates]
 
-    def test_shows_channel_links(self, client, channel_link):
-        """Should display channel links."""
-        response = client.get(reverse("channels"))
-        assert channel_link in response.context["channels_links"]
-
     def test_empty_state_message(self, client, db):
         """Should show message when no channels."""
         response = client.get(reverse("channels"))
@@ -459,19 +454,52 @@ class TestChannelsView:
         response = client.get(reverse("channels"))
         assert "No hay canales" not in response.content.decode()
 
+    def test_context_groups_by_source_category_and_name(self, client, db):
+        """Sources come alphabetically, categories by size, name groups by size."""
+        from soccertime.models import Channel, ChannelLink, ChannelLinkSource
+
+        channel = Channel.objects.create(name="DAZN 1")
+        beta = ChannelLinkSource.objects.create(name="BETA")
+        alpha = ChannelLinkSource.objects.create(name="ALPHA")
+
+        def make_link(name, category, index, source):
+            link = ChannelLink.objects.create(name=name, category=category, link=f"acestream://{index:040d}")
+            link.sources.add(source)
+            channel.links.add(link)
+            return link
+
+        make_link("Dazn 1", "Dazn", 1, alpha)
+        make_link("Dazn 1", "Dazn", 2, alpha)
+        make_link("Dazn 2", "Dazn", 3, alpha)
+        make_link("Eurosport 1", "Eurosport", 4, alpha)
+        make_link("Dazn 1", "Dazn", 5, beta)
+
+        response = client.get(reverse("channels"))
+
+        sources = response.context["sources"]
+        assert [entry["source"].name for entry in sources] == ["ALPHA", "BETA"]
+        alpha_entry = sources[0]
+        assert alpha_entry["total"] == 4
+        assert [category["name"] for category in alpha_entry["categories"]] == ["Dazn", "Eurosport"]
+        dazn = alpha_entry["categories"][0]
+        assert dazn["count"] == 3
+        assert [group["name"] for group in dazn["groups"]] == ["Dazn 1", "Dazn 2"]
+
     def test_links_of_a_card_keep_the_model_ordering(self, client, db, channel_link_source):
         """The same play buttons must not appear in one order here and another in the agenda.
 
-        Ordering only by the grouping keys leaves the rows of a single card — which share
-        all three — in whatever order the database happens to return.
+        The view groups in Python over a queryset ordered by the model's own ordering, so
+        the rows of a single card — which share every grouping key — keep it.
         """
-        from soccertime.models import CHANNEL_LINK_ORDERING, ChannelLink
+        from soccertime.models import CHANNEL_LINK_ORDERING, Channel, ChannelLink
 
+        channel = Channel.objects.create(name="Same Channel")
         for index in range(4):
             link = ChannelLink.objects.create(
                 name="Same Channel", category="Deportes", subcategory="Fútbol", link=f"acestream://{index:040d}"
             )
             link.sources.add(channel_link_source)
+            channel.links.add(link)
             # auto_now overwrites whatever we pass, so the timestamps are forced afterwards
             ChannelLink.objects.filter(pk=link.pk).update(
                 date_updated=timezone.now() - datetime.timedelta(days=index, minutes=index)
@@ -479,9 +507,113 @@ class TestChannelsView:
 
         response = client.get(reverse("channels"))
 
-        rendered = [link.pk for link in response.context["channels_links"]]
+        group = response.context["sources"][0]["categories"][0]["groups"][0]
+        rendered = [link.pk for link in group["links"]]
         expected = [link.pk for link in ChannelLink.objects.order_by(*CHANNEL_LINK_ORDERING)]
         assert rendered == expected
+
+    def test_unmatched_links_render_in_their_own_section(self, client, channel_link):
+        """A link with no channel lands in the source's unmatched list, quality on show."""
+        response = client.get(reverse("channels"))
+
+        entry = response.context["sources"][0]
+        assert [item["link"] for item in entry["unmatched"]] == [channel_link]
+        assert entry["categories"] == []
+
+        html = response.content.decode()
+        assert "Enlaces sin canal" in html
+        assert "card-dashed" in html
+        assert ">HD</span>" in html
+
+    def test_unmatched_any_quality_shows_no_badge(self, client, db, channel_link_source):
+        from soccertime.models import ChannelLink
+
+        link = ChannelLink.objects.create(name="Sin Calidad", link="acestream://" + "a" * 40)
+        link.sources.add(channel_link_source)
+
+        response = client.get(reverse("channels"))
+
+        assert "text-bg-info" not in response.content.decode()
+
+    def test_disabled_source_is_not_rendered(self, client, db):
+        """A retired source disappears; a shared link stays under its living source."""
+        from soccertime.models import ChannelLink, ChannelLinkSource
+
+        retired = ChannelLinkSource.objects.create(name="RETIRED", enabled=False)
+        living = ChannelLinkSource.objects.create(name="LIVING")
+        shared = ChannelLink.objects.create(name="Shared", link="acestream://" + "b" * 40)
+        shared.sources.add(retired, living)
+        lonely = ChannelLink.objects.create(name="Lonely", link="acestream://" + "c" * 40)
+        lonely.sources.add(retired)
+
+        response = client.get(reverse("channels"))
+
+        sources = response.context["sources"]
+        assert [entry["source"].name for entry in sources] == ["LIVING"]
+        assert [item["link"] for item in sources[0]["unmatched"]] == [shared]
+
+    def test_null_category_falls_back_to_general(self, client, db, channel_link_source):
+        """Production holds rows with NULL category; the page must group, not crash."""
+        from soccertime.models import Channel, ChannelLink
+
+        channel = Channel.objects.create(name="Sin Categoria")
+        link = ChannelLink.objects.create(name="Sin Categoria", link="acestream://" + "d" * 40)
+        link.sources.add(channel_link_source)
+        channel.links.add(link)
+
+        response = client.get(reverse("channels"))
+
+        assert response.status_code == 200
+        assert [category["name"] for category in response.context["sources"][0]["categories"]] == ["General"]
+
+    def test_data_search_is_folded(self, client, db, channel_link_source):
+        """Typing "futbol" without the accent must match a card naming "Fútbol"."""
+        from soccertime.models import Channel, ChannelLink
+
+        channel = Channel.objects.create(name="Fútbol Total")
+        link = ChannelLink.objects.create(name="Fútbol Total", category="Fútbol", link="acestream://" + "e" * 40)
+        link.sources.add(channel_link_source)
+        channel.links.add(link)
+
+        response = client.get(reverse("channels"))
+
+        assert 'data-search="futbol total futbol"' in response.content.decode()
+
+    def test_page_emits_no_querystring_tabs_and_ignores_get(self, client, channel_link):
+        """Tab state lives in the hash: no querystring links, no per-parameter cache entries."""
+        import re
+
+        response = client.get(reverse("channels"))
+        assert "?subcategory" not in response.content.decode()
+
+        with_parameter = client.get(reverse("channels"), {"subcategory": "anything"})
+
+        def without_og_url(html):
+            # og:url mirrors the requested URL on every page of the site by design.
+            return re.sub(r'<meta property="og:url"[^>]*>', "", html)
+
+        assert without_og_url(response.content.decode()) == without_og_url(with_parameter.content.decode())
+
+    def test_channels_performance(self, client, db):
+        """A constant number of queries regardless of how many sources and links exist."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from soccertime.models import Channel, ChannelLink, ChannelLinkSource
+
+        for s in range(3):
+            source = ChannelLinkSource.objects.create(name=f"SOURCE{s}")
+            for i in range(10):
+                link = ChannelLink.objects.create(name=f"Link {s}-{i}", link=f"acestream://{s:020d}{i:020d}")
+                link.sources.add(source)
+                if i % 2 == 0:
+                    channel = Channel.objects.create(name=f"Channel {s}-{i}")
+                    channel.links.add(link)
+
+        with CaptureQueriesContext(connection) as queries:
+            client.get(reverse("channels"))
+
+        assert len(queries) < 10
 
 
 class TestCompetitionsView:

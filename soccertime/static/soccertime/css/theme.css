@@ -237,6 +237,19 @@ a {
     border-left: 4px solid var(--bs-warning) !important;
 }
 
+/* An "enlace sin canal" card: it plays like any other, but it belongs to no catalogued
+   channel, so the dashed border marks it provisional — the same vocabulary as the
+   channel-unlinked badge, whose #4a4a4a this shares. */
+.card-dashed {
+    border: 1px dashed #4a4a4a;
+}
+
+/* The channels page filter. Full width on a phone, capped on a desktop so the input does
+   not stretch across the whole container. */
+.channels-filter-group {
+    max-width: 440px;
+}
+
 /* The star that adds a team or a competition to the visitor's own favourites. Which of the
    two icons is drawn follows from the pressed state alone, so the whole control is a form
    and a stylesheet — no script decides anything here.
