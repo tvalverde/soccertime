@@ -12,6 +12,8 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-08-31
+
 ### Fixed
 - **An untagged link import no longer erases a known quality.** `addlinksource` writes every
   entry with `update_or_create`, so a list naming a hash without a quality tag reset the
