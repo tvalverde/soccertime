@@ -7,7 +7,7 @@ pytest-django==4.14.0
 pytest-cov==7.1.0
 
 # Linting & Formatting
-ruff==0.16.4
+ruff==0.16.5
 
 # Type checking
 mypy==2.3.1
