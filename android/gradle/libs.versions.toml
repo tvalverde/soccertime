@@ -2,7 +2,7 @@
 # entry in .github/dependabot.yml — so a pin here is a pin something is watching.
 
 [versions]
-agp = "9.3.2"
+agp = "9.4.0"
 kotlin = "2.4.10"
 ksp = "2.4.10-2.0.6"
 composeBom = "2026.08.00"
