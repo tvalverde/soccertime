@@ -21,7 +21,7 @@ tvFoundation = "1.0.0-alpha13"
 desugar = "2.1.5"
 junit = "4.13.2"
 turbine = "1.2.1"
-robolectric = "4.16"
+robolectric = "4.16.1"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
