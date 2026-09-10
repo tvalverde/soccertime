@@ -20,4 +20,4 @@ drf-spectacular==0.30.0
 # Swagger UI's own JavaScript and CSS, served from this origin. The CDN copy the stock
 # template loads cannot work here: `script-src` allows `self` and nothing else, and
 # `test_csp.py` pins that no third-party host is ever listed.
-drf-spectacular-sidecar==2026.8.1
+drf-spectacular-sidecar==2026.9.1
