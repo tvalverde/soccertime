@@ -12,6 +12,8 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-22
+
 ### Security
 - **The scrapers no longer trust the compromised emSign root.** The private keys behind
   eMudhra's emSign intermediates turned out to be trivially weak, so anyone could mint a
