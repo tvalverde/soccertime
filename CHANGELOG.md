@@ -12,6 +12,15 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Security
+- **The scrapers no longer trust the compromised emSign root.** The private keys behind
+  eMudhra's emSign intermediates turned out to be trivially weak, so anyone could mint a
+  certificate for any site chaining to "emSign ECC Root CA - G3". `requests` verifies
+  against certifi's bundle, not the system's, and the image carried certifi 2026.07.22,
+  which still trusted it. certifi is now pinned to 2026.10.19, and a test refuses any bundle
+  that trusts that root again. The rebuild also brings Python 3.14.9 and pip 26.2.2, whose
+  own bundle had the same root.
+
 ## [0.12.0] - 2026-08-31
 
 ### Added
