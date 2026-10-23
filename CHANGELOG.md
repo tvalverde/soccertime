@@ -12,6 +12,24 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-10-23
+
+### Security
+- **Pillow 13.0.0** (2026-10-15), for GHSA-78g4-xqwv-q3g8 and some forty more. That one is a
+  heap overflow write in the OpenJPEG every Pillow wheel since 11.1.0 bundles, reachable from
+  `Image.open(...).load()`; a patched host does not help, and the wheel still reports
+  OpenJPEG 2.5.4 because the fix is carried as a patch, in no OpenJPEG release yet. The site
+  never called `load()` on a scraped image, so it was not reachable here — but the format
+  check itself offered the bytes to every opener Pillow registers, sniffing magic bytes, so a
+  JPEG 2000 served as `flag.png` reached the JPEG 2000 plugin before being refused.
+  `read_image_format` now offers them only to the WEBP, PNG, JPEG and GIF plugins, and a test
+  proves a JPEG 2000 codestream never reaches its opener. One message now covers everything
+  refused, since a format outside the allowlist is no longer decoded to be named.
+- **Django REST framework 3.18.3**, past GHSA-xw6w-gcfp-cf8m (`TokenProxy.delete()` reported
+  success and revoked nothing). The site does not install `rest_framework.authtoken`, so it
+  was not exposed. A test refuses an installed Pillow older than 13.0.0 or a DRF older than
+  3.18.2.
+
 ### Fixed
 - **`make remote-install-import-cron` and `make remote-install-logrotate` run again.** Both
   hand the remote `sh -s` a first argument the shell took for an option of its own —

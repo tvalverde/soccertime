@@ -29,18 +29,23 @@ def read_image_format(buffer: io.BytesIO) -> str:
     stored, under whatever extension the source URL happened to end in, and served back
     from this site's own origin.
 
+    Only the allowlisted plugins are offered the bytes. `Image.open` otherwise hands them
+    to every opener Pillow registers, sniffing magic bytes, so a JPEG 2000 codestream
+    served as `flag.png` reached the bundled OpenJPEG (GHSA-78g4-xqwv-q3g8) before being
+    refused for its format.
+
     The buffer is rewound on the way out so the caller can still read it.
     """
     buffer.seek(0)
     try:
-        with Image.open(buffer) as image:
+        with Image.open(buffer, formats=tuple(FORMAT_EXTENSIONS)) as image:
             image_format = image.format
     except (UnidentifiedImageError, OSError, ValueError) as error:
-        raise ImageRejected(f"is not a decodable image: {error}") from error
+        raise ImageRejected(f"is not an image in a format this site stores: {error}") from error
     finally:
         buffer.seek(0)
     if image_format not in FORMAT_EXTENSIONS:
-        raise ImageRejected(f"decodes as {image_format}, which this site does not store")
+        raise ImageRejected(f"is not an image in a format this site stores: {image_format}")
     return image_format
 
 

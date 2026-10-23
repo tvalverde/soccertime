@@ -306,7 +306,7 @@ class TestTheContent:
         with patch("requests.get", return_value=response):
             assert download_image("https://public.example/flag.png", on_error=errors.append) is None
 
-        assert any("not a decodable image" in error for error in errors)
+        assert any("format this site stores" in error for error in errors)
 
     def test_a_format_outside_the_allowlist_is_refused(self, public_dns):
         response = response_for(body=image_bytes(image_format="BMP"))
@@ -315,7 +315,7 @@ class TestTheContent:
         with patch("requests.get", return_value=response):
             assert download_image("https://public.example/flag.png", on_error=errors.append) is None
 
-        assert any("does not store" in error for error in errors)
+        assert any("format this site stores" in error for error in errors)
 
     @pytest.mark.parametrize("image_format", ["PNG", "WEBP", "GIF"])
     def test_the_formats_this_site_stores_are_accepted(self, public_dns, image_format):

@@ -15,9 +15,10 @@ for the extension.
 import hashlib
 import io
 import os
+from unittest.mock import patch
 
 import pytest
-from PIL import Image
+from PIL import Image, Jpeg2KImagePlugin
 
 from soccertime.images import ImageRejected, extension_for, read_image_format
 from soccertime.models import Flag, Team
@@ -81,8 +82,25 @@ class TestContentThatIsNotAnImageIsRefused:
 
     def test_a_format_outside_the_allowlist_is_refused(self):
         """Decodable is not enough; it also has to be something this site serves."""
-        with pytest.raises(ImageRejected, match="does not store"):
+        with pytest.raises(ImageRejected, match="format this site stores"):
             read_image_format(image_bytes("BMP"))
+
+    def test_a_format_outside_the_allowlist_never_reaches_its_decoder(self):
+        """A JPEG 2000 codestream is never handed to the bundled OpenJPEG.
+
+        Pillow sniffs magic bytes and ignores the name, so a `.png` URL proves nothing:
+        GHSA-78g4-xqwv-q3g8 is a heap overflow write in that library, and the only safe
+        amount of it to run on bytes from a scraped site is none.
+        """
+        jpeg2000 = image_bytes("JPEG2000")
+
+        with (
+            patch.object(Jpeg2KImagePlugin.Jpeg2KImageFile, "_open", autospec=True) as jpeg2000_opener,
+            pytest.raises(ImageRejected),
+        ):
+            read_image_format(jpeg2000)
+
+        jpeg2000_opener.assert_not_called()
 
 
 class TestWhatWasAlreadyWorkingStillWorks:
