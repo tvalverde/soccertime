@@ -12,6 +12,12 @@ The website's own changelog is `../CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Changed
+- **Toolchain and libraries brought up to date from the Dependabot backlog.** Android Gradle
+  Plugin 9.3.2 → 9.4.0, Kotlin 2.4.10 → 2.4.20, the Compose BOM 2026.08.00 → 2026.09.00,
+  core-ktx 1.19.0 → 1.19.1, navigation-compose 2.10.0 → 2.10.2, coil 3.6.0 → 3.6.3, and for
+  the tests Robolectric 4.16 → 4.17.
+
 ## [0.2.0] - 2026-08-30
 
 ### Added

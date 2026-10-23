@@ -1,4 +1,4 @@
-Django==6.0.8
+Django==6.0.9
 django-admin-sortable2==2.3.1
 requests==2.34.2
 # Pinned although nothing imports it by name: it is the bundle `requests` verifies TLS

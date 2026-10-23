@@ -12,6 +12,22 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Security
+- **Django 6.0.9, the security release of 2026-10-06.** Its CVE-2026-84429 is a denial of
+  service any unauthenticated request could reach: `parse_header_parameters()` took quadratic
+  time on a quoted `Accept` or `Content-Type` parameter full of separators. The same release
+  closes a privilege abuse in model formsets with editable primary keys (CVE-2026-87975), which
+  needs a primary key set through the form and so does not apply to models on `BigAutoField`.
+  The two other CVEs are in `contrib.gis` and the translation cache, neither used here. The pin
+  was exact, so nothing would have moved it: a test now refuses an installed Django older than
+  6.0.9.
+
+### Changed
+- **Dependencies brought up to date from the Dependabot backlog.** uvicorn 0.52.4 → 0.54.0
+  (experimental HTTP/2, off unless asked for; the IPv6 loopback joins the proxies trusted by
+  default), lxml 6.1.2 → 6.1.3, drf-spectacular-sidecar 2026.8.1 → 2026.9.1, and for
+  development ruff 0.16.4 → 0.16.7 and types-requests 2.33.0.20260906.
+
 ## [0.12.1] - 2026-10-22
 
 ### Security
