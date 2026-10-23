@@ -12,6 +12,8 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-10-23
+
 ### Security
 - **Django 6.0.9, the security release of 2026-10-06.** Its CVE-2026-84429 is a denial of
   service any unauthenticated request could reach: `parse_header_parameters()` took quadratic
