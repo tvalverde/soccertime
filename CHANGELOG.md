@@ -12,6 +12,16 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Fixed
+- **`make remote-install-import-cron` and `make remote-install-logrotate` run again.** Both
+  hand the remote `sh -s` a first argument the shell took for an option of its own —
+  `--source=tokyo` is refused outright as "Illegal option" — so neither had installed anything
+  since the marker gained its dashes. `sh -s --` ends the shell's options first; a test runs
+  each recipe's remote command as the server would. Found when the `tokyo` list moved: its
+  git.gay repository was emptied around 2026-10-18, the import had failed every run since,
+  and it now reads the same list from IPNS through the Filebase gateway — the IPFS
+  Foundation's public gateways answer only browsers with a service worker now.
+
 ## [0.12.2] - 2026-10-23
 
 ### Security

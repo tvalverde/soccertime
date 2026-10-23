@@ -649,7 +649,7 @@ remote-install-import-cron:
 		exit 1; \
 	fi
 	@echo "--- Installing the $(SOURCE) import in the remote crontab ---"
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s "--source=$(SOURCE)" "$(CRON_SCHEDULE)" "$(IMPORT_CRON_COMMAND)"' < scripts/install-cron-entry.sh
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s -- "--source=$(SOURCE)" "$(CRON_SCHEDULE)" "$(IMPORT_CRON_COMMAND)"' < scripts/install-cron-entry.sh
 
 # Keep the logs those cron entries append to from growing without end. Nothing here needs
 # root: the deploy user cannot write /etc/logrotate.d, so logrotate runs from a crontab
@@ -664,7 +664,7 @@ remote-install-logrotate:
 	@echo "--- Writing the logrotate configuration ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s $(ROTATED_LOGS)' < scripts/install-logrotate.sh
 	@echo "--- Installing the rotation in the remote crontab ---"
-	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s "logrotate --state" "$(LOGROTATE_SCHEDULE)" "$(LOGROTATE_CRON_COMMAND)"' < scripts/install-cron-entry.sh
+	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) 'sh -s -- "logrotate --state" "$(LOGROTATE_SCHEDULE)" "$(LOGROTATE_CRON_COMMAND)"' < scripts/install-cron-entry.sh
 
 # Drop the rendered page cache without running the scraper. Pages are cached for an
 # hour, so this is what makes a fix visible immediately after a deploy.
