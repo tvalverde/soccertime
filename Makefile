@@ -1,4 +1,4 @@
-.PHONY: check-gradle-home help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-error-check remote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format android-build android-test android-lint android-clean android-release android-install-mobile android-install-tv
+.PHONY: check-gradle-home help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-proxy-logs remote-error-checkremote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format android-build android-test android-lint android-clean android-release android-install-mobile android-install-tv
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -39,7 +39,8 @@ help:
 	@echo "  remote-install-logrotate    Rotate the logs those cron entries write"
 	@echo "  remote-check         Run Django's deployment checks on production"
 	@echo "  remote-pull          Refresh remote images, skipping the ones built on the host"
-	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200)"
+	@echo "  remote-logs          Read the application log (SINCE=10m, GREP=\" 500 \", TAIL=200, SERVICE=)"
+	@echo "  remote-proxy-logs    Read Traefik's and the socket proxy's logs (same options)"
 	@echo "  replica-up           Start the local production replica, ready to serve"
 	@echo "  replica-up-published Same, on the image CI published for this commit"
 	@echo "  replica-migrate      Migrate the local production replica as its database owner"
@@ -113,11 +114,21 @@ REMOTE_CACHE_FILE_IN_VOLUME ?= soccertime_data_cache.sqlite
 PRODUCTION_URL ?= https://www.mojon.es/soccertime
 SMOKE_PATHS ?= /healthz/ /favorites/ /agenda/ /competitions/ /channels/ /api/v1/events/ /api/v1/docs/
 
-# Defaults for `remote-logs`. `SINCE` accepts anything `docker compose logs --since` does,
-# so `10m`, `1h` or an ISO timestamp. `GREP` is a plain pattern, empty for everything.
-LOG_TAIL ?= 200
-LOG_SINCE ?=
-LOG_GREP ?=
+# Defaults for `remote-logs`, under the names its help line and the deploy's own failure
+# messages tell people to type. They used to be `LOG_SINCE` and friends, so the documented
+# `make remote-logs SINCE=10m` was silently the last 200 lines of everything. `SINCE`
+# accepts anything `docker compose logs --since` does, so `10m`, `1h` or an ISO timestamp.
+# `GREP` is a plain pattern, empty for everything. `SERVICE` is any service of the host's
+# compose file.
+SERVICE ?= $(REMOTE_SOCCERTIME_SERVICE)
+TAIL ?= 200
+SINCE ?=
+GREP ?=
+
+# What stands between the public and the application. Traefik learns where the containers
+# are through the socket proxy, so when the proxy loses the Docker socket every route keeps
+# pointing at whatever it knew last — and the next relay retires exactly that.
+REMOTE_PROXY_SERVICES ?= traefik socket-proxy
 
 # The status codes `remote-error-check` treats as a failed release. A variable so the check
 # itself can be exercised — pointing it at 2xx must find the traffic that is certainly there,
@@ -728,18 +739,28 @@ wait-remote-healthy:
 # bypasses the page cache so each page is rendered fresh.
 remote-smoke-test: wait-remote-healthy
 	@echo "--- Checking public pages at $(PRODUCTION_URL) ---"
-	@failed=""; \
+	@failed=""; proxy_only=yes; \
 	for path in $(SMOKE_PATHS); do \
 		code=$$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 20 "$(PRODUCTION_URL)$$path?smoke=$$$$"); \
 		printf "  %-20s %s\n" "$$path" "$$code"; \
-		[ "$$code" = "200" ] || failed="$$failed $$path"; \
+		[ "$$code" = "200" ] && continue; \
+		failed="$$failed $$path"; \
+		case "$$code" in 000|404|502|503|504) ;; *) proxy_only=no ;; esac; \
 	done; \
 	if [ -n "$$failed" ]; then \
 		echo ""; \
 		echo "SMOKE TEST FAILED for:$$failed"; \
-		echo "The deploy is live and broken. Inspect it with 'make remote-check', 'make"; \
-		echo "remote-logs SINCE=10m', or roll back with 'make list-remote-backups' followed"; \
-		echo "by 'make restore-remote-db BACKUP=<file>'."; \
+		if [ "$$proxy_only" = yes ]; then \
+			echo "Every container reported healthy, yet each failure is a status the proxy sends"; \
+			echo "on its own, so look at the proxy before the release: 'make remote-proxy-logs"; \
+			echo "SINCE=10m'. If the socket proxy answers 503 and Traefik cannot reach Docker, a"; \
+			echo "rollback will not help — Traefik cannot see the old container either."; \
+		else \
+			echo "The deploy is live and broken. Inspect it with 'make remote-check' and 'make"; \
+			echo "remote-logs SINCE=10m', or roll back with 'make deploy-production"; \
+			echo "DEPLOY_TAG=sha-<previous commit>' — and the database with 'make"; \
+			echo "restore-remote-db BACKUP=<file>' only if this release migrated it."; \
+		fi; \
 		exit 1; \
 	fi; \
 	echo "Smoke test passed."
@@ -1007,13 +1028,22 @@ remote-ps:
 #   make remote-logs SINCE=10m           only what came after a deploy
 #   make remote-logs GREP=" 500 "        only the server errors
 remote-logs:
-	@echo "--- Logs for $(REMOTE_SOCCERTIME_SERVICE) ---"
+	@echo "--- Logs for $(SERVICE) ---"
 	@ssh -p$(REMOTE_PORT) $(REMOTE_HOST) ' \
 		cd $(REMOTE_DOCKER_PATH); \
 		docker compose -f $(REMOTE_DOCKER_COMPOSE_FILE) logs \
-			--tail $(LOG_TAIL) $(if $(LOG_SINCE),--since $(LOG_SINCE),) --no-log-prefix \
-			$(REMOTE_SOCCERTIME_SERVICE) \
-	' | { [ -n "$(LOG_GREP)" ] && grep -- "$(LOG_GREP)" || cat; }
+			--tail $(TAIL) $(if $(SINCE),--since $(SINCE),) --no-log-prefix \
+			$(SERVICE) \
+	' | { [ -n "$(GREP)" ] && grep -- "$(GREP)" || cat; }
+
+# Every page answering 503 while every container reports healthy is the proxy, not the
+# release: on 2026-10-23 a Docker upgrade recreated the socket, the socket proxy kept the
+# old one bind-mounted, and the next relay retired the only container Traefik still knew.
+# The application's own log was empty — no request had reached it.
+remote-proxy-logs:
+	@for service in $(REMOTE_PROXY_SERVICES); do \
+		$(MAKE) --no-print-directory remote-logs SERVICE=$$service; \
+	done
 
 # Run Django's deployment checks against the running production container
 remote-check:

@@ -53,6 +53,23 @@ process read a manifest that was not finished, cached it for its whole life, and
 the smoke test caught it. Anything that a page renders but `healthz` does not — templates,
 static files, context processors — needs a real page fetched before a deploy is believed.
 
+## Every page 503 with every container healthy is the proxy, not the release
+
+The third outage, on 2026-10-23, broke the site without a line of the release being at
+fault. An unattended Docker upgrade restarted `dockerd`, which recreated
+`/var/run/docker.sock`; the socket proxies bind-mount that one file, so they kept the old
+inode and answered 503 to Traefik's every call. With `live-restore` nothing else stopped, so
+nothing showed — until the relay retired the only container Traefik still knew, and every
+page answered 503 while the new one was healthy and its log empty. Rolling back would not
+have helped: Traefik could not see the old container either.
+
+So when the smoke test fails on statuses the proxy sends on its own (000, 404, 502, 503,
+504) — it now says so — read `make remote-proxy-logs SINCE=10m` before touching the release.
+`503 SC--` in the socket proxy's log is this case, and restarting both proxies is the cure.
+A "permission denied" on `docker.sock` in the middle of a deploy is the same upgrade
+happening under it: stop, and do not run the relay again until the proxies have been
+restarted.
+
 ## The development container caches templates
 
 Editing a template and taking a screenshot shows the *previous* markup: the running process

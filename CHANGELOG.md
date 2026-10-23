@@ -12,6 +12,26 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
 
 ## [Unreleased]
 
+### Added
+- `make remote-proxy-logs` reads Traefik's and the socket proxy's logs, taking the same
+  `SINCE=`, `TAIL=` and `GREP=` as `remote-logs`, which now also takes `SERVICE=`.
+
+### Changed
+- A failed smoke test tells the proxy apart from the release. When every failure is a status
+  the proxy sends on its own (no connection, 404, 502, 503, 504) — and the containers have
+  already reported healthy — it points at `remote-proxy-logs` instead of calling the deploy
+  broken. On 2026-10-23 a Docker upgrade left the socket proxy holding a stale socket,
+  Traefik lost sight of every container, and the next deploy's relay took the site down with
+  a healthy container no request ever reached; the old message offered a database restore,
+  which would have changed nothing. The release message now names the image rollback
+  (`DEPLOY_TAG=sha-<commit>`) first, and the database restore only for a release that
+  migrated.
+
+### Fixed
+- `make remote-logs SINCE=10m`, as its help and the deploy's failure messages put it,
+  filtered nothing: the recipe read `LOG_SINCE`, `LOG_TAIL` and `LOG_GREP`, so the documented
+  options were ignored and the last 200 lines came back regardless.
+
 ## [0.12.3] - 2026-10-23
 
 ### Security
