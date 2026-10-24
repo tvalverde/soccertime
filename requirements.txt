@@ -13,6 +13,9 @@ beautifulsoup4==4.15.0
 # dependency — it is not, and moving it would break the scraper without the site noticing.
 lxml==6.1.3
 uvicorn==0.54.0
+# 13.0.0 is the floor: every earlier wheel bundles an OpenJPEG with a heap overflow write
+# (GHSA-78g4-xqwv-q3g8), and it closes some forty more advisories besides.
+# `test_library_security_releases.py` refuses anything older.
 Pillow==13.0.0
 whitenoise==6.12.0
 
