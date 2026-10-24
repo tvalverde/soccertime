@@ -63,12 +63,19 @@ nothing showed — until the relay retired the only container Traefik still knew
 page answered 503 while the new one was healthy and its log empty. Rolling back would not
 have helped: Traefik could not see the old container either.
 
+The host now heals this on its own: the systemd drop-in
+`/etc/systemd/system/docker.service.d/10-restart-socket-proxies.conf` restarts
+`socket-proxy` and `socket-proxy-diun` after every `dockerd` start, by container name, and
+was proven against a real socket recreation. What remains is a window of about fifteen
+seconds while `dockerd` comes up, in which the proxies are blind.
+
 So when the smoke test fails on statuses the proxy sends on its own (000, 404, 502, 503,
 504) — it now says so — read `make remote-proxy-logs SINCE=10m` before touching the release.
-`503 SC--` in the socket proxy's log is this case, and restarting both proxies is the cure.
-A "permission denied" on `docker.sock` in the middle of a deploy is the same upgrade
-happening under it: stop, and do not run the relay again until the proxies have been
-restarted.
+`503 SC--` in the socket proxy's log that lasts beyond that window means the drop-in did not
+run or no longer names the containers — a renamed `container_name` makes it fail silently,
+since it is `-` prefixed — and restarting both proxies by hand is the immediate cure. A
+"permission denied" on `docker.sock` in the middle of a deploy is an upgrade happening
+under it: stop, wait for the proxies to answer 200 again, then deploy.
 
 ## The development container caches templates
 
