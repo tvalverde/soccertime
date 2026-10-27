@@ -27,6 +27,14 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
   (`DEPLOY_TAG=sha-<commit>`) first, and the database restore only for a release that
   migrated.
 
+### Security
+- **Python 3.14.10** (2026-10-25), from a rebuild on the refreshed `python:3.14-alpine`.
+  CVE-2026-115557: `ssl` distrusts the compromised eMudhra intermediate keys, the incident
+  behind 0.12.1. `requests` already verifies against the certifi bundle pinned then, so this
+  reaches only what uses the interpreter's own store. Also CVE-2026-114583 (`tarfile`'s
+  `tar_filter` link replacement) and gh-160300 (`http.cookiejar` rejects negative cookie
+  versions).
+
 ### Fixed
 - `make remote-logs SINCE=10m`, as its help and the deploy's failure messages put it,
   filtered nothing: the recipe read `LOG_SINCE`, `LOG_TAIL` and `LOG_GREP`, so the documented
