@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file is the **website and its API**.
 
-The applications under `android/` keep their own, in `android/CHANGELOG.md`: they ship on
-their own tags (`android-v*`) and a reader of one release has no use for the other's.
+The Android applications kept their own changelog, `android/CHANGELOG.md`, until they were
+retired; it remains at their last tag, `android-v0.2.0`.
 
 ## [Unreleased]
 
@@ -30,6 +30,14 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
   2026.10.23 (still without the emSign root `test_trust_store.py` refuses),
   drf-spectacular-sidecar 2026.9.1 → 2026.10.1, the Swagger UI the API documentation page
   serves from this origin, and for development mypy 2.3.1 → 2.4.0 and ruff 0.16.7 → 0.17.2.
+
+### Removed
+- **The Android applications are retired.** The phone and Fire TV apps were no longer used,
+  so their code under `android/` is gone, together with the two Android workflows, the
+  `android-*` Makefile targets, the Gradle entry in Dependabot and the `test_android_*`
+  guards. No further `android-v*` release will be cut; `android-v0.2.0` is the last, and the
+  code is still there at that tag. The public API under `/api/v1/` stays, since installed
+  copies of that release read it.
 
 ### Security
 - **Python 3.14.10** (2026-10-25), from a rebuild on the refreshed `python:3.14-alpine`.

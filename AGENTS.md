@@ -16,10 +16,10 @@ This document provides the necessary context for understanding and working on th
     -   **Containerization:** Docker and Docker Compose
     -   **Production Server:** Uvicorn, behind the host's **Traefik**, which is the reverse proxy: it terminates TLS, carries `X-Forwarded-Proto` and strips the path prefix. A small Nginx container serves `/static` and `/media` only, on a router of its own. Getting this backwards is not academic — the `SECURE_SSL_REDIRECT` outage in `CLAUDE.md` turned on which component sends that header.
     -   **Code Style & Linting:** The project uses [Ruff](https://docs.astral.sh/ruff/) for all code formatting and linting. Configuration is located in `pyproject.toml`. Before committing, always run `ruff format .` and `ruff check . --fix`.
-    -   **Changelog:** Document all notable changes (Added, Changed, Deprecated, Removed, Fixed, Security) after every modification, following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) standard. **There are two, and they are not interchangeable:** `CHANGELOG.md` is the website and its API; `android/CHANGELOG.md` is the two applications. They release on separate tags — `v*` and `android-v*` — so an entry in the wrong file is filed under a release its reader will never install. **A change that touches both leaves an entry in both**, each written for that release's reader: this rule was added on 2026-08-29 and broken the same day, by a commit that added an Android feature and corrected four false claims in this file, and whose single entry went to the applications — leaving the website's changelog with no record of a correction about its own proxy.
+    -   **Changelog:** Document all notable changes (Added, Changed, Deprecated, Removed, Fixed, Security) after every modification, following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) standard, in `CHANGELOG.md`.
     -   **Testing:** The project uses `pytest` and `pytest-django`. All new features or bug fixes should be accompanied by tests.
     -   **Regression Testing:** Always create a regression test when fixing a bug to prevent it from reappearing in the future.
-    -   The Django tests are in `soccertime/tests/`. The applications' Kotlin tests are in `android/core/src/test/`, and run with `make android-test`.
+    -   The tests are in `soccertime/tests/`.
     -   Run the suite with `make test`, and `make test-integration` for the ones that make real HTTP calls. Prefer them over a raw `pytest`: the targets pass `-u $(DOCKER_UID):$(DOCKER_GID)` so nothing lands in the bind mount owned by another user, and `-m "not integration"` so a routine run does not go out to the network.
 
 ## 3. Workflow & Commands
@@ -86,95 +86,13 @@ This document provides the necessary context for understanding and working on th
     -   **Empty States:** Pass `empty_message` / `empty_message_level` in the view context (see `empty_state()` in `views.py`) and include `soccertime/empty_state.html` when the listing is empty. Do **not** use the Django `messages` framework here: the listing views are wrapped in `@cache_page`, so a per-request message is stored in the shared page cache and served to every other visitor.
     -   **Accessibility:** Always provide `aria-label` for links and interactive elements, especially those containing only icons or images.
 
-## 6. The Android Apps (`android/`)
+## 6. The Retired Android Apps
 
-Two native applications that read the same public API the site serves, living beside the
-Django project rather than in a repository of their own. They share this repository and
-nothing else: the image built from here runs Django, and `.dockerignore` refuses `android/`
-so `COPY . .` never carries it.
-
--   **Layout.** One Gradle build, three modules. `:core` is everything that is not a screen —
-    the API client, the data layer, the time arithmetic and the view models — and both
-    applications are thin over it, so the phone and the television disagree about
-    presentation and about nothing else. `:app-mobile` is `es.mojon.soccertime`,
-    `:app-tv` is `es.mojon.soccertime.tv`; the application ids differ so both install on one
-    device. The TV activity is registered under `LEANBACK_LAUNCHER`, which is the only
-    category the Fire TV home screen lists.
--   **Versions.** `android/gradle/libs.versions.toml` is the single place a version is
-    written, and it is the manifest the `gradle` entry in `.github/dependabot.yml` watches.
-    `soccertime/tests/test_dependency_updates.py` derives its expectation from the files
-    actually present, so a new kind of manifest and its Dependabot entry have to arrive in
-    the same commit.
--   **AGP 9 compiles Kotlin itself.** Applying `org.jetbrains.kotlin.android` is no longer
-    redundant, it is a hard configuration error — the plugin refuses and the build never
-    reaches a module. Only the Compose and serialization compiler plugins are still applied
-    on their own; built-in Kotlin replaces the base Android Kotlin plugin and nothing else.
-    AGP pulls in an older Kotlin than the catalog names, so the root `build.gradle.kts` puts
-    `kotlin-gradle-plugin` on the buildscript classpath purely to raise it: without that pin
-    the apps compile with AGP's bundled version rather than the one Dependabot is watching.
--   **`minSdk` is 25 and that is the whole point.** The Fire TV Stick 4K runs Fire OS 6 on
-    Android 7.1, where `java.time` does not exist; every instant this app handles arrives as
-    an ISO-8601 string with an offset, and it is core library desugaring that makes
-    `OffsetDateTime` available down there rather than a second date library.
--   **Never delete the certificates in `core/src/main/res/raw/`.** `www.mojon.es` presents a
-    Let's Encrypt chain that anchors at ISRG Root X1 — today by way of Root YR cross-signed
-    from it — and an Android 7.1 trust store may not carry either. It is Amazon's store on
-    that hardware, not Google's, and "may" is not something a release is built on. Both
-    generations are bundled through `network_security_config.xml`, which is declared in
-    `:core`'s manifest so neither application can ship having forgotten it. There is no
-    fallback to fail over to: the site sends HSTS and redirects `http`, so a failed handshake
-    is a blank app rather than a degraded one.
--   **Commands.** `make android-build`, `android-test`, `android-lint`, `android-release`,
-    `android-install-mobile`, and `android-install-tv ADB_HOST=<address>`. Gradle runs on the
-    host against a JDK and an Android SDK, not inside the `web` container.
--   **Use those targets rather than calling `./gradlew` with a hand-built environment.** They
-    set `ANDROID_HOME` and nothing else on purpose, so the build uses the developer's own
-    `~/.gradle` — three gigabytes every project on the machine already shares, and one
-    dependency resolution instead of two that can drift apart. `check-gradle-home` is a
-    prerequisite of each of them and fails if `GRADLE_USER_HOME` points outside `$HOME`.
--   **If a tool sandbox refuses to write `~/.gradle`, let the build out of the sandbox; do not
-    move the cache.** Relocating `GRADLE_USER_HOME` works, which is the trap: it outlives the
-    restriction that prompted it, and every later build re-downloads a gigabyte and a half and
-    starts a second daemon beside the one already warm. That happened on 2026-08-29 and went
-    unnoticed for a whole session, which is why the Makefile now checks rather than asks.
--   **Some things only the hardware can answer.** Whether the handshake succeeds on Android
-    7.1, whether anything on the device answers an `acestream://` intent, and whether every
-    control can be reached with a D-pad are invisible to the unit suite and to an emulator.
-    Sideload and look before believing any of the three. The apps never require a particular
-    player: a link is fired as a plain `ACTION_VIEW` and the system decides who answers it —
-    no install check, no `<queries>` block, and no third-party app is ever named.
--   **Releases** are cut by tagging `android-v<version>`, which is what
-    `.github/workflows/android-release.yml` runs on. It refuses to publish anything it cannot
-    verify: a missing secret stops the run rather than producing an unsigned APK, and
-    `apksigner verify --min-sdk-version 25` is run on both before the release is created.
-    The tag and the `versionName` in both modules must agree, and the workflow checks that too.
--   **The signing key exists for one reason: updating without uninstalling.** Android refuses
-    to install a version signed with a different key, and uninstalling takes the favourites
-    with it, because they live on the device and nowhere else. Made once, never committed,
-    kept somewhere with a backup — losing it means no installed copy can ever be updated again:
-
-    ```
-    keytool -genkeypair -v -keystore soccertime-release.jks -alias soccertime \
-      -keyalg RSA -keysize 4096 -validity 10000 -storetype PKCS12
-    base64 -w0 soccertime-release.jks   # the value of ANDROID_KEYSTORE_B64
-    ```
-
-    Three repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD` and
-    `ANDROID_KEY_ALIAS`. There is a fourth, `ANDROID_KEY_PASSWORD`, and it is optional because
-    **a PKCS12 keystore has one password** — `keytool` refuses to set two ("Different store and
-    key passwords not supported for PKCS12 KeyStores") and ignores the second, so the key's
-    password *is* the store's. The build falls back to it rather than failing a release with an
-    authentication error nobody would expect.
-
-    The same variables work locally, which is all `make android-release` needs; without them
-    `assembleRelease` still builds, unsigned, which is what makes it a check anybody can run
-    against R8.
--   Everything in section 2 applies here unchanged: English in all source and comments,
-    Conventional Commits, tests with every change, and a changelog entry — which goes by the
-    release that carries it, not by the path. Anything the applications ship goes in
-    **`android/CHANGELOG.md`**: everything under `android/`, and also
-    `.github/workflows/android-release.yml`, the `android-*` Makefile targets and the
-    `test_android_*` guards, none of which live there.
+There used to be a phone app and a Fire TV app under `android/`. They were retired on
+2026-10-29 and their code removed; the last release is the `android-v0.2.0` tag, which is
+where to look if they are ever wanted back. Copies of that release may still be installed,
+and they read the public API under `/api/v1/`, so that contract is still not to be broken
+casually.
 
 ## 7. Language & Localization
 

@@ -1,14 +1,13 @@
 # Soccertime — instructions for Claude Code
 
 **Read `AGENTS.md` first.** It holds the project conventions: stack, testing rules,
-the mandatory changelog entry after every change — `CHANGELOG.md` for the website and its API,
-`android/CHANGELOG.md` for the two applications, which release on their own tags — and the Ruff commands. The other
+the mandatory changelog entry after every change in `CHANGELOG.md`, and the Ruff commands. The other
 CLIs load it automatically; Claude Code does not, so it is easy to work a whole session
 without ever seeing it. That is exactly how the changelog went unmaintained.
 
 ## UI changes are shown on a design canvas before they are written
 
-Any change to what either application draws — a new control, a moved one, a layout, a state —
+Any change to what the site draws — a new control, a moved one, a layout, a state —
 is mocked up first with the design skill and published for Toni to validate. **Code for it is
 written only after the mockups are approved**, and each approval covers exactly what was shown:
 a new batch of UI work means a new set of artboards, not a licence carried over from the last

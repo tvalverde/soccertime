@@ -104,22 +104,6 @@ soccertime_data_cache.sqlite
 .docker/traefik/certs/mojon.local.key
 .docker/traefik/certs/mojon.local.crt
 
-# The Android project under `android/`. Gradle writes its caches and its output inside the
-# tree it builds, and one debug APK is larger than everything else here put together.
-# `build/` above is deliberately left unanchored: that is what covers every module's output.
-android/.gradle/
-android/.kotlin/
-android/.cxx/
-android/captures/
-android/local.properties
-android/**/build/
-*.apk
-*.aab
-# Signing material. The release keystore never enters the repository — CI holds it as a
-# base64 secret, and AGENTS.md says how it is made.
-*.jks
-*.keystore
-
 # Claude Code per-machine state. Project-wide configuration belongs in
 # .claude/settings.json, which stays tracked so it can be shared.
 .claude/settings.local.json

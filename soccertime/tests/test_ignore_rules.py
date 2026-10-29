@@ -10,8 +10,7 @@ the Django media root and the directory the SQLite file lives in — also hide a
 directory of those names anywhere else in the tree. Nothing in the Python project is
 called either, which is why it never showed; a second project in this repository is
 exactly the thing that would make it show, and it would show as a file that is simply
-not there on a fresh clone. `build/` is deliberately left bare: there the depth-matching
-is the point, because it is what covers every module's Gradle output.
+not there on a fresh clone.
 
 Asserted against the text rather than against `git check-ignore`, which would have been
 the better question to ask: the development container carries neither `git` nor a `.git`
@@ -28,20 +27,8 @@ GITIGNORE = ROOT / ".gitignore"
 DOCKERIGNORE = ROOT / ".dockerignore"
 
 # Written for a directory at the repository root and for nothing else, so each has to say
-# so. Unanchored they also match `android/.../media/` and `android/.../db/`.
+# so. Unanchored they also match a `media/` or `db/` directory anywhere below the root.
 ROOT_ONLY = ("media", "db")
-
-# Gradle output and per-machine state. None of it belongs in a commit, and `android/` is
-# where all of it appears.
-ANDROID_PATTERNS = (
-    "android/.gradle/",
-    "android/local.properties",
-    "android/**/build/",
-    "*.apk",
-    "*.aab",
-    "*.jks",
-    "*.keystore",
-)
 
 
 def patterns(path: Path) -> list[str]:
@@ -61,13 +48,3 @@ def test_the_root_only_entries_are_anchored(name):
     found = patterns(GITIGNORE)
     assert name not in found, f"bare `{name}` also hides every `{name}` directory below the root"
     assert f"/{name}/" in found
-
-
-@pytest.mark.parametrize("pattern", ANDROID_PATTERNS)
-def test_the_android_build_output_is_ignored(pattern):
-    assert pattern in patterns(GITIGNORE)
-
-
-def test_the_docker_build_does_not_carry_the_android_project():
-    """`COPY . .` takes everything the ignore file does not refuse, and this is none of it."""
-    assert "android/" in patterns(DOCKERIGNORE)

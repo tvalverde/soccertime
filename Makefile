@@ -1,4 +1,4 @@
-.PHONY: check-gradle-home help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-proxy-logs remote-error-checkremote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format android-build android-test android-lint android-clean android-release android-install-mobile android-install-tv
+.PHONY: help typecheck screenshot prune-images remote-apply-config remote-admin-on remote-admin-off remote-admin-set deploy-production pull_image remote_deploy upload-compose upload-config remote-restart remote-scrape purge-old-events remote-purge-old-events replica-up replica-up-published replica-build replica-pull replica-serve replica-manage replica-migrate replica-relay remote-check remote-ps remote-pull remote-logs remote-proxy-logs remote-error-checkremote-smoke-test wait-remote-healthy remote-clear-cache remote-redownload-images remote-import-links remote-install-import-cron remote-install-logrotate prune-remote-images prune-remote-app-path backup-remote-db backup-remote-media prune-remote-backups pull-remote-backups list-remote-backups restore-remote-db download-db upload-db download-requests-cache upload-requests-cache download-media upload-media test test-integration test-cov lint lint-fix format
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -19,15 +19,6 @@ help:
 	@echo "  lint-fix             Fix auto-fixable linting errors"
 	@echo "  prune-images         Drop this project's superseded images from this machine"
 	@echo "  format               Format code with ruff"
-	@echo ""
-	@echo "ANDROID (host toolchain: JDK + Android SDK, not the container):"
-	@echo "  android-build        Assemble both debug APKs"
-	@echo "  android-test         Run the JVM unit tests"
-	@echo "  android-lint         Run Android Lint on every module"
-	@echo "  android-clean        Drop the Gradle build output"
-	@echo "  android-release      Assemble the signed release APKs (needs the keystore)"
-	@echo "  android-install-mobile  Install the phone app on the attached device"
-	@echo "  android-install-tv   Install the TV app over the network (ADB_HOST=192.168.1.42)"
 	@echo ""
 	@echo "DEPLOY:"
 	@echo "  deploy-production    Full deploy (pull the published image and hand over)"
@@ -180,85 +171,6 @@ test-integration:
 # Run tests with coverage report
 test-cov:
 	@docker compose exec -u $(DOCKER_UID):$(DOCKER_GID) web pytest -m "not integration" --cov --cov-report=term-missing
-
-# === Android Commands ===
-#
-# The apps under `android/` build with their own toolchain and share nothing with the Django
-# container: Gradle runs on the host, against a JDK and an Android SDK it expects to find
-# there. These targets exist for the same reason the deploy ones do — so the command that was
-# run is written down rather than remembered.
-#
-# Sideloading is not a convenience. The three things that decide whether these apps work at
-# all — the TLS handshake on Android 7.1, whether anything answers an `acestream://` intent,
-# and whether every control can be reached with a D-pad — are invisible to an emulator and to
-# the unit suite, and `android-install-tv` is how they get in front of the real hardware.
-ANDROID_DIR := android
-GRADLEW := ./gradlew
-ADB ?= adb
-ADB_PORT ?= 5555
-
-# Gradle's cache is the user's, at `~/.gradle`, and these targets deliberately leave it
-# there: it is three gigabytes of dependencies that every project on the machine already
-# shares, and a build resolving its own copy is a build resolving a different tree from the
-# one the developer sees. That divergence is slow to diagnose and easy to prevent.
-#
-# The guard exists because it was not prevented. A tool sandbox once refused a write to
-# `~/.gradle`, the answer was to point `GRADLE_USER_HOME` at a temporary directory, and that
-# answer outlived its reason — every later build re-downloaded a gigabyte and a half and ran
-# a second daemon beside the one already warm. The right answer to a sandbox refusing
-# `~/.gradle` is to let the build out of the sandbox, not to move the cache.
-check-gradle-home:
-	@if [ -n "$$GRADLE_USER_HOME" ] && [ "$${GRADLE_USER_HOME#$$HOME}" = "$$GRADLE_USER_HOME" ]; then \
-		echo "GRADLE_USER_HOME points outside your home:"; \
-		echo "    $$GRADLE_USER_HOME"; \
-		echo ""; \
-		echo "These targets build against ~/.gradle on purpose. A cache somewhere else"; \
-		echo "re-downloads what you already have and resolves its own dependency tree."; \
-		echo "Unset it, or pass a path under \$$HOME if you meant it."; \
-		exit 1; \
-	fi
-
-android-build: check-gradle-home
-	@cd $(ANDROID_DIR) && $(GRADLEW) assembleDebug
-
-android-test: check-gradle-home
-	@cd $(ANDROID_DIR) && $(GRADLEW) testDebugUnitTest
-
-android-lint: check-gradle-home
-	@cd $(ANDROID_DIR) && $(GRADLEW) lint
-
-android-clean: check-gradle-home
-	@cd $(ANDROID_DIR) && $(GRADLEW) clean
-
-# Signed, and therefore only from a machine holding the keystore. CI does this from a secret
-# on an `android-v*` tag; this is the rehearsal of that, not a second way to release.
-android-release: check-gradle-home
-	@cd $(ANDROID_DIR) && $(GRADLEW) assembleRelease
-
-# Gradle's installDebug installs on EVERY adb device connected at that moment — measured on
-# 2026-08-30, when it put the phone app on both Fire TVs that had stayed connected. With more
-# than one device attached this refuses to guess; pin the phone with its serial from
-# `adb devices`: make android-install-mobile ANDROID_SERIAL=<serial>.
-android-install-mobile:
-	@if [ -z "$(ANDROID_SERIAL)" ] && [ "$$($(ADB) devices | awk 'NR>1 && $$2=="device"' | wc -l)" -gt 1 ]; then \
-		echo "More than one adb device is connected and installDebug would install on ALL of them."; \
-		echo "Usage: make android-install-mobile ANDROID_SERIAL=<serial from 'adb devices'>"; \
-		exit 1; \
-	fi
-	@cd $(ANDROID_DIR) && $(if $(ANDROID_SERIAL),ANDROID_SERIAL=$(ANDROID_SERIAL)) $(GRADLEW) :app-mobile:installDebug
-
-# The Fire TV has no USB port to plug into, so it is reached over the network: enable ADB
-# debugging in Developer options, read the address from Settings, and pass it here.
-# Usage: make android-install-tv ADB_HOST=192.168.1.42
-android-install-tv:
-	@if [ -z "$(ADB_HOST)" ]; then \
-		echo "Usage: make android-install-tv ADB_HOST=<the Fire TV's address>"; \
-		echo "  Enable it first in Settings > My Fire TV > Developer options > ADB debugging."; \
-		exit 1; \
-	fi
-	@$(ADB) connect $(ADB_HOST):$(ADB_PORT)
-	@cd $(ANDROID_DIR) && ANDROID_SERIAL=$(ADB_HOST):$(ADB_PORT) $(GRADLEW) :app-tv:installDebug
-	@echo "Installed. Read what it does with: $(ADB) -s $(ADB_HOST):$(ADB_PORT) logcat -s Soccertime:V"
 
 # Capture a page for visual review, with no browser extension involved.
 # Firefox goes first, but on a desktop with Firefox already open it often hands the URL
