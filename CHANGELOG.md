@@ -26,6 +26,10 @@ their own tags (`android-v*`) and a reader of one release has no use for the oth
   which would have changed nothing. The release message now names the image rollback
   (`DEPLOY_TAG=sha-<commit>`) first, and the database restore only for a release that
   migrated.
+- **Dependencies brought up to date from the Dependabot backlog.** certifi 2026.10.19 →
+  2026.10.23 (still without the emSign root `test_trust_store.py` refuses),
+  drf-spectacular-sidecar 2026.9.1 → 2026.10.1, the Swagger UI the API documentation page
+  serves from this origin, and for development mypy 2.3.1 → 2.4.0 and ruff 0.16.7 → 0.17.2.
 
 ### Security
 - **Python 3.14.10** (2026-10-25), from a rebuild on the refreshed `python:3.14-alpine`.

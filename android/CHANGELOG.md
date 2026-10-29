@@ -17,6 +17,9 @@ The website's own changelog is `../CHANGELOG.md`.
   Plugin 9.3.2 → 9.4.0, Kotlin 2.4.10 → 2.4.20, the Compose BOM 2026.08.00 → 2026.09.00,
   core-ktx 1.19.0 → 1.19.1, navigation-compose 2.10.0 → 2.10.2, coil 3.6.0 → 3.6.3, and for
   the tests Robolectric 4.16 → 4.17.
+- **A second round from the Dependabot backlog.** Android Gradle Plugin 9.4.0 → 9.5.0, Kotlin
+  2.4.20 → 2.4.21, kotlinx-serialization-json 1.11.0 → 1.12.0, okhttp 5.5.0 → 5.5.1,
+  datastore-preferences 1.2.1 → 1.3.0, and the Gradle wrapper 9.7.1 → 9.8.2.
 
 ## [0.2.0] - 2026-08-30
 
