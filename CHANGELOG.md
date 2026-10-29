@@ -51,6 +51,9 @@ retired; it remains at their last tag, `android-v0.2.0`.
 - `make remote-logs SINCE=10m`, as its help and the deploy's failure messages put it,
   filtered nothing: the recipe read `LOG_SINCE`, `LOG_TAIL` and `LOG_GREP`, so the documented
   options were ignored and the last 200 lines came back regardless.
+- `remote-error-check` and `remote-smoke-test` were not declared phony: a missing space had
+  run them together into one name no target answers to. A test now holds `.PHONY` and the
+  targets the Makefile defines to the same list.
 
 ## [0.12.3] - 2026-10-23
 
