@@ -5,7 +5,7 @@ requests==2.34.2
 # against, and left to the resolver it was whatever happened to be newest on build day.
 # 2026.10.19 is the first that stops trusting emSign ECC Root CA - G3, whose intermediates
 # had trivially weak private keys; `test_trust_store.py` refuses anything older.
-certifi==2026.10.19
+certifi==2026.10.23
 requests-cache==1.3.3
 beautifulsoup4==4.15.0
 # The parser `futbolenlatv.py` asks BeautifulSoup for by name. It used to sit at the bottom
