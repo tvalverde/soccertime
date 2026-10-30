@@ -29,7 +29,8 @@ retired; it remains at their last tag, `android-v0.2.0`.
 - **Dependencies brought up to date from the Dependabot backlog.** certifi 2026.10.19 →
   2026.10.23 (still without the emSign root `test_trust_store.py` refuses),
   drf-spectacular-sidecar 2026.9.1 → 2026.10.1, the Swagger UI the API documentation page
-  serves from this origin, and for development mypy 2.3.1 → 2.4.0 and ruff 0.16.7 → 0.17.2.
+  serves from this origin, and for development mypy 2.3.1 → 2.4.0, ruff 0.16.7 → 0.17.2,
+  django-stubs 6.1.0 → 6.1.2 and types-requests 2.33.0.20260906 → 2.33.0.20261006.
 
 ### Removed
 - **The Android applications are retired.** The phone and Fire TV apps were no longer used,

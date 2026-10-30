@@ -11,5 +11,5 @@ ruff==0.17.2
 
 # Type checking
 mypy==2.4.0
-django-stubs==6.1.0
-types-requests==2.33.0.20260906
+django-stubs==6.1.2
+types-requests==2.33.0.20261006
