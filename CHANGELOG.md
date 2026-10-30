@@ -12,6 +12,8 @@ retired; it remains at their last tag, `android-v0.2.0`.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-30
+
 ### Added
 - `make remote-proxy-logs` reads Traefik's and the socket proxy's logs, taking the same
   `SINCE=`, `TAIL=` and `GREP=` as `remote-logs`, which now also takes `SERVICE=`.
