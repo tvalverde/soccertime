@@ -5,7 +5,7 @@
 # builds of the same commit were never the same image. It is also the number CI installs on
 # its runner (`test_ci_workflow.py` reads it from here), which cannot be decided by a tag
 # that moves.
-FROM python:3.14-alpine
+FROM python:3.15-alpine
 # What lets the deploy prune this project's superseded images without touching the ones
 # other services on the host built and cannot re-pull.
 LABEL org.opencontainers.image.title="soccertime"
