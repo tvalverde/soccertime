@@ -1,5 +1,5 @@
 Django==6.0.9
-django-admin-sortable2==2.3.1
+django-admin-sortable2==2.4
 requests==2.34.2
 # Pinned although nothing imports it by name: it is the bundle `requests` verifies TLS
 # against, and left to the resolver it was whatever happened to be newest on build day.
