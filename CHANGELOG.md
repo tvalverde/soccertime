@@ -12,6 +12,17 @@ retired; it remains at their last tag, `android-v0.2.0`.
 
 ## [Unreleased]
 
+### Changed
+- **Development dependencies from the November Dependabot round.** pytest 9.1.1 → 9.2.0,
+  ruff 0.17.2 → 0.17.3, mypy 2.4.0 → 2.4.1 and types-requests 2.33.0.20261006 →
+  2.33.0.20261030.
+- **The base image stays on Python 3.14, and Dependabot is told why.** Django 6.0, the line
+  this project is held to, declares Python 3.12 to 3.14; 3.15 is first declared by 6.1. The
+  `python:3.15-alpine` pull request is closed and `.github/dependabot.yml` ignores Python 3.15
+  and above, while 3.14 patches keep coming. `test_dependency_updates.py` now checks that the
+  `Dockerfile`'s interpreter is one the pinned Django declares, and fails the day that Django
+  declares 3.15, so the ignore is removed when its reason is gone.
+
 ## [0.13.0] - 2026-10-30
 
 ### Added

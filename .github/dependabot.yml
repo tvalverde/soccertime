@@ -40,3 +40,13 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+
+    # Python stops at 3.14 here because Django does: 6.0 — the line held above — declares
+    # 3.12 to 3.14, and 3.15 is first declared by 6.1. Running production on an interpreter
+    # the framework does not claim to support is the kind of change a weekly pull request
+    # should not make in passing. 3.14 patches still come through; the ignore begins at 3.15.
+    # `test_dependency_updates.py` turns red when the pinned Django declares 3.15, so this
+    # entry is removed when it stops being true rather than when somebody remembers.
+    ignore:
+      - dependency-name: "python"
+        versions: [">=3.15"]

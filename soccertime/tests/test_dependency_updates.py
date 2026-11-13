@@ -54,14 +54,67 @@ def test_the_updates_are_scheduled():
     assert len(re.findall(r"(?m)^\s+interval:", CONFIG.read_text())) == len(declared_ecosystems())
 
 
-# The one version this repository refuses to be offered, read from the configuration rather
-# than written down a second time here, so the two cannot say different things.
-IGNORED_DJANGO = re.compile(r'dependency-name:\s*"django"\s*\n\s*versions:\s*\[">=([\d.]+)"\]')
+def ceiling_of(dependency: str) -> str | None:
+    """The version from which `dependabot.yml` refuses to offer `dependency`, if it does.
+
+    Read from the configuration rather than written down a second time here, so the two
+    cannot say different things.
+    """
+    ignored = re.compile(rf'dependency-name:\s*"{re.escape(dependency)}"\s*\n\s*versions:\s*\[">=([\d.]+)"\]')
+    found = ignored.search(CONFIG.read_text())
+    return found.group(1) if found else None
 
 
 def django_ceiling() -> str | None:
-    found = IGNORED_DJANGO.search(CONFIG.read_text())
-    return found.group(1) if found else None
+    return ceiling_of("django")
+
+
+def python_ceiling() -> str | None:
+    return ceiling_of("python")
+
+
+def pythons_django_supports() -> set[str]:
+    """The interpreters the installed Django declares, from its own package metadata."""
+    from importlib.metadata import metadata
+
+    prefix = "Programming Language :: Python :: "
+    classifiers = metadata("Django").get_all("Classifier") or []
+    return {c.removeprefix(prefix) for c in classifiers if re.fullmatch(rf"{re.escape(prefix)}\d+\.\d+", c)}
+
+
+def test_django_declares_the_pythons_it_supports():
+    """Guards the two tests below: an empty set would make both pass for the wrong reason."""
+    assert pythons_django_supports()
+
+
+def test_the_base_image_runs_a_python_django_supports():
+    """The interpreter in the `Dockerfile` is one the pinned Django says it runs on.
+
+    Python 3.15 arrived while Django was held at 6.0, whose releases stop at 3.14; the base
+    image bump was proposed anyway and only failed CI on an unrelated guard. Bumping the
+    image by hand would not even have done that.
+    """
+    from soccertime.tests.test_published_image import base_image_python_version
+
+    assert base_image_python_version() in pythons_django_supports()
+
+
+def test_the_python_ceiling_is_still_a_wall():
+    """Says when the reason for holding the base image's Python back has stopped being true.
+
+    `dependabot.yml` ignores the Python the pinned Django does not declare. The day a Django
+    release that declares it lands in `requirements.txt` — a 6.0 patch adding it, or the 6.1
+    line once `test_the_django_ceiling_is_still_a_wall` lets it through — this fails, and the
+    entry should go so the image upgrade is proposed again.
+    """
+    ceiling = python_ceiling()
+    if ceiling is None:
+        pytest.skip("Python is no longer held below a ceiling, so there is nothing to justify")
+
+    assert ceiling not in pythons_django_supports(), (
+        f"The pinned Django now declares Python {ceiling}, so nothing stops the base image any more. "
+        f"Remove the `ignore` entry for python from .github/dependabot.yml and let the upgrade through."
+    )
 
 
 def test_the_django_ceiling_is_still_a_wall():
